@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ordermateAPI", "ordermateAPI\ordermateAPI.csproj", "{E86B3D03-979C-49F2-9FC6-A6A35120951D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E86B3D03-979C-49F2-9FC6-A6A35120951D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E86B3D03-979C-49F2-9FC6-A6A35120951D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E86B3D03-979C-49F2-9FC6-A6A35120951D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E86B3D03-979C-49F2-9FC6-A6A35120951D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
