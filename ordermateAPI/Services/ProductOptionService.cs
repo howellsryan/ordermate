@@ -7,32 +7,34 @@ namespace ordermateAPI.Services;
 public class ProductOptionService : IProductOptionService
 {
     private readonly IProductOptionRepository _productOptionRepository;
+    private readonly IModifierService _modifierService;
 
-    public ProductOptionService(IProductOptionRepository productOptionRepository)
+    public ProductOptionService(IProductOptionRepository productOptionRepository, IModifierService modifierService)
     {
         _productOptionRepository = productOptionRepository;
+        _modifierService = modifierService;
     }
 
     public async Task<List<ProductOptionModel>> GetByProductId(int productId)
     {
         var productOptions = await _productOptionRepository.GetByProductId(productId);
 
-        return MapResultsToApi(productOptions);
+        return await MapResultsToApi(productOptions);
     }
 
-    private List<ProductOptionModel> MapResultsToApi(IEnumerable<DAL.Models.ProductOptionModel> dataModel)
+    private async Task<List<ProductOptionModel>> MapResultsToApi(IEnumerable<DAL.Models.ProductOptionModel> dataModel)
     {
         var result = new List<ProductOptionModel>();
 
         foreach (var dalProductOption in dataModel)
         {
-            result.Add(MapDalObjectToApiModel(dalProductOption));
+            result.Add(await MapDalObjectToApiModel(dalProductOption));
         }
 
         return result;
     }
 
-    private ProductOptionModel MapDalObjectToApiModel(DAL.Models.ProductOptionModel dalProductOption)
+    private async Task<ProductOptionModel> MapDalObjectToApiModel(DAL.Models.ProductOptionModel dalProductOption)
     {
         return new ProductOptionModel
         {
@@ -41,6 +43,7 @@ public class ProductOptionService : IProductOptionService
             Name = dalProductOption.Name,
             Price = dalProductOption.Price,
             Quantity = dalProductOption.Quantity,
+            Modifiers = await _modifierService.GetByProductOptionId(dalProductOption.ProductOptionId),
             LastModifiedDate = dalProductOption.LastModifiedDate,
             CreatedDate = dalProductOption.CreatedDate
         };

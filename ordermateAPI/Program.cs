@@ -13,6 +13,8 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<IProductOptionService, ProductOptionService>();
 builder.Services.AddScoped<IProductOptionRepository, ProductOptionRepository>();
+builder.Services.AddScoped<IModifierService, ModifierService>();
+builder.Services.AddScoped<IModifierRepository, ModifierRepository>();
 
 // Add services to the container.
 

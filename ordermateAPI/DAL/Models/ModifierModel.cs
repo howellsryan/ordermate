@@ -1,13 +1,11 @@
-﻿namespace ordermateAPI.Models;
+﻿namespace ordermateAPI.DAL.Models;
 
-public class ProductOptionModel
+public class ModifierModel
 {
-    public int ProductOptionId { get; set; }
-    public int ProductId { get; set; }
+    public int ModifierId { get; set; }
     public string Name { get; set; }
     public decimal Price { get; set; }
     public int Quantity { get; set; }
-    public List<ModifierModel> Modifiers { get; set; }
     public DateTime CreatedDate { get; set; }
     public DateTime LastModifiedDate { get; set; }
 }
