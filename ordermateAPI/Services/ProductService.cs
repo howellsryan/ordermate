@@ -7,50 +7,55 @@ namespace ordermateAPI.Services;
 public class ProductService : IProductService
 {
     private readonly IProductRepository _productRepository;
+    private readonly IProductOptionService _productOptionService;
 
-    public ProductService(IProductRepository productRepository)
+    public ProductService(IProductRepository productRepository, IProductOptionService productOptionService)
     {
         _productRepository = productRepository;
+        _productOptionService = productOptionService;
     }
 
     public async Task<ProductModel> Get(int id)
     {
-        var dataModel = await _productRepository.Get(id);
-        if (dataModel == null)
+        var product = await _productRepository.Get(id);
+        if (product == null)
             throw new Exception($"Product with Id {id} not found.");
 
-        return MapDalObjectToApiModel(dataModel);
+        ProductModel result = await MapDalObjectToApiModel(product);
+        await SetProductOptions(result);
+        
+        return result;
     }
 
     public async Task<List<ProductModel>> Get()
     {
         var products = await _productRepository.Get();
 
-        return MapResultsToApi(products);
+        return await MapResultsToApi(products);
     }
 
     public async Task<List<ProductModel>> GetByCategoryId(int categoryId)
     {
         var products = await _productRepository.GetByCategoryId(categoryId);
 
-        return MapResultsToApi(products);
+        return await MapResultsToApi(products);
     }
 
-    private List<ProductModel> MapResultsToApi(IEnumerable<DAL.Models.ProductModel> dataModel)
+    private async Task<List<ProductModel>> MapResultsToApi(IEnumerable<DAL.Models.ProductModel> dataModel)
     {
         var result = new List<ProductModel>();
 
         foreach (var dalProduct in dataModel)
         {
-            result.Add(MapDalObjectToApiModel(dalProduct));
+            result.Add(await MapDalObjectToApiModel(dalProduct));
         }
 
         return result;
     }
 
-    private ProductModel MapDalObjectToApiModel(DAL.Models.ProductModel dalProduct)
+    private async Task<ProductModel> MapDalObjectToApiModel(DAL.Models.ProductModel dalProduct)
     {
-        return new ProductModel
+        var result = new ProductModel
         {
             ProductId = dalProduct.ProductId,
             CategoryId = dalProduct.CategoryId,
@@ -61,5 +66,13 @@ public class ProductService : IProductService
             LastModifiedDate = dalProduct.LastModifiedDate,
             CreatedDate = dalProduct.CreatedDate
         };
+
+        await SetProductOptions(result);
+        return result;
+    }
+
+    private async Task SetProductOptions(ProductModel product)
+    {
+        product.ProductOptions = await _productOptionService.GetByProductId(product.ProductId);
     }
 }
