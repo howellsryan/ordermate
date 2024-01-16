@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using ordermateAPI.DAL.Interfaces;
 using ordermateAPI.DAL.Models;
+using ordermateAPI.DAL.Scripts;
 
 namespace ordermateAPI.DAL.Repositories;
 
@@ -15,19 +16,17 @@ public class CategoryRepository : ICategoryRepository
 
     public async Task<CategoryModel?> Get(int id)
     {
-        var query = "SELECT * FROM Categories WHERE CategoryId = @id";
         using var connection = _dbContext.CreateConnection();
         
-        CategoryModel? category = await connection.QuerySingleOrDefaultAsync<CategoryModel>(query, new { id });
+        CategoryModel? category = await connection.QuerySingleOrDefaultAsync<CategoryModel>(CategoryScripts.GetByCategoryId, new { id });
         return category;
     }
 
     public async Task<IEnumerable<CategoryModel?>> Get()
     {
-        var query = "SELECT * FROM Categories";
         using var connection = _dbContext.CreateConnection();
         
-        IEnumerable<CategoryModel> categories = await connection.QueryAsync<CategoryModel>(query);
+        IEnumerable<CategoryModel> categories = await connection.QueryAsync<CategoryModel>(CategoryScripts.Get);
         return categories;
     }
 }

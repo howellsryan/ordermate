@@ -1,4 +1,5 @@
 ﻿using ordermateAPI.DAL.Interfaces;
+using ordermateAPI.Exceptions;
 using ordermateAPI.Models;
 using ordermateAPI.Services.Interfaces;
 
@@ -19,7 +20,7 @@ public class CategoryService : ICategoryService
     {
         var category = await _categoryRepository.Get(id);
         if (category == null)
-            throw new Exception($"Product with Id {id} not found.");
+            throw new ProductNotFoundException($"Product with Id {id} not found.");
 
         List<ProductModel> categoryProducts = await _productService.GetByCategoryId(category.CategoryId);
         

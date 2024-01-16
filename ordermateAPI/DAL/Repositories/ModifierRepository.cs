@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using ordermateAPI.DAL.Interfaces;
 using ordermateAPI.DAL.Models;
+using ordermateAPI.DAL.Scripts;
 
 namespace ordermateAPI.DAL.Repositories;
 
@@ -15,26 +16,23 @@ public class ModifierRepository : IModifierRepository
     
     public async Task<ModifierModel?> Get(int modifierId)
     {
-        var query = "SELECT * FROM Modifiers WHERE ModifierId = @modifierId";
         using var connection = _dbContext.CreateConnection();
         
-        ModifierModel? modifier = await connection.QuerySingleOrDefaultAsync<ModifierModel>(query, new { modifierId });
+        ModifierModel? modifier = await connection.QuerySingleOrDefaultAsync<ModifierModel>(ModifierScripts.GetByModifierId, new { modifierId });
         return modifier;
     }
 
     public async Task<IEnumerable<ModifierModel>> Get()
     {
-        var query = "SELECT * FROM Modifiers";
         using var connection = _dbContext.CreateConnection();
 
-        return await connection.QueryAsync<ModifierModel>(query);
+        return await connection.QueryAsync<ModifierModel>(ModifierScripts.Get);
     }
 
     public async Task<IEnumerable<ModifierModel>> GetByProductOptionId(int productOptionId)
     {
-        var query = "SELECT m.ModifierId, m.Name, m.Price, m.Quantity, m.CreatedDate, m.LastModifiedDate FROM productoptions po INNER JOIN ProductOptionModifiers pom ON po.ProductOptionId = pom.ProductOptionId INNER JOIN Modifiers m ON pom.ModifierId = m.ModifierId WHERE po.ProductOptionId = @productOptionId";
         using var connection = _dbContext.CreateConnection();
 
-        return await connection.QueryAsync<ModifierModel>(query, new { productOptionId });
+        return await connection.QueryAsync<ModifierModel>(ModifierScripts.GetByProductOptionId, new { productOptionId });
     }
 }

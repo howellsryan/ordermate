@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using ordermateAPI.DAL.Interfaces;
 using ordermateAPI.DAL.Models;
+using ordermateAPI.DAL.Scripts;
 
 namespace ordermateAPI.DAL.Repositories;
 
@@ -15,10 +16,9 @@ public class ProductOptionRepository : IProductOptionRepository
     
     public async Task<IEnumerable<ProductOptionModel>> GetByProductId(int productId)
     {
-        var query = "SELECT * FROM ProductOptions WHERE ProductId = @productId";
         using var connection = _dbContext.CreateConnection();
         
-        IEnumerable<ProductOptionModel> productOptions = await connection.QueryAsync<ProductOptionModel>(query, new { productId });
+        IEnumerable<ProductOptionModel> productOptions = await connection.QueryAsync<ProductOptionModel>(ProductOptionScripts.GetByProductId, new { productId });
         return productOptions;
     }
 }

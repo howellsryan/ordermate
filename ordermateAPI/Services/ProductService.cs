@@ -1,4 +1,5 @@
 ﻿using ordermateAPI.DAL.Interfaces;
+using ordermateAPI.Exceptions;
 using ordermateAPI.Models;
 using ordermateAPI.Services.Interfaces;
 
@@ -19,7 +20,7 @@ public class ProductService : IProductService
     {
         var product = await _productRepository.Get(id);
         if (product == null)
-            throw new Exception($"Product with Id {id} not found.");
+            throw new ProductNotFoundException($"Product with Id {id} not found.");
 
         ProductModel result = await MapDalObjectToApiModel(product);
         await SetProductOptions(result);
