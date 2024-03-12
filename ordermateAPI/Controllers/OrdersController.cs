@@ -32,12 +32,57 @@ public class OrdersController : ControllerBase
         }
     }
 
-    [HttpPost]
+    [HttpPost("Create")]
     public async Task<ActionResult> Create([FromBody] string email, int storeId)
     {
         try
         {
             await _orderService.Create(email, storeId);
+
+            return Ok();
+        }
+        catch (Exception e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    [HttpPost("AddItem")]
+    public async Task<ActionResult> AddItem([FromBody] AddOrderItemModel orderItemModel)
+    {
+        try
+        {
+            await _orderService.AddItem(orderItemModel);
+
+            return Ok();
+        }
+        catch (Exception e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    [HttpPost("UpdateItem")]
+    public async Task<ActionResult> UpdateItem([FromBody] AddOrderItemModel orderItemModel)
+    {
+        try
+        {
+            await _orderService.UpdateItem(orderItemModel);
+
+            return Ok();
+        }
+        catch (Exception e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    [HttpPost("RemoveItem")]
+    public async Task<ActionResult> RemoveItem([FromBody] int orderItemId)
+    {
+        try
+        {
+            await _orderService.RemoveItem(orderItemId);
 
             return Ok();
         }
