@@ -21,41 +21,23 @@ public class OrderItemRepository : IOrderItemRepository
         return await connection.QuerySingleOrDefaultAsync<OrderItemModel>(OrderItemScripts.Get, new { orderItemId });
     }
 
-    public async Task<OrderItemModel?> GetByOrderIdAndProductOptionIdAndModifiers(int orderId, int productOptionId, List<ordermateAPI.Models.AddOrderItemModel.OrderItemModifier> modifiers)
+    public async Task<OrderItemModel?> Get(int orderId, int productOptionId, List<ordermateAPI.Models.AddOrderItemModel.OrderItemModifier> modifiers)
     {
         using var connection = _dbContext.CreateConnection();
         
         var orderItems = (await connection.QueryAsync<OrderItemModel>(OrderItemScripts.GetByOrderIdAndProductOptionId, new { orderId, productOptionId })).ToList();
-        if (orderItems.Count == 1)
-            return orderItems.Single();
 
         foreach (var orderItem in orderItems)
         {
-            bool duplicateItem = false;
-            List<OrderItemModifierModel> existingOrderItemModifiers =
-                (await connection.QueryAsync<OrderItemModifierModel>(
-                    OrderItemModifierScripts.GetAllByOrderItem, new { orderItem.OrderItemId })).ToList();
-
-            List<int> existingOrderItemModifierIds = existingOrderItemModifiers.Select(x => x.ModifierId).ToList();
-            if (existingOrderItemModifierIds.All(modifiers.Select(x => x.ModifierId).ToList().Contains) && existingOrderItemModifiers.Count == modifiers.Count)
+            var script = $"SELECT TOP 1 oi.* FROM OrderItems oi INNER JOIN OrderItemModifiers oim on oim.OrderItemId = oi.OrderItemId INNER JOIN Orders o on oi.OrderId = o.OrderId WHERE o.OrderId = @orderId AND oi.ProductOptionId = @productOptionId ";
+            foreach (var modifier in modifiers)
             {
-                if (existingOrderItemModifiers.Count == 0)
-                    duplicateItem = true;
-                
-                foreach (var existingOrderItemModifier in existingOrderItemModifiers)
-                {
-                    var addOrderItemModifier =
-                        modifiers.Single(x => x.ModifierId == existingOrderItemModifier.ModifierId);
-
-                    if (existingOrderItemModifier.Quantity != addOrderItemModifier.Quantity)
-                        break;
-
-                    duplicateItem = true;
-                }
-
-                if (duplicateItem)
-                    return orderItem;
+                script += $"AND EXISTS (SELECT * FROM OrderItemModifiers oim WHERE oim.ModifierId = {modifier.ModifierId} AND oim.Quantity = {modifier.Quantity})";
             }
+
+            var existingOrderItem = await connection.QuerySingleOrDefaultAsync<OrderItemModel>(script, new { orderId, orderItem.ProductOptionId });
+            if (existingOrderItem != null)
+                return existingOrderItem;
         }
 
         return null;
@@ -82,7 +64,7 @@ public class OrderItemRepository : IOrderItemRepository
         }
     }
 
-    public async Task UpdateItemAndModifiers(ordermateAPI.Models.AddOrderItemModel addOrderItem)
+    public async Task UpdateItemAndModifiers(ordermateAPI.Models.AddOrderItemModel addOrderItem, List<OrderItemModifierModel> existingModifiers)
     {
         using var connection = _dbContext.CreateConnection();
         
@@ -91,8 +73,8 @@ public class OrderItemRepository : IOrderItemRepository
         
         foreach (var modifier in addOrderItem.Modifiers)
         {
-            var orderItemModifierId = await connection.QuerySingleOrDefaultAsync<int>(OrderItemModifierScripts.GetByOrderItemIdAndModifierId, new { addOrderItem.OrderItemId, modifier.ModifierId });
-            if (orderItemModifierId == 0)
+            var orderItemModifier = existingModifiers.SingleOrDefault(x => x.ModifierId == modifier.ModifierId);
+            if (orderItemModifier == null)
             {
                 await connection.ExecuteAsync(OrderItemModifierScripts.AddModifierToOrderItem,
                     new { addOrderItem.OrderItemId, modifier.ModifierId, modifier.Quantity });
@@ -101,6 +83,16 @@ public class OrderItemRepository : IOrderItemRepository
             {
                 await connection.ExecuteAsync(OrderItemModifierScripts.UpdateOrderItemModifier,
                     new { addOrderItem.OrderItemId, modifier.Quantity });
+
+                existingModifiers.Remove(orderItemModifier);
+            }
+        }
+
+        if (existingModifiers.Any())
+        {
+            foreach (var removedModifier in existingModifiers)
+            {
+                await RemoveItem(removedModifier.ModifierId);
             }
         }
     }

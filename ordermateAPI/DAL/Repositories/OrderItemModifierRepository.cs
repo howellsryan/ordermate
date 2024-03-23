@@ -19,4 +19,10 @@ public class OrderItemModifierRepository : IOrderItemModifierRepository
         using var connection = _dbContext.CreateConnection();
         return await connection.QueryAsync<OrderItemModifierModel>(OrderItemModifierScripts.GetAllByOrderItem, new { orderItemId });
     }
+    
+    public async Task<IEnumerable<OrderItemModifierModel>> GetAllByOrderId(int orderId)
+    {
+        using var connection = _dbContext.CreateConnection();
+        return await connection.QueryAsync<OrderItemModifierModel>(OrderItemModifierScripts.GetAllByOrderItem, new { orderId });
+    }
 }

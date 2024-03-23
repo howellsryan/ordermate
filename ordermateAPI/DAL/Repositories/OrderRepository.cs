@@ -45,7 +45,7 @@ public class OrderRepository : IOrderRepository
         
         using var connection = _dbContext.CreateConnection();
 
-        return await connection.ExecuteAsync(OrderScripts.CreateOrder, new { storeId, orderNumber, email, dateTimeNow });
+        return await connection.QuerySingleOrDefaultAsync(OrderScripts.CreateOrder, new { storeId, orderNumber, email, dateTimeNow });
     }
 
     public async Task UpdateOrderTotalValue(int orderId, decimal totalValue)

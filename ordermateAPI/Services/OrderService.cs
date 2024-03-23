@@ -61,7 +61,7 @@ public class OrderService : IOrderService
             await ValidateModifier(orderItemModifier.ModifierId);
         }
 
-        OrderItemModel? orderItem = await _orderItemRepository.GetByOrderIdAndProductOptionIdAndModifiers(order.OrderId, productOption.ProductOptionId, addOrderItem.Modifiers);
+        OrderItemModel? orderItem = await _orderItemRepository.Get(order.OrderId, productOption.ProductOptionId, addOrderItem.Modifiers);
         
         if (orderItem != null)
         {
@@ -87,8 +87,10 @@ public class OrderService : IOrderService
         {
             await ValidateModifier(orderItemModifier.ModifierId);
         }
+
+        List<OrderItemModifierModel> existingOrderItemModifiers = (await _orderItemModifierRepository.GetAllByOrderId(order.OrderId)).ToList();
         
-        await _orderItemRepository.UpdateItemAndModifiers(addOrderItem);
+        await _orderItemRepository.UpdateItemAndModifiers(addOrderItem, existingOrderItemModifiers);
         
         decimal orderTotal = await CalculateOrderTotal(order.OrderId);
         await _orderRepository.UpdateOrderTotalValue(order.OrderId, orderTotal);
