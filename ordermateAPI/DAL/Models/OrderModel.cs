@@ -9,7 +9,7 @@ public class OrderModel
     public string Email { get; set; }
     public decimal TotalValue { get; set; }
     public string Notes { get; set; }
-    public DateTime CompletedDate { get; set; }
+    public DateTime? CompletedDate { get; set; }
     public DateTime CreatedDate { get; set; }
     public DateTime LastModifiedDate { get; set; }
 }
