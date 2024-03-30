@@ -22,6 +22,14 @@ public class OrderRepository : IOrderRepository
         return order;
     }
     
+    public async Task<OrderModel?> Get(int orderId)
+    {
+        using var connection = _dbContext.CreateConnection();
+        
+        OrderModel? order = await connection.QuerySingleOrDefaultAsync<OrderModel>(OrderScripts.Get, new { orderId });
+        return order;
+    }
+    
     public async Task<IEnumerable<OrderModel>> GetByStoreId(int storeId)
     {
         using var connection = _dbContext.CreateConnection();
@@ -30,13 +38,19 @@ public class OrderRepository : IOrderRepository
         return orders;
     }
 
-    public async Task Create(string email, int storeId)
+    public async Task<int> Create(string email, int storeId)
     {
         var dateTimeNow = DateTime.UtcNow;
         var orderNumber = Guid.NewGuid().ToString().ToUpper();
         
         using var connection = _dbContext.CreateConnection();
 
-        await connection.ExecuteAsync(OrderScripts.CreateOrder, new { storeId, orderNumber, email, dateTimeNow });
+        return await connection.QuerySingleOrDefaultAsync(OrderScripts.CreateOrder, new { storeId, orderNumber, email, dateTimeNow });
+    }
+
+    public async Task UpdateOrderTotalValue(int orderId, decimal totalValue)
+    {
+        using var connection = _dbContext.CreateConnection();
+        await connection.ExecuteAsync(OrderScripts.UpdateOrderTotalValue, new { orderId, totalValue });
     }
 }

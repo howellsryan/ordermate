@@ -14,6 +14,12 @@ public class ProductOptionRepository : IProductOptionRepository
         _dbContext = dbContext;
     }
     
+    public async Task<ProductOptionModel?> Get(int productOptionId)
+    {
+        using var connection = _dbContext.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<ProductOptionModel?>(ProductOptionScripts.Get, new { productOptionId });
+    }
+    
     public async Task<IEnumerable<ProductOptionModel>> GetByProductId(int productId)
     {
         using var connection = _dbContext.CreateConnection();
