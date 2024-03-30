@@ -142,7 +142,6 @@ public class OrderService : IOrderService
         return modifier;
     }
 
-
     private async Task<decimal> CalculateOrderTotal(int orderId)
     {
         IEnumerable<OrderItemModel> orderItems = await _orderItemRepository.GetAllOrderItemsByOrderId(orderId);
