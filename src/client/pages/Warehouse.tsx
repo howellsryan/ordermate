@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Minus, PackageCheck, Plus, ScanBarcode, Truck } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
-import { date, tenantApi } from "../api";
+import DeliveryNoteAssist from "../DeliveryNoteAssist";
+import { controlApi, date, tenantApi } from "../api";
 import type { Order, OrderDetail, Product, PurchaseOrder, PurchaseOrderDetail } from "../model";
 import { applyWarehouseBarcodeScan, setWarehouseLineCount, type WarehouseScanCounts, type WarehouseScanTarget } from "../warehouse-scan";
 import { DataState, ErrorText, PageHeader, Status } from "../ui";
@@ -178,11 +179,13 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
   const inputRef = useRef<HTMLInputElement>(null);
   const [counts, setCounts] = useState<WarehouseScanCounts>({});
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [appliedProposalKey, setAppliedProposalKey] = useState<string | null>(null);
   const detail = useQuery({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId], queryFn: () => tenantApi<PurchaseOrderDetail>(tenant.id, `/purchase-orders/${purchaseOrderId}`) });
 
   useEffect(() => {
     setCounts({});
     setFeedback(null);
+    setAppliedProposalKey(null);
     queueMicrotask(() => inputRef.current?.focus());
   }, [purchaseOrderId]);
 
@@ -196,13 +199,31 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
   const outstanding = targets.reduce((sum, target) => sum + target.remaining, 0);
 
   const receive = useMutation({
-    mutationFn: () => tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/receive`, {
-      method: "POST",
-      body: JSON.stringify({ lines: targets.map(target => ({ lineId: target.lineId, quantity: counts[target.lineId] || 0 })).filter(line => line.quantity > 0) }),
-    }),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      await tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/receive`, {
+        method: "POST",
+        body: JSON.stringify({ lines: targets.map(target => ({ lineId: target.lineId, quantity: counts[target.lineId] || 0 })).filter(line => line.quantity > 0) }),
+      });
+      let completionError: string | undefined;
+      if (appliedProposalKey) {
+        try {
+          await controlApi("/delivery-documents/proposal/complete", {
+            method: "POST",
+            headers: { "x-ordermate-tenant": tenant.id },
+            body: JSON.stringify({ key: appliedProposalKey, purchaseOrderId }),
+          });
+        } catch (cause) {
+          completionError = cause instanceof Error ? cause.message : "Delivery proposal status could not be updated";
+        }
+      }
+      return { completionError };
+    },
+    onSuccess: async result => {
       setCounts({});
-      setFeedback({ tone: "success", message: "Scanned delivery received and written to stock history." });
+      setAppliedProposalKey(null);
+      setFeedback(result.completionError
+        ? { tone: "warning", message: `Stock was received successfully, but the delivery-note proposal could not be marked accepted: ${result.completionError}. Do not receive these units again.` }
+        : { tone: "success", message: "Scanned delivery received and written to stock history." });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId] }),
@@ -210,6 +231,7 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "delivery-proposals", purchaseOrderId] }),
       ]);
       inputRef.current?.focus();
     },
@@ -236,7 +258,13 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
   if (!detail.data) return null;
 
   return <div className="scan-session">
-    <div className="scan-session-head"><div><p className="eyebrow">Receiving {detail.data.number}</p><h2>{detail.data.supplier_name}</h2><p>Into {detail.data.location_name} · {outstanding} unit{outstanding === 1 ? "" : "s"} still expected</p></div><div className="scan-progress"><strong>{scanned}</strong><span>scanned now</span></div></div>
+    <div className="scan-session-head"><div><p className="eyebrow">Receiving {detail.data.number}</p><h2>{detail.data.supplier_name}</h2><p>Into {detail.data.location_name} · {outstanding} unit{outstanding === 1 ? "" : "s"} still expected</p></div><div className="scan-progress"><strong>{scanned}</strong><span>staged now</span></div></div>
+    <DeliveryNoteAssist tenant={tenant} purchaseOrderId={purchaseOrderId} onApply={(proposalCounts, proposalKey) => {
+      setCounts(proposalCounts);
+      setAppliedProposalKey(proposalKey);
+      setFeedback({ tone: "success", message: "Reviewed delivery-note quantities loaded. Scan or edit them further, then press Receive scanned stock." });
+      queueMicrotask(() => inputRef.current?.focus());
+    }} />
     <BarcodeCapture inputRef={inputRef} onScan={scan} feedback={feedback} label="Scan delivered product barcode" />
     <div className="scan-lines">{detail.data.lines.map(line => {
       const target = targets.find(item => item.lineId === line.id)!;
@@ -248,7 +276,7 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
       </div>;
     })}</div>
     {receive.error && <ErrorText error={receive.error} />}
-    <div className="warehouse-commit"><div><strong>{scanned ? `${scanned} unit${scanned === 1 ? "" : "s"} ready to receive` : "Nothing scanned yet"}</strong><span>Only these staged quantities will increase on-hand stock.</span></div><button className="primary" disabled={receive.isPending || scanned === 0} onClick={() => receive.mutate()}><Truck size={16} /> Receive scanned stock</button></div>
+    <div className="warehouse-commit"><div><strong>{scanned ? `${scanned} unit${scanned === 1 ? "" : "s"} ready to receive` : "Nothing scanned yet"}</strong><span>Only these staged quantities will increase on-hand stock.{appliedProposalKey ? " A reviewed delivery-note proposal is attached to this receipt." : ""}</span></div><button className="primary" disabled={receive.isPending || scanned === 0} onClick={() => receive.mutate()}><Truck size={16} /> Receive scanned stock</button></div>
   </div>;
 }
 
