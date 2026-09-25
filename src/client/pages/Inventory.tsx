@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft, Barcode, Camera, MapPin, Plus, ScanLine, Store } from "lucide-react";
+import { ArrowRightLeft, Barcode, Camera, MapPin, Plus, ScanLine, Search, Store } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import type { InventorySavedViewConfig } from "../../shared/saved-views";
 import InventoryHistory from "../InventoryHistory";
+import SavedViews from "../SavedViews";
 import { tenantApi } from "../api";
 import type { InventoryRow, Location } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader } from "../ui";
 
 type InventorySettings = { low_stock_threshold: number };
+
+const DEFAULT_VIEW: InventorySavedViewConfig = { query: "", locationId: null, stock: "all" };
 
 export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
@@ -15,12 +19,26 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [view, setView] = useState<InventorySavedViewConfig>(DEFAULT_VIEW);
   const canCreateLocation = ["owner", "admin", "inventory"].includes(tenant.role);
   const canUpdateStock = ["owner", "admin", "manager", "inventory", "fulfilment"].includes(tenant.role);
   const inventory = useQuery({ queryKey: ["tenant", tenant.id, "inventory"], queryFn: () => tenantApi<InventoryRow[]>(tenant.id, "/inventory") });
   const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
   const settings = useQuery({ queryKey: ["tenant", tenant.id, "settings"], queryFn: () => tenantApi<InventorySettings>(tenant.id, "/settings") });
   const threshold = settings.data?.low_stock_threshold ?? 5;
+  const filtered = useMemo(() => {
+    const needle = view.query.trim().toLocaleLowerCase();
+    return (inventory.data || []).filter(row => {
+      const tracked = row.tracked !== 0;
+      if (view.locationId && row.location_id !== view.locationId) return false;
+      if (needle && ![row.product_name, row.variant_name, row.sku, row.barcode, row.location_name].some(value => String(value || "").toLocaleLowerCase().includes(needle))) return false;
+      if (view.stock === "tracked" && !tracked) return false;
+      if (view.stock === "untracked" && tracked) return false;
+      if (view.stock === "out" && (!tracked || row.available > 0)) return false;
+      if (view.stock === "low" && (!tracked || row.available > threshold)) return false;
+      return true;
+    });
+  }, [inventory.data, threshold, view]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory-movements"] });
@@ -29,9 +47,20 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
   };
 
+  useEffect(() => setView(DEFAULT_VIEW), [tenant.id]);
+
   return <>
     <PageHeader eyebrow="Stock" title="Inventory" description="On hand, reserved, available and incoming stock stay separate. Every physical change leaves an auditable movement." actions={<><button className="secondary" onClick={() => setScanOpen(true)}><ScanLine size={17} /> Scan barcode</button>{canCreateLocation && <button className="secondary" onClick={() => setLocationOpen(true)}><Store size={17} /> Add location</button>}{canUpdateStock && <button className="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft size={17} /> Transfer</button>}{canUpdateStock && <button className="primary" onClick={() => setAdjustOpen(true)}><Plus size={17} /> Adjust stock</button>}</>} />
-    <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!inventory.data?.length} emptyText="Create a product and stock location to begin tracking inventory."><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{inventory.data?.map((row, index) => {
+    <section className="panel view-toolbar">
+      <div className="view-filters">
+        <label className="filter-search"><Search size={15} /><input aria-label="Search inventory" value={view.query} onChange={event => setView(current => ({ ...current, query: event.target.value }))} placeholder="Product, SKU, barcode or location…" /></label>
+        <select aria-label="Filter inventory by location" value={view.locationId || ""} onChange={event => setView(current => ({ ...current, locationId: event.target.value || null }))}><option value="">All locations</option>{locations.data?.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}</select>
+        <select aria-label="Filter inventory by stock state" value={view.stock} onChange={event => setView(current => ({ ...current, stock: event.target.value as InventorySavedViewConfig["stock"] }))}><option value="all">All stock states</option><option value="low">Low stock</option><option value="out">Out of stock</option><option value="tracked">Tracked only</option><option value="untracked">Not stocked yet</option></select>
+        <button type="button" className="table-action quiet" disabled={JSON.stringify(view) === JSON.stringify(DEFAULT_VIEW)} onClick={() => setView(DEFAULT_VIEW)}>Clear</button>
+      </div>
+      <SavedViews tenant={tenant} page="inventory" config={view} onApply={setView} />
+    </section>
+    <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!filtered.length} emptyText={inventory.data?.length ? "No inventory rows match the current view." : "Create a product and stock location to begin tracking inventory."}><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{filtered.map((row, index) => {
       const tracked = row.tracked !== 0;
       return <tr key={`${row.variant_id}:${row.location_id}:${index}`} className={tracked ? "" : "inventory-untracked"}><td><strong>{row.product_name} <span className="muted">· {row.variant_name}</span></strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : ""}</small></td><td>{row.location_name}{!tracked && <small>Not stocked here yet</small>}</td><td>{tracked ? row.on_hand : <span className="muted">—</span>}</td><td>{tracked ? row.reserved : <span className="muted">—</span>}</td><td>{tracked ? <strong className={row.available <= threshold ? "danger-text" : ""}>{row.available}</strong> : <span className="muted">—</span>}</td><td>{tracked ? row.incoming : <span className="muted">—</span>}</td></tr>;
     })}</tbody></table></DataState></div>
