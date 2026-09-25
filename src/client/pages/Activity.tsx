@@ -6,14 +6,15 @@ import { date, downloadTenantCsv, tenantApi } from "../api";
 import type { AuditEvent } from "../model";
 import { DataState, ErrorText, PageHeader } from "../ui";
 
-type ExportKind = "products" | "inventory" | "orders" | "purchase-orders" | "customers" | "suppliers" | "audit";
+type ExportKind = "products" | "inventory" | "orders" | "purchase-orders" | "delivery-discrepancies" | "customers" | "suppliers" | "audit";
 type ExportDefinition = { kind: ExportKind; label: string; description: string };
 
 const exports: ExportDefinition[] = [
   { kind: "products", label: "Products & variants", description: "Product, variant, SKU, barcode, option, price, cost and tax snapshots." },
   { kind: "inventory", label: "Inventory position", description: "On-hand, reserved, available and incoming stock by variant and location." },
   { kind: "orders", label: "Orders", description: "Order headers, lifecycle state and commercial totals." },
-  { kind: "purchase-orders", label: "Purchase orders", description: "Supplier, destination, status and commercial totals." },
+  { kind: "purchase-orders", label: "Purchase orders", description: "Supplier, destination, lifecycle, expected arrival and commercial totals." },
+  { kind: "delivery-discrepancies", label: "Delivery discrepancies", description: "PO, supplier, issue evidence and audited resolution history for delivery mismatches." },
   { kind: "customers", label: "Customers", description: "Saved customer contact details." },
   { kind: "suppliers", label: "Suppliers", description: "Saved supplier contact details." },
   { kind: "audit", label: "Audit trail", description: "Actor, role, action, entity and timestamp for recent operational mutations." },
