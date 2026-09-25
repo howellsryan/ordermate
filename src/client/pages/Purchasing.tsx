@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
 import DocumentInbox from "../DocumentInbox";
+import { PurchaseOrderDetailModal } from "../RecordDetails";
 import { date, money, tenantApi } from "../api";
 import type { Location, Product, PurchaseOrder, PurchaseOrderDetail, Supplier } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "../ui";
@@ -11,6 +12,7 @@ type DraftLine = { id: string; variantId: string; quantity: string; cost: string
 
 export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
+  const [viewId, setViewId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const canWrite = tenant.role !== "viewer";
@@ -20,13 +22,15 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
+    if (viewId) qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", viewId] });
   };
   const submit = useMutation({ mutationFn: (poId: string) => tenantApi(tenant.id, `/purchase-orders/${poId}/submit`, { method: "POST", body: JSON.stringify({}) }), onSuccess: refresh });
 
   return <>
     <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> New purchase order</button> : undefined} />
     <DocumentInbox tenant={tenant} />
-    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><strong>{po.number}</strong><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}</td></tr>)}</tbody></table></DataState></div>
+    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}</td></tr>)}</tbody></table></DataState></div>
+    {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
     {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); refresh(); }} />}
     {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
   </>;
