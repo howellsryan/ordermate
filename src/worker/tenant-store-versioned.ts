@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 3;
+const CURRENT_TENANT_SCHEMA_VERSION = 4;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -112,6 +112,34 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 3);
     });
     current = 3;
+  }
+
+  if (current < 4) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS delivery_discrepancies (
+          id TEXT PRIMARY KEY,
+          purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id),
+          proposal_key TEXT NOT NULL UNIQUE,
+          proposal_event_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+          issue_count INTEGER NOT NULL CHECK(issue_count > 0),
+          evidence_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          resolved_at TEXT,
+          resolved_by TEXT,
+          resolution_code TEXT CHECK(resolution_code IS NULL OR resolution_code IN ('supplier_follow_up','accepted_variance','corrected_document','other')),
+          resolution_note TEXT
+        );
+        CREATE INDEX IF NOT EXISTS delivery_discrepancies_po_status_idx
+          ON delivery_discrepancies(purchase_order_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS delivery_discrepancies_status_idx
+          ON delivery_discrepancies(status, created_at DESC);
+      `);
+      recordMigration(storage, 4);
+    });
+    current = 4;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
