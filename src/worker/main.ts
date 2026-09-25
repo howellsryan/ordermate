@@ -4,7 +4,7 @@ import baseWorker from "./index";
 import { documentsApp } from "./documents";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
-import { TenantStore } from "./tenant-store";
+import { TenantStore } from "./tenant-store-runtime";
 
 export { TenantStore };
 
