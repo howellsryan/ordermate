@@ -1,8 +1,11 @@
 import type { SessionPayload } from "../shared/types";
 
-async function errorFrom(response: Response) {
-  const payload = await response.json().catch(() => ({ error: response.statusText }));
-  return new Error(payload.error || `Request failed (${response.status})`);
+export async function errorFrom(response: Response) {
+  const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
+  const message = payload && typeof payload === "object" && "error" in payload && typeof (payload as { error?: unknown }).error === "string"
+    ? (payload as { error: string }).error
+    : `Request failed (${response.status})`;
+  return new Error(message);
 }
 
 export async function getSession(): Promise<SessionPayload | null> {
