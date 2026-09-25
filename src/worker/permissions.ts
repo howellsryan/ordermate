@@ -56,7 +56,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
   }
   if (path.startsWith("/customers")) return { resource: "customers", action };
   if (path.startsWith("/settings")) return { resource: "settings", action };
-  if (path.startsWith("/audit") || path.startsWith("/dashboard") || path.startsWith("/barcode")) return { resource: "reports", action: "read" };
+  if (path.startsWith("/reports") || path.startsWith("/audit") || path.startsWith("/dashboard") || path.startsWith("/barcode")) return { resource: "reports", action: "read" };
 
   return { resource: "unknown", action };
 }
