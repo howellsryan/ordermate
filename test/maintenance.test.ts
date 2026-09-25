@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import type { TenantStore } from "../src/worker/tenant-store-runtime";
+import type { TenantStore } from "../src/worker/tenant-store-planning";
 
 type Stub = DurableObjectStub<TenantStore>;
 
@@ -96,6 +96,9 @@ describe("record maintenance", () => {
       reason: "Opening stock",
     });
 
+    const dashboardBefore = await request<{ lowStockVariants: number }>(stub, "/dashboard");
+    expect(dashboardBefore.data.lowStockVariants).toBe(1);
+
     const archived = await request<{ ok: boolean; status: string }>(stub, `/products/${productId}/status`, "PATCH", { status: "archived" });
     expect(archived.response.ok).toBe(true);
     expect(archived.data.status).toBe("archived");
@@ -107,6 +110,10 @@ describe("record maintenance", () => {
 
     const inventory = await request<Array<{ variant_id: string; on_hand: number; tracked: number }>>(stub, "/inventory");
     expect(inventory.data).toContainEqual(expect.objectContaining({ variant_id: variantId, on_hand: 3, tracked: 1 }));
+
+    const dashboardAfter = await request<{ lowStockVariants: number; inventoryValueMinor: number }>(stub, "/dashboard");
+    expect(dashboardAfter.data.lowStockVariants).toBe(0);
+    expect(dashboardAfter.data.inventoryValueMinor).toBeGreaterThan(0);
 
     const blockedOrder = await request(stub, "/orders", "POST", {
       locationId: location.data.id,
