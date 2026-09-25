@@ -45,6 +45,7 @@ export type InventoryRow = {
   reserved: number;
   available: number;
   incoming: number;
+  tracked?: number;
 };
 
 export type Supplier = {
@@ -52,6 +53,54 @@ export type Supplier = {
   name: string;
   email?: string | null;
   phone?: string | null;
+};
+
+export type SupplierVariant = {
+  supplier_id: string;
+  supplier_name: string;
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  barcode?: string | null;
+  supplier_sku?: string | null;
+  last_cost_minor?: number | null;
+  lead_time_days?: number | null;
+};
+
+export type ReplenishmentSupplier = {
+  supplierId: string;
+  supplierName: string;
+  supplierSku?: string | null;
+  lastCostMinor?: number | null;
+  leadTimeDays?: number | null;
+};
+
+export type ReplenishmentSuggestion = {
+  id: string;
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  location_id: string;
+  location_name: string;
+  on_hand: number;
+  reserved: number;
+  available: number;
+  incoming: number;
+  fulfilled_30d: number;
+  threshold: number;
+  average_daily_demand: number;
+  effective_lead_time_days: number;
+  projected_at_lead_time: number;
+  recommended_quantity: number;
+  suppliers: ReplenishmentSupplier[];
+};
+
+export type ReplenishmentResponse = {
+  generated_at: string;
+  window_days: number;
+  suggestions: ReplenishmentSuggestion[];
 };
 
 export type Customer = {
