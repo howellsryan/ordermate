@@ -64,6 +64,17 @@ describe("tenant route permission classification", () => {
     expect(can("owner", internal.resource, internal.action)).toBe(false);
   });
 
+  it("lets every role manage only its own saved-view preferences at the route boundary", () => {
+    expect(permissionForRequest("/saved-views?page=inventory", "GET")).toEqual({ resource: "preferences", action: "read" });
+    expect(permissionForRequest("/saved-views", "POST")).toEqual({ resource: "preferences", action: "create" });
+    expect(permissionForRequest("/saved-views/view-1", "DELETE")).toEqual({ resource: "preferences", action: "delete" });
+    for (const role of ["owner", "admin", "manager", "inventory", "fulfilment", "viewer"] as const) {
+      expect(can(role, "preferences", "read")).toBe(true);
+      expect(can(role, "preferences", "create")).toBe(true);
+      expect(can(role, "preferences", "delete")).toBe(true);
+    }
+  });
+
   it("classifies supplier mappings and replenishment as purchasing operations", () => {
     expect(permissionForRequest("/supplier-variants", "GET")).toEqual({ resource: "purchasing", action: "read" });
     expect(permissionForRequest("/supplier-variants", "POST")).toEqual({ resource: "purchasing", action: "update" });
