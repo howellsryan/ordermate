@@ -17,6 +17,8 @@ type ProposalSummary = { key: string; uploaded: string; status: string; supplier
 
 const PURPOSE = "purchase-source";
 const PROPOSAL_PURPOSE = "purchase-proposal";
+const EXTRACTION_REQUEST_PURPOSE = "purchase-extraction-request";
+const QUEUE_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 export const documentsApp = new Hono<{ Bindings: Env }>();
 
 async function contextFor(request: Request, env: Env, action: "read" | "create" | "update") {
@@ -56,6 +58,42 @@ function proposalSummary(object: R2Object): ProposalSummary {
     warningCount: Number(metadata.warningCount || 0),
     eventId: metadata.eventId || object.key.split("/").at(-1)?.replace(/\.json$/, "") || "",
   };
+}
+
+function sourceEventId(tenantId: string, key: string) {
+  const prefix = `${tenantId}/${PURPOSE}/`;
+  if (!key.startsWith(prefix)) return null;
+  const eventId = key.slice(prefix.length);
+  return eventId && !eventId.includes("/") ? eventId : null;
+}
+
+async function queueExtraction(env: Env, tenantId: string, key: string, eventId: string, uploadedBy: string, createdAt: string) {
+  const proposalKey = `${tenantId}/${PROPOSAL_PURPOSE}/${eventId}.json`;
+  if (await env.DOCUMENTS.head(proposalKey)) return "already_processed" as const;
+
+  const markerKey = `${tenantId}/${EXTRACTION_REQUEST_PURPOSE}/${eventId}.json`;
+  const marker = await env.DOCUMENTS.head(markerKey);
+  if (marker && Date.now() - marker.uploaded.getTime() < QUEUE_DEDUPE_WINDOW_MS) return "already_queued" as const;
+
+  await env.DOCUMENTS.put(markerKey, JSON.stringify({ eventId, queuedAt: new Date().toISOString() }), {
+    httpMetadata: { contentType: "application/json" },
+    customMetadata: { eventId },
+  });
+  try {
+    await env.EVENTS_QUEUE.send({
+      type: "document.uploaded",
+      eventId,
+      tenantId,
+      key,
+      purpose: PURPOSE,
+      uploadedBy,
+      createdAt,
+    });
+  } catch (cause) {
+    await env.DOCUMENTS.delete(markerKey).catch(() => undefined);
+    throw cause;
+  }
+  return "queued" as const;
 }
 
 documentsApp.get("/capabilities", async c => {
@@ -108,6 +146,30 @@ documentsApp.get("/proposal", async c => {
   const object = await c.env.DOCUMENTS.get(key);
   if (!object) return c.json({ error: "Proposal not found" }, 404);
   return c.json(await object.json<unknown>());
+});
+
+documentsApp.post("/extract", async c => {
+  const context = await contextFor(c.req.raw, c.env, "update");
+  if ("error" in context) return context.error;
+  if (c.env.AI_DOCUMENT_EXTRACTION_ENABLED !== "true") return c.json({ error: "AI document extraction is disabled for this deployment" }, 409);
+
+  const body = await c.req.json<{ key?: string }>();
+  const key = body.key || "";
+  const eventId = sourceEventId(context.tenantId, key);
+  if (!eventId) return c.json({ error: "Source document not found" }, 404);
+
+  const source = await c.env.DOCUMENTS.head(key);
+  if (!source || source.customMetadata?.tenantId !== context.tenantId || source.customMetadata?.purpose !== PURPOSE) return c.json({ error: "Source document not found" }, 404);
+
+  const result = await queueExtraction(
+    c.env,
+    context.tenantId,
+    key,
+    eventId,
+    context.session.user.id,
+    source.customMetadata?.createdAt || source.uploaded.toISOString(),
+  );
+  return c.json({ status: result, eventId });
 });
 
 documentsApp.post("/proposal/complete", async c => {
@@ -164,15 +226,7 @@ documentsApp.post("/", async c => {
   });
 
   if (extractionEnabled) {
-    await c.env.EVENTS_QUEUE.send({
-      type: "document.uploaded",
-      eventId,
-      tenantId: context.tenantId,
-      key,
-      purpose: PURPOSE,
-      uploadedBy: context.session.user.id,
-      createdAt,
-    });
+    await queueExtraction(c.env, context.tenantId, key, eventId, context.session.user.id, createdAt);
   }
 
   const object = await c.env.DOCUMENTS.head(key);
