@@ -34,12 +34,13 @@ OrderMate currently includes:
 - per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
 - reviewed supplier-SKU learning from purchase-document proposals without fuzzy or ambiguous mapping;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
+- explicit order required-by dates and low/normal/high/urgent planning priority, with urgency-aware Warehouse picking;
 - global search, operational attention inbox, audit/activity, CSV exports and record detail views;
 - private cross-device saved views for Inventory and Purchasing;
 - deterministic Operations Reports for stock valuation/health, confirmed/completed order value, physical throughput and purchasing commitments;
 - tenant-scoped R2 purchasing documents and human-reviewed AI extraction for purchase documents and delivery notes;
 - maintainable supplier/customer records; and
-- ordered tenant-schema migration tracking, currently schema v5.
+- ordered tenant-schema migration tracking, currently schema v6.
 
 ## Local setup
 
@@ -142,6 +143,16 @@ Reports are deterministic read models over canonical tenant records. The workspa
 
 Commercial Operations Reports use a separate `analytics:read` permission. Fulfilment users retain Activity/Audit access without receiving purchasing analytics.
 
+## Order priority and required-by dates
+
+Open orders can carry an explicit required-by date and one of four planning priorities: `low`, `normal`, `high` or `urgent`.
+
+These values are deliberate operator/customer commitments rather than inferred dates. Owner/Admin/Manager may edit them while an order is open; Fulfilment users may execute picking and fulfilment but cannot redefine the commitment.
+
+The Warehouse pick queue is deterministic: priority first (`urgent` -> `high` -> `normal` -> `low`), then earliest required-by date, then oldest order. Overdue required-by orders are promoted to critical operational attention and highlighted in Orders/Warehouse without changing the canonical order lifecycle.
+
+Priority and required-by values are audited, searchable and included in order CSV exports.
+
 ## Purchase-order expected delivery
 
 Open purchase orders may carry an explicit expected delivery date. If none is supplied, submission derives one only when every PO line has a known lead-time mapping for that supplier, using the slowest mapped line. If coverage is incomplete, the date remains unset rather than being guessed.
@@ -194,7 +205,7 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, PO due-date/discrepancy rules, saved-view privacy, report reconciliation, deterministic document matching and import/bulk atomicity are required regression areas.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, order urgency, PO due-date/discrepancy rules, saved-view privacy, report reconciliation, deterministic document matching and import/bulk atomicity are required regression areas.
 
 ## Production configuration
 
