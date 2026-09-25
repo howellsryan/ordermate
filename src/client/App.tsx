@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleUserRound,
   ClipboardList,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -19,20 +20,22 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
-import type { SessionPayload } from "../shared/types";
+import type { Role, SessionPayload } from "../shared/types";
 import { authClient } from "./auth-client";
 import { controlApi, createOrganization, getSession } from "./api";
+import GlobalSearch from "./GlobalSearch";
 import Overview from "./pages/Overview";
 import Products from "./pages/Products";
 import Inventory from "./pages/Inventory";
 import Purchasing from "./pages/Purchasing";
 import Orders from "./pages/Orders";
 import { Customers, Suppliers } from "./pages/People";
+import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import { ErrorText, Field, Modal } from "./ui";
 
-type Page = "overview" | "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "team" | "settings";
+type Page = "overview" | "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
 
 const nav: NavItem[] = [
@@ -43,9 +46,17 @@ const nav: NavItem[] = [
   { id: "purchasing", label: "Purchase orders", icon: ClipboardList },
   { id: "suppliers", label: "Suppliers", icon: Truck },
   { id: "customers", label: "Customers", icon: Users },
+  { id: "activity", label: "Activity & data", icon: History },
   { id: "team", label: "Team & roles", icon: UserCog },
-  { id: "settings", label: "Settings & activity", icon: SettingsIcon },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
+
+function pageVisible(role: Role, page: Page) {
+  if (role === "owner" || role === "admin") return true;
+  if (page === "team" || page === "settings") return role === "manager" || role === "viewer";
+  if (page === "purchasing" || page === "suppliers") return role !== "fulfilment";
+  return true;
+}
 
 export default function App() {
   const qc = useQueryClient();
@@ -87,12 +98,23 @@ export default function App() {
     if (activeTenantId) localStorage.setItem("ordermate:tenant", activeTenantId);
   }, [activeTenantId]);
 
+  useEffect(() => {
+    if (activeTenant && !pageVisible(activeTenant.role, page)) setPage("overview");
+  }, [activeTenant?.role, page]);
+
   if (sessionQuery.isLoading) return <LoadingScreen />;
   if (!session) return <SignIn inviteToken={inviteToken} />;
   if (inviteToken && !acceptInvite.isSuccess) return <InviteGate pending={acceptInvite.isPending || !inviteAttempted} error={acceptInvite.error} />;
   if (acceptInvite.isSuccess && !session.organizations.some(org => org.id === activeTenantId)) return <LoadingScreen />;
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
+
+  const visibleNav = nav.filter(item => pageVisible(activeTenant.role, item.id));
+  const navigate = (target: Page) => {
+    if (!pageVisible(activeTenant.role, target)) return;
+    setPage(target);
+    setMobileNav(false);
+  };
 
   const switchTenant = (tenantId: string) => {
     setActiveTenantId(tenantId);
@@ -112,21 +134,22 @@ export default function App() {
         </button>
         <button className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>
       </div>
-      <nav className="main-nav" aria-label="Main navigation">{nav.map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => { setPage(item.id); setMobileNav(false); }}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
+      <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
       <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{activeTenant.role}</small></span></div><button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => authClient.signOut().then(() => location.reload())}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav && <button className="scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
 
     <main className="main">
-      <header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="runtime-dot" /><span>Cloudflare EU</span><small>·</small><span className="role-pill">{activeTenant.role}</span></div></header>
+      <header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>Cloudflare EU</span><small>·</small><span className="role-pill">{activeTenant.role}</span></div></header>
       <div className="workspace">
-        {page === "overview" && <Overview tenant={activeTenant} />}
+        {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
         {page === "orders" && <Orders tenant={activeTenant} />}
         {page === "products" && <Products tenant={activeTenant} />}
         {page === "inventory" && <Inventory tenant={activeTenant} />}
         {page === "purchasing" && <Purchasing tenant={activeTenant} />}
         {page === "suppliers" && <Suppliers tenant={activeTenant} />}
         {page === "customers" && <Customers tenant={activeTenant} />}
+        {page === "activity" && <Activity tenant={activeTenant} />}
         {page === "team" && <Team tenant={activeTenant} />}
         {page === "settings" && <Settings tenant={activeTenant} />}
       </div>
