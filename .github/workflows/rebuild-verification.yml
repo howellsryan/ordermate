@@ -31,7 +31,19 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: |
+          set +e
+          npm install --no-audit --no-fund --verbose
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "--- npm debug log ---"
+            latest_log="$(ls -1t "$HOME"/.npm/_logs/*-debug-0.log 2>/dev/null | head -n 1)"
+            if [ -n "$latest_log" ]; then
+              cat "$latest_log"
+            fi
+            exit "$status"
+          fi
 
       - name: Commit generated lockfile
         shell: bash
