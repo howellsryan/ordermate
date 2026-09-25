@@ -5,7 +5,7 @@
 OrderMate is a Cloudflare-native modular monolith. The browser talks to one Worker. Authentication and membership are global; operational business data is physically isolated per tenant.
 
 ### Control plane
-`CONTROL_DB` is a D1 database restricted to the EU jurisdiction. Better Auth stores Google identities, sessions, organizations, members and invitations here. The Worker derives the user from the session and verifies organization membership before any tenant request is routed.
+`CONTROL_DB` is a D1 database restricted to the EU jurisdiction. Better Auth stores Google identities, sessions, organizations, members and workspace invitations here. The Worker derives the user from the session and verifies organization membership before any tenant request is routed.
 
 ### Tenant data plane
 Each Better Auth organization ID maps deterministically to one `TenantStore` Durable Object via the EU-restricted subnamespace. Its embedded SQLite database stores catalogue, locations, inventory ledger, suppliers, purchase orders, customers, orders, fulfilments, returns and tenant audit history.
@@ -29,7 +29,7 @@ Inventory is per variant and location. `on_hand`, `reserved` and derived `availa
 Suppliers own purchase orders. PO lines snapshot supplier references, unit cost and tax. Partial receiving is supported and receiving creates inventory movements.
 
 ### Orders
-Order lines snapshot product/variant/SKU, price and tax. Confirmation creates reservations. Fulfilment consumes reserved/on-hand quantities. Cancellation releases outstanding reservations. Returns are independent events and may optionally restock.
+Order lines snapshot product/variant/SKU, price, tax and selected modifiers. Confirmation creates reservations. Partial fulfilment consumes only the quantity leaving the location and retains the outstanding reservation. Cancellation releases outstanding reservations. Returns are independent events and may optionally restock.
 
 ### Money and tax
 All amounts are integer minor units. Each line stores net, tax and gross values plus the applied tax rate basis points. Tenant settings define default currency and whether catalogue prices are tax-inclusive.
@@ -40,12 +40,27 @@ All amounts are integer minor units. Each line stores net, tax and gross values 
 2. The Worker reads the session from secure cookies.
 3. The requested organization ID is treated only as a selector.
 4. The Worker verifies `member(user_id, organization_id)` in D1.
-5. Static role permissions are checked server-side.
+5. Static role permissions are checked server-side and unclassified tenant routes fail closed.
 6. The Worker routes to the tenant's EU Durable Object and replaces all internal actor headers.
 7. The tenant object records actor ID/role on every mutation.
+8. R2 document keys are tenant-prefixed and uploads repeat membership/permission checks.
 
 Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles and repeated/idempotent messages.
 
+## Schema evolution contract
+
+The initial release has no legacy tenant data to migrate, so a new `TenantStore` can safely bootstrap the complete v1 schema with idempotent `CREATE ... IF NOT EXISTS` statements.
+
+That bootstrap is **not** the migration strategy for later releases. Before the first post-v1 schema change is shipped to production, tenant storage must gain an explicit monotonically increasing schema version and ordered, transactional migrations. A future migration must:
+
+1. read the tenant's current schema version;
+2. apply every missing migration in order inside the Durable Object's serialized execution boundary;
+3. update the version only after the migration succeeds;
+4. be covered by tests for both a fresh tenant and an upgrade from the previous schema version; and
+5. never require replacing a tenant Durable Object or copying live business data merely to deploy application code.
+
+This is a merge gate for schema v2, not optional technical debt.
+
 ## Compliance posture
 
-D1, Durable Objects and R2 are created/restricted for EU jurisdiction where supported. PII must not be placed in queue names, object keys, logs or analytics dimensions. Data export/deletion and configurable retention remain first-class roadmap items before public launch.
+D1, Durable Objects and R2 are created/restricted for EU jurisdiction where supported. PII must not be placed in queue names, object keys, logs or analytics dimensions. Secrets are Wrangler secrets rather than source-controlled vars. Data export/deletion and configurable retention remain first-class requirements before public launch.
