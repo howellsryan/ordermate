@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, History, LockKeyhole, Save } from "lucide-react";
+import { Database, LockKeyhole, Save } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
-import { date, tenantApi } from "../api";
-import type { AuditEvent } from "../model";
-import { DataState, ErrorText, Field, PageHeader } from "../ui";
+import { tenantApi } from "../api";
+import { ErrorText, Field, PageHeader } from "../ui";
 
 type TenantSettings = {
   business_name: string;
@@ -17,7 +16,6 @@ type TenantSettings = {
 export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["tenant", tenant.id, "settings"], queryFn: () => tenantApi<TenantSettings>(tenant.id, "/settings") });
-  const audit = useQuery({ queryKey: ["tenant", tenant.id, "audit"], queryFn: () => tenantApi<AuditEvent[]>(tenant.id, "/audit") });
   const [currency, setCurrency] = useState("GBP");
   const [includeTax, setIncludeTax] = useState(true);
   const [tax, setTax] = useState("20");
@@ -46,11 +44,12 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "settings"] });
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] });
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
     },
   });
 
   return <>
-    <PageHeader eyebrow="Workspace" title="Settings & activity" description="Commercial defaults and an immutable view of who changed operational data." />
+    <PageHeader eyebrow="Workspace" title="Settings" description="Commercial defaults, stock thresholds and the infrastructure boundaries for this business." />
     <div className="settings-grid">
       <section className="panel settings-card">
         <div className="panel-heading"><div><p className="eyebrow">Commercial defaults</p><h3>Tax & inventory</h3></div><Database size={21} /></div>
@@ -69,15 +68,5 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
         <p className="settings-note">The tenant selector from the browser is never an authorization boundary. Membership is verified before the Worker routes to the tenant's isolated data object.</p>
       </section>
     </div>
-    <section className="panel audit-panel">
-      <div className="panel-heading audit-heading"><div><p className="eyebrow">Audit trail</p><h3>Recent workspace activity</h3></div><History size={21} /></div>
-      <DataState loading={audit.isLoading} error={audit.error} empty={!audit.data?.length} emptyText="Operational mutations will appear here.">
-        <div className="audit-list">{audit.data?.map(event => <div className="audit-row" key={event.id}><span className="audit-dot" /><div><strong>{humanAction(event.action)}</strong><small>{event.entity_type.replaceAll("_", " ")}{event.entity_id ? ` · ${event.entity_id.slice(0, 8)}` : ""}</small></div><span className="audit-role">{event.actor_role}</span><time>{date(event.created_at)}</time></div>)}</div>
-      </DataState>
-    </section>
   </>;
-}
-
-function humanAction(action: string) {
-  return action.split(".").map(part => part.replaceAll("_", " ")).join(" · ");
 }
