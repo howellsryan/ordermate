@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, Eye, FileCheck2, Sparkles, WandSparkles } 
 import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date, money, tenantApi } from "./api";
 import type { Location, Product, Supplier, SupplierVariant } from "./model";
-import { normalizeSupplierSku, supplierLearningDecision } from "./supplier-learning";
+import { normalizeSupplierSku, reviewedSupplierSkuConflicts, supplierLearningDecision } from "./supplier-learning";
 import { DataState, ErrorText, Field, Modal, Status, pounds } from "./ui";
 
 type ProposalSummary = {
@@ -122,6 +122,11 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
     cost: moneyInput(line.unitCostMinor ?? line.mappedLastCostMinor),
     tax: bpsInput(line.taxRateBps ?? line.defaultTaxRateBps),
   })));
+  const reviewedSkuConflicts = useMemo(() => reviewedSupplierSkuConflicts(proposal.lines.map(sourceLine => ({
+    index: sourceLine.index,
+    supplierSku: sourceLine.supplierSku,
+    variantId: reviewLines.find(line => line.index === sourceLine.index)?.variantId || "",
+  }))), [proposal.lines, reviewLines]);
 
   const currencyMismatch = !!proposal.extracted.currency && proposal.extracted.currency !== proposal.tenantCurrency;
   const canCreate = ["owner", "admin", "manager", "inventory"].includes(tenant.role);
@@ -146,7 +151,8 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
         for (const sourceLine of proposal.lines) {
           const line = reviewLines.find(item => item.index === sourceLine.index);
           if (!line || !sourceLine.supplierSku.trim()) continue;
-          const decision = supplierLearningDecision(mappings.data, supplierId, line.variantId, sourceLine.supplierSku);
+          const reviewedConflict = reviewedSkuConflicts.has(normalizeSupplierSku(sourceLine.supplierSku));
+          const decision = supplierLearningDecision(mappings.data, supplierId, line.variantId, sourceLine.supplierSku, reviewedConflict);
           const remember = learnOverrides[sourceLine.index] ?? decision.defaultSelected;
           if (!remember || decision.disabled) continue;
 
@@ -230,7 +236,8 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
     <div className="proposal-lines"><div className="proposal-lines-head"><span>Extracted evidence</span><span>OrderMate variant</span><span>Qty</span><span>Net unit cost</span><span>Tax %</span></div>{proposal.lines.map(sourceLine => {
       const line = reviewLines.find(item => item.index === sourceLine.index)!;
       const patch = (value: Partial<ReviewLine>) => setReviewLines(current => current.map(item => item.index === line.index ? { ...item, ...value } : item));
-      const learning = supplierLearningDecision(mappings.data || [], supplierId, line.variantId, sourceLine.supplierSku);
+      const reviewedConflict = reviewedSkuConflicts.has(normalizeSupplierSku(sourceLine.supplierSku));
+      const learning = supplierLearningDecision(mappings.data || [], supplierId, line.variantId, sourceLine.supplierSku, reviewedConflict);
       const remember = learnOverrides[sourceLine.index] ?? learning.defaultSelected;
       return <div className={`proposal-line ${sourceLine.warnings.length ? "proposal-line-warning" : ""}`} key={sourceLine.index}>
         <div className="proposal-line-evidence"><strong>{sourceLine.description || `Line ${sourceLine.index + 1}`}</strong><small>{[sourceLine.supplierSku && `Supplier SKU ${sourceLine.supplierSku}`, sourceLine.barcode && `Barcode ${sourceLine.barcode}`, sourceLine.variantMatch && `Matched by ${sourceLine.variantMatch.method.replaceAll("_", " ")}`].filter(Boolean).join(" · ") || "No identifying code extracted"}</small>{sourceLine.warnings.map((warning, index) => <span key={index}>{warning}</span>)}{sourceLine.supplierSku && supplierId && line.variantId ? <label className={`proposal-learn ${learning.disabled ? "disabled" : ""}`}><input type="checkbox" checked={remember} disabled={learning.disabled || mappings.isLoading || !!mappings.error} onChange={event => setLearnOverrides(current => ({ ...current, [sourceLine.index]: event.target.checked }))} /><span>{learning.label}</span></label> : null}</div>
