@@ -1,4 +1,4 @@
-import type { TenantStore } from "../src/worker/tenant-store-bulk";
+import type { TenantStore } from "../src/worker/tenant-store-reports";
 
 declare module "cloudflare:workers" {
   interface ProvidedEnv {
