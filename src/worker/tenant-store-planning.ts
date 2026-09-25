@@ -73,6 +73,9 @@ export class TenantStore extends VersionedTenantStore {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
 
+    if (request.method === "GET" && path === "/dashboard") {
+      return Response.json(this.dashboardV2());
+    }
     if (request.method === "GET" && path === "/inventory-policies") {
       return Response.json(this.listPolicies());
     }
@@ -88,6 +91,34 @@ export class TenantStore extends VersionedTenantStore {
     }
 
     return super.fetch(request);
+  }
+
+  private dashboardV2() {
+    const sql = this.planningCtx.storage.sql;
+    const settings = sql.exec<{ currency: string; low_stock_threshold: number }>(
+      "SELECT currency, low_stock_threshold FROM tenant_settings WHERE id = 1",
+    ).toArray()[0] || { currency: "GBP", low_stock_threshold: 0 };
+    const count = (query: string, ...bindings: unknown[]) => sql.exec<{ count: number }>(query, ...bindings).toArray()[0]?.count ?? 0;
+
+    return {
+      ordersOpen: count("SELECT COUNT(*) AS count FROM orders WHERE status IN ('draft','confirmed')"),
+      ordersAwaitingFulfilment: count("SELECT COUNT(*) AS count FROM orders WHERE status = 'confirmed' AND fulfilment_status != 'fulfilled'"),
+      purchaseOrdersOpen: count("SELECT COUNT(*) AS count FROM purchase_orders WHERE status IN ('draft','ordered','partially_received')"),
+      lowStockVariants: count(
+        `SELECT COUNT(*) AS count
+         FROM inventory_levels il
+         JOIN product_variants v ON v.id = il.variant_id AND v.active = 1
+         JOIN products p ON p.id = v.product_id AND p.status = 'active'
+         JOIN locations l ON l.id = il.location_id AND l.active = 1
+         LEFT JOIN inventory_policies ip ON ip.variant_id = il.variant_id AND ip.location_id = il.location_id
+         WHERE (il.on_hand - il.reserved) <= COALESCE(ip.reorder_point, ?)`,
+        settings.low_stock_threshold,
+      ),
+      inventoryValueMinor: sql.exec<{ total: number | null }>(
+        "SELECT SUM(il.on_hand * v.cost_minor) AS total FROM inventory_levels il JOIN product_variants v ON v.id = il.variant_id",
+      ).toArray()[0]?.total ?? 0,
+      currency: settings.currency,
+    };
   }
 
   private listPolicies() {
