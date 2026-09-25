@@ -12,7 +12,7 @@ Each Better Auth organization ID maps deterministically to one `TenantStore` Dur
 
 This deliberately avoids a shared operational database. A programming mistake cannot accidentally query another tenant's product/order rows because those rows do not exist in the current tenant database.
 
-SQLite-backed Durable Objects also serialize writes for a tenant. That is valuable for stock reservation, purchase receiving, fulfilment and atomic onboarding imports because competing mutations share one consistency boundary.
+SQLite-backed Durable Objects also serialize writes for a tenant. That is valuable for stock reservation, purchase receiving, fulfilment, reviewed stocktakes and atomic onboarding imports because competing mutations share one consistency boundary.
 
 ### Storage and automation
 R2 holds source documents, structured extraction proposals and future product media. Keys are tenant-prefixed and never include original filenames or other user-visible PII. Object access is only proxied after membership checks.
@@ -46,6 +46,17 @@ Inventory is per variant and location. `on_hand`, `reserved` and derived `availa
 
 A product/location cross-product is not automatically a stock position. The read model distinguishes never-stocked (`tracked=0`) from tracked zero stock. Low-stock alerts and replenishment only act on genuine tracked positions. Archived variants with physical stock remain visible for control/traceability but are excluded from active planning.
 
+### Cycle counts
+Cycle count is a reviewed **partial stocktake**, not a destructive full-location overwrite.
+
+The operator selects one active location and explicitly counts only the SKUs physically checked. Blank means “not counted; do not touch”. Zero is an explicit reviewed physical count and may establish a never-stocked SKU/location pair as tracked zero stock.
+
+For each counted line the client retains the on-hand/reserved snapshot that was visible when that SKU entered the count. Commit submits both the reviewed snapshot and physical count. The TenantStore rechecks every line against live stock before any mutation; if on-hand or reserved stock changed, the whole batch is rejected as stale.
+
+A count may never reduce on-hand below currently reserved stock. Successful counts update all reviewed levels in one `transactionSync`, create immutable `stocktake` movements only for non-zero variances under one stocktake reference, and write one tenant audit summary. A zero-variance count may deliberately establish tracking without inventing a quantity movement.
+
+Cycle-count permissions are intentionally narrower than generic inventory updates: Owner, Admin, Manager and Inventory may commit reviewed counts. Fulfilment cannot reconcile physical stock merely because it can perform fulfilment-related inventory updates.
+
 ### Warehouse operations
 Warehouse scanning is a client-side staging workflow over the canonical order/PO lifecycle endpoints; it is not a second inventory engine.
 
@@ -59,6 +70,8 @@ Scanned quantities do not change business data. The operator must explicitly com
 Suppliers own purchase orders. PO lines snapshot supplier references, unit cost and tax. Partial receiving is supported and receiving creates inventory movements. Purchase-order cancellation removes only outstanding incoming commitment; it never reverses already received physical stock.
 
 `supplier_variants` maps supplier SKU, latest known cost and lead time onto stable OrderMate variant identities.
+
+Supplier-code learning is human-reviewed. When a purchase-document proposal contains a supplier SKU, the reviewer may explicitly choose to remember that code only after confirming the supplier and OrderMate variant. Existing different codes are not silently replaced. A supplier code already owned by another variant is rejected both in the review UX and by the canonical supplier-mapping endpoint, preserving deterministic future matching.
 
 ### Replenishment planning
 Replenishment is deterministic and human-approved. It uses available/reserved stock, incoming submitted POs, fulfilled demand over the last 30 days and supplier lead time.
@@ -111,13 +124,14 @@ All amounts are integer minor units. Each line stores net, tax and gross values 
 4. The Worker verifies `member(user_id, organization_id)` in D1.
 5. Static role permissions are checked server-side and unclassified tenant routes fail closed.
 6. Catalogue import preview/commit are explicitly classified as `catalogue:create`, not generic inventory updates.
-7. The Worker routes to the tenant's EU Durable Object and replaces all internal actor headers.
-8. The tenant object records actor ID/role on every mutation.
-9. R2 document/proposal keys are tenant-prefixed and document endpoints repeat membership/permission checks.
-10. Custom mutations reject cross-site requests before business handlers run.
-11. Queue logging is limited to event type/ID; source filenames, tenant IDs, user IDs and document contents are not logged.
+7. Cycle-count commit is explicitly classified as `stocktake:create`; fulfilment roles do not inherit it from generic inventory update permission.
+8. The Worker routes to the tenant's EU Durable Object and replaces all internal actor headers.
+9. The tenant object records actor ID/role on every mutation.
+10. R2 document/proposal keys are tenant-prefixed and document endpoints repeat membership/permission checks.
+11. Custom mutations reject cross-site requests before business handlers run.
+12. Queue logging is limited to event type/ID; source filenames, tenant IDs, user IDs and document contents are not logged.
 
-Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching, warehouse scan invariants, archive/restore invariants, migration upgrades and catalogue-import stale/atomicity guarantees.
+Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching, warehouse scan invariants, cycle-count stale/atomicity guarantees, archive/restore invariants, migration upgrades and catalogue-import stale/atomicity guarantees.
 
 ## Schema evolution
 
