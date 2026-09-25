@@ -31,6 +31,8 @@ function existing(overrides: Partial<CatalogueImportExisting> = {}): CatalogueIm
     categories: [],
     suppliers: [],
     locations: [{ id: "loc-main", name: "Main warehouse", code: "MAIN" }],
+    supplierMappings: [],
+    defaultTaxRateBps: 2000,
     ...overrides,
   };
 }
@@ -61,7 +63,7 @@ describe("catalogue import planning", () => {
   });
 
   it("refuses duplicate SKU and barcode values inside the same file", async () => {
-    const duplicate = row({ rowNumber: 3, variantName: "Duplicate", openingStock: "0" });
+    const duplicate = row({ rowNumber: 3, variantName: "Duplicate", openingStock: "0", options: { Size: "Medium", Colour: "Navy" }, supplierSku: "ACME-TEE-DUP" });
     const plan = await buildReviewedCatalogueImportPlan([row(), duplicate], existing());
 
     expect(plan.canCommit).toBe(false);
@@ -88,7 +90,7 @@ describe("catalogue import planning", () => {
   it("refuses conflicting category/description metadata across variants of one product", async () => {
     const plan = await buildReviewedCatalogueImportPlan([
       row(),
-      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", category: "Different", description: "Different copy", openingStock: "0" }),
+      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", category: "Different", description: "Different copy", openingStock: "0", options: { Size: "Medium", Colour: "Navy" }, supplierSku: "ACME-TEE-M" }),
     ], existing());
 
     expect(plan.canCommit).toBe(false);
@@ -98,11 +100,52 @@ describe("catalogue import planning", () => {
   it("treats blank versus populated product metadata as a conflict instead of silently taking the first row", async () => {
     const plan = await buildReviewedCatalogueImportPlan([
       row({ category: "", description: "" }),
-      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", openingStock: "0" }),
+      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", openingStock: "0", options: { Size: "Medium", Colour: "Navy" }, supplierSku: "ACME-TEE-M" }),
     ], existing());
 
     expect(plan.canCommit).toBe(false);
     expect(plan.errors.map(issue => issue.code)).toEqual(expect.arrayContaining(["product_category_conflict", "product_description_conflict"]));
+  });
+
+  it("requires every variant of a product to use the same option dimensions", async () => {
+    const plan = await buildReviewedCatalogueImportPlan([
+      row(),
+      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", openingStock: "0", options: { Size: "Medium" }, supplierSku: "ACME-TEE-M" }),
+    ], existing());
+
+    expect(plan.canCommit).toBe(false);
+    expect(plan.errors.map(issue => issue.code)).toContain("product_option_dimensions_conflict");
+  });
+
+  it("rejects duplicate option combinations even when SKUs differ", async () => {
+    const plan = await buildReviewedCatalogueImportPlan([
+      row(),
+      row({ rowNumber: 3, sku: "TEE-S-NAVY-2", barcode: "5010000000099", variantName: "Small Navy duplicate", openingStock: "0", supplierSku: "ACME-TEE-S-NV-2" }),
+    ], existing());
+
+    expect(plan.canCommit).toBe(false);
+    expect(plan.errors.filter(issue => issue.code === "duplicate_option_combination")).toHaveLength(2);
+  });
+
+  it("rejects duplicate supplier SKU mappings for the same supplier", async () => {
+    const duplicateInFile = await buildReviewedCatalogueImportPlan([
+      row(),
+      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", openingStock: "0", options: { Size: "Medium", Colour: "Navy" } }),
+    ], existing());
+    expect(duplicateInFile.errors.filter(issue => issue.code === "duplicate_supplier_sku_in_file")).toHaveLength(2);
+
+    const existingMapping = await buildReviewedCatalogueImportPlan([row()], existing({
+      supplierMappings: [{ supplierId: "supplier-acme", supplierName: "Acme Textiles", variantId: "existing-variant", sku: "OLD-SKU", supplierSku: "ACME-TEE-S-NV" }],
+    }));
+    expect(existingMapping.errors.map(issue => issue.code)).toContain("supplier_sku_exists");
+  });
+
+  it("uses the workspace tax default when tax is blank", async () => {
+    const plan = await buildReviewedCatalogueImportPlan([row({ taxPercent: "" })], existing({ defaultTaxRateBps: 1750 }));
+
+    expect(plan.canCommit).toBe(true);
+    expect(plan.products[0].variants[0].taxRateBps).toBe(1750);
+    expect(plan.warnings).toContainEqual(expect.objectContaining({ code: "tax_defaulted" }));
   });
 
   it("uses existing exact category/supplier identities instead of planning duplicates", async () => {
@@ -122,7 +165,9 @@ describe("catalogue import planning", () => {
     const rows = [row()];
     const before = await buildReviewedCatalogueImportPlan(rows, existing());
     const after = await buildReviewedCatalogueImportPlan(rows, existing({ categories: [{ id: "cat", name: "Apparel" }] }));
+    const taxChanged = await buildReviewedCatalogueImportPlan(rows, existing({ defaultTaxRateBps: 1750 }));
 
     expect(before.fingerprint).not.toBe(after.fingerprint);
+    expect(before.fingerprint).not.toBe(taxChanged.fingerprint);
   });
 });
