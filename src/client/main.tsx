@@ -12,6 +12,7 @@ import "./inventory-history.css";
 import "./product-edit.css";
 import "./confirmations.css";
 import "./supply-planning.css";
+import "./replenishment-policies.css";
 import "./maintenance.css";
 import "./warehouse.css";
 import "./delivery-notes.css";
