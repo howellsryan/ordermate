@@ -13,7 +13,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Role-aware UI for Owner, Admin, Manager, Inventory, Fulfilment and Viewer.
 - Cross-origin custom API mutations rejected at the public Worker boundary.
 - Unexpected custom API 5xx responses masked before leaving the Worker.
-- Ordered tenant schema migrations with v1 baseline verification and schema v2 `inventory_policies`.
+- Ordered tenant schema migrations with v1 baseline verification, schema-v2 `inventory_policies`, and schema-v3 PO expected-delivery storage/indexing.
 
 ## Catalogue and onboarding
 
@@ -55,6 +55,11 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Partial receiving with inventory movements and incoming-stock visibility.
 - Purchase-order cancellation without reversing already received stock.
 - PO detail view and receiving history.
+- Schema-v3 `expected_delivery_date` on purchase orders plus due-date index.
+- Manual expected-delivery editing is audited and remains available while a PO is open.
+- Submission derives an expected date only when every ordered line has a supplier lead-time mapping for that supplier, using the slowest mapped line; incomplete coverage leaves the date unset.
+- Open overdue POs are highlighted in purchasing and promoted to critical operational attention while their canonical status remains `ordered` / `partially_received`.
+- Expected dates are included in purchase-order search context and CSV exports.
 - Deterministic replenishment using available/reserved/incoming stock, 30-day fulfilment demand and supplier lead time.
 - Schema-v2 sparse replenishment policies per variant/location for reorder point, arrival target and preferred mapped supplier.
 - Supplier purchase-document inbox and AI-assisted proposal path with exact deterministic matching and human-reviewed draft-PO creation.
@@ -74,7 +79,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 ## Operational UX
 
 - Global tenant-scoped search with Cmd/Ctrl+K.
-- Operational attention inbox for low/zero stock, fulfilment work and incoming purchase orders.
+- Operational attention inbox for low/zero stock, fulfilment work, incoming purchase orders and overdue expected arrivals.
 - First-class Activity & Data workspace.
 - Searchable/filterable audit history.
 - Permission-checked CSV exports for catalogue, inventory, orders, POs, customers, suppliers and audit data.
@@ -82,6 +87,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Responsive role-aware navigation and mutation controls.
 - Human-review UI for document proposals, delivery-note proposals, replenishment policy and CSV onboarding.
 - Mobile-capable cycle counting with barcode/camera input, live variance review and commit-state locking.
+- Expected-delivery editing and overdue highlighting in purchasing/detail UI.
 
 ## Regression coverage added
 
@@ -93,6 +99,7 @@ Cloudflare runtime/unit tests cover or specify:
 - partial fulfilment;
 - PO partial receiving and cancellation;
 - purchase receipt movements;
+- purchase-order expected-delivery derivation, manual override, incomplete lead-time coverage, closed-PO edit rejection and audit metadata;
 - barcode lookup and scan-count invariants;
 - tenant-local numbering;
 - RBAC route classification and fail-closed unknown routes;
@@ -100,8 +107,8 @@ Cloudflare runtime/unit tests cover or specify:
 - catalogue edits and archive/restore preserving history;
 - document and delivery-note deterministic matching;
 - human-reviewed supplier SKU learning decisions and server-side supplier-code uniqueness;
-- schema migration v1 -> v2 and policy-driven replenishment;
-- replenishment arrival-target semantics;
+- schema migration v1 -> v2 -> v3, including migration-3 replay when DDL exists but the marker is missing;
+- policy-driven replenishment and arrival-target semantics;
 - catalogue import dry-run validation, fingerprint changes, atomic commit, opening stock movements and stale-preview rejection;
 - cycle-count atomic variance commits, stale-snapshot rejection, reservation protection, tracked-zero establishment and audit history.
 
