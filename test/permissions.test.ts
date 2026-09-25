@@ -40,6 +40,17 @@ describe("tenant route permission classification", () => {
     }
   });
 
+  it("keeps atomic bulk catalogue retirement inside catalogue update permissions", () => {
+    const permission = permissionForRequest("/products/bulk-status", "PATCH");
+    expect(permission).toEqual({ resource: "catalogue", action: "update" });
+    expect(can("owner", permission.resource, permission.action)).toBe(true);
+    expect(can("admin", permission.resource, permission.action)).toBe(true);
+    expect(can("manager", permission.resource, permission.action)).toBe(true);
+    expect(can("inventory", permission.resource, permission.action)).toBe(false);
+    expect(can("fulfilment", permission.resource, permission.action)).toBe(false);
+    expect(can("viewer", permission.resource, permission.action)).toBe(false);
+  });
+
   it("classifies order and purchase-order lifecycle actions as updates", () => {
     expect(permissionForRequest("/orders/123/confirm", "POST")).toEqual({ resource: "orders", action: "update" });
     expect(permissionForRequest("/orders/123/fulfil", "POST")).toEqual({ resource: "orders", action: "update" });
