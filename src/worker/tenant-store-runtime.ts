@@ -165,7 +165,9 @@ export class TenantStore extends CoreTenantStore {
     } catch (cause) {
       if (cause instanceof Error && cause.message === "PRODUCT_NOT_FOUND") return Response.json({ error: "Product not found" }, { status: 404 });
       if (cause instanceof Error && cause.message === "VARIANT_NOT_FOUND") return Response.json({ error: "Product update contains an unknown variant" }, { status: 400 });
-      throw cause;
+      if (cause instanceof Error && cause.message.includes("UNIQUE constraint failed")) return Response.json({ error: "SKU and barcode values must be unique inside this business" }, { status: 409 });
+      console.error("TenantStore product update failed", cause);
+      return Response.json({ error: "Could not update product" }, { status: 500 });
     }
 
     return Response.json({ ok: true });
