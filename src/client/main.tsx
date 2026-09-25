@@ -20,6 +20,7 @@ import "./delivery-discrepancies.css";
 import "./camera-scanner.css";
 import "./catalogue-import.css";
 import "./stocktake.css";
+import "./saved-views.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
