@@ -39,5 +39,8 @@ run(["r2", "bucket", "create", "ordermate-documents", "--jurisdiction", "eu"]);
 console.log("\n3) Creating the application event queue...");
 run(["queues", "create", "ordermate-events"]);
 
+console.log("\n4) Creating the extraction dead-letter queue...");
+run(["queues", "create", "ordermate-events-dead"]);
+
 console.log("\nCloudflare bootstrap complete.");
-console.log("Next: apply D1 migrations, configure Wrangler secrets, then deploy. Durable Object storage is created by the v1 SQLite migration during `wrangler deploy`.");
+console.log("Next: apply D1 migrations, configure Wrangler secrets, then deploy. Durable Object storage is created by the v1 SQLite migration during `wrangler deploy`; Workers AI is bound by wrangler.jsonc and needs no separate provider secret.");
