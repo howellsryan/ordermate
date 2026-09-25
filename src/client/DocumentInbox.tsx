@@ -1,30 +1,27 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, FileImage, FileText, FileUp, UploadCloud } from "lucide-react";
+import { Eye, FileImage, FileText, FileUp, LockKeyhole, UploadCloud } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date } from "./api";
 import DocumentProposals from "./DocumentProposals";
 import { ErrorText } from "./ui";
 
-type DocumentSummary = {
-  key: string;
-  name: string;
-  size: number;
-  uploaded: string;
-  contentType: string;
-  purpose: string;
-  status: string;
-};
-
+type DocumentSummary = { key: string; name: string; size: number; uploaded: string; contentType: string; purpose: string; status: string };
 type DocumentList = { documents: DocumentSummary[]; truncated: boolean; cursor?: string };
+type DocumentCapabilities = { aiDocumentExtractionEnabled: boolean; aiProcessingResidency: string; storedSourceResidency: string };
 
 export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [previewError, setPreviewError] = useState<unknown>(null);
-  const canUpload = tenant.role !== "viewer";
+  const canUpload = ["owner", "admin", "manager", "inventory"].includes(tenant.role);
 
+  const capabilities = useQuery({
+    queryKey: ["tenant", tenant.id, "documents", "capabilities"],
+    queryFn: () => controlApi<DocumentCapabilities>("/documents/capabilities", { headers: { "x-ordermate-tenant": tenant.id } }),
+  });
+  const extractionEnabled = capabilities.data?.aiDocumentExtractionEnabled === true;
   const documents = useQuery({
     queryKey: ["tenant", tenant.id, "documents", "purchase-source"],
     queryFn: () => controlApi<DocumentList>("/documents?purpose=purchase-source", { headers: { "x-ordermate-tenant": tenant.id } }),
@@ -51,10 +48,7 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
   const preview = async (document: DocumentSummary) => {
     setPreviewError(null);
     try {
-      const response = await fetch(`/api/documents/file?key=${encodeURIComponent(document.key)}`, {
-        credentials: "include",
-        headers: { "x-ordermate-tenant": tenant.id },
-      });
+      const response = await fetch(`/api/documents/file?key=${encodeURIComponent(document.key)}`, { credentials: "include", headers: { "x-ordermate-tenant": tenant.id } });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(payload.error || `Preview failed (${response.status})`);
@@ -73,31 +67,27 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
 
   return <section className="panel document-inbox">
     <div className="panel-heading"><div><p className="eyebrow">Source documents</p><h3>Purchasing inbox</h3></div><FileUp size={21} /></div>
-    <p>Upload a supplier PDF or image. OrderMate stores the original in tenant-scoped EU R2, converts/extracts it with Cloudflare Workers AI, then presents a proposal for human review. AI never creates or receives stock directly.</p>
+    <p>{extractionEnabled ? "Upload a supplier PDF or image. OrderMate stores the original in tenant-scoped EU R2, extracts it with Cloudflare Workers AI, then presents a proposal for human review. AI never creates or receives stock directly." : "Supplier PDFs and images are stored in tenant-scoped EU R2. AI extraction is disabled in this deployment until its global Workers AI processing posture is explicitly accepted for your compliance requirements."}</p>
 
-    {canUpload && <div
-      className={`document-drop ${dragging ? "dragging" : ""}`}
-      onDragEnter={event => { event.preventDefault(); setDragging(true); }}
-      onDragOver={event => event.preventDefault()}
-      onDragLeave={event => { if (event.currentTarget === event.target) setDragging(false); }}
-      onDrop={event => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files[0]); }}
-    >
+    {!capabilities.isLoading && !extractionEnabled && <div className="document-compliance"><LockKeyhole size={17} /><div><strong>AI extraction disabled by default</strong><span>Source storage remains EU-jurisdictional. Set the Wrangler variable AI_DOCUMENT_EXTRACTION_ENABLED to true only after accepting that Workers AI currently cannot be restricted with Regional Services.</span></div></div>}
+    {capabilities.error && <ErrorText error={capabilities.error} />}
+
+    {canUpload && <div className={`document-drop ${dragging ? "dragging" : ""}`} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (event.currentTarget === event.target) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files[0]); }}>
       <input ref={inputRef} type="file" hidden accept="application/pdf,image/*" onChange={event => { chooseFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
       <UploadCloud size={24} />
-      <div><strong>{upload.isPending ? "Uploading securely…" : "Drop a supplier PDF or image"}</strong><span>PDF, PNG, JPEG or other browser image formats · maximum 15 MB · extraction runs asynchronously</span></div>
+      <div><strong>{upload.isPending ? "Uploading securely…" : "Drop a supplier PDF or image"}</strong><span>PDF, PNG, JPEG or other browser image formats · maximum 15 MB · {extractionEnabled ? "extraction runs asynchronously" : "stored only; AI extraction disabled"}</span></div>
       <button type="button" className="secondary" disabled={upload.isPending} onClick={() => inputRef.current?.click()}>Choose file</button>
     </div>}
 
     {upload.error && <ErrorText error={upload.error} />}
     {previewError && <ErrorText error={previewError} />}
+    {extractionEnabled && <DocumentProposals tenant={tenant} />}
 
-    <DocumentProposals tenant={tenant} />
-
-    <div className="source-history-heading"><span>Original source files</span><small>Immutable review evidence stored in R2</small></div>
+    <div className="source-history-heading"><span>Original source files</span><small>Immutable review evidence stored in EU R2</small></div>
     <div className="document-list">
       {documents.isLoading ? <div className="document-state"><div className="loader" /><span>Loading source documents…</span></div> : documents.error ? <ErrorText error={documents.error} /> : !documents.data?.documents.length ? <div className="document-state"><FileText size={22} /><strong>No source documents yet</strong><span>Upload the first supplier document when you have one.</span></div> : documents.data.documents.map(document => {
         const ImageIcon = document.contentType.startsWith("image/") ? FileImage : FileText;
-        return <button className="document-row" key={document.key} onClick={() => preview(document)}><span className="document-icon"><ImageIcon size={17} /></span><span className="document-copy"><strong>{document.name}</strong><small>{date(document.uploaded)} · {fileSize(document.size)}</small></span><span className="document-status">Source</span><Eye size={15} /></button>;
+        return <button className="document-row" key={document.key} onClick={() => preview(document)}><span className="document-icon"><ImageIcon size={17} /></span><span className="document-copy"><strong>{document.name}</strong><small>{date(document.uploaded)} · {fileSize(document.size)}</small></span><span className="document-status">{document.status === "queued" ? "Queued" : "Source"}</span><Eye size={15} /></button>;
       })}
     </div>
     {documents.data?.truncated && <small className="document-note">Showing the first 100 source documents. Pagination will be enabled before this limit becomes operationally relevant.</small>}
