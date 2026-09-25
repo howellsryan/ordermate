@@ -13,7 +13,8 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Role-aware UI for Owner, Admin, Manager, Inventory, Fulfilment and Viewer.
 - Cross-origin custom API mutations rejected at the public Worker boundary.
 - Unexpected custom API 5xx responses masked before leaving the Worker.
-- Ordered tenant schema migrations with v1 baseline verification, schema-v2 `inventory_policies`, and schema-v3 PO expected-delivery storage/indexing.
+- Ordered tenant schema migrations with v1 baseline verification through schema v5.
+- Schema v2 adds `inventory_policies`; v3 adds PO expected-delivery; v4 adds delivery discrepancies; v5 adds actor-private saved operational views.
 
 ## Catalogue and onboarding
 
@@ -23,6 +24,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Reusable modifiers/add-ons kept separate from variant identity.
 - Audited editing of product name/category/description and live variant commercial/identifier fields.
 - Non-destructive archive/restore with archived items removed from new order/PO/replenishment selection while tracked stock/history remains visible.
+- Atomic bulk archive/restore for up to 200 unique products; every selected product is verified before mutation and per-product audit parity is retained.
 - Historical order pricing and names remain snapshot-based after catalogue edits.
 - Create-only CSV onboarding for products, variants, arbitrary option columns, categories, suppliers, supplier mappings and opening stock.
 - CSV flow uses browser parsing for UX, server-side dry-run against live tenant state, reviewed fingerprinting and one atomic SQLite commit.
@@ -65,6 +67,8 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Supplier purchase-document inbox and AI-assisted proposal path with exact deterministic matching and human-reviewed draft-PO creation.
 - Reviewed proposal lines may explicitly remember supplier SKU mappings for future exact matching; replacements require opt-in and ambiguity is rejected both in the UI and canonical mapping endpoint.
 - Delivery-note assistance tied to an existing PO, with discrepancy review and staged Warehouse quantities before canonical receipt.
+- Schema-v4 persistent delivery discrepancies for concrete reviewed differences such as wrong PO references, unexpected/over-delivered lines and operator/document quantity mismatches.
+- Discrepancies have an open/resolved lifecycle, immutable proposal evidence reference, explicit resolution code/note and audited resolution; resolving never rewrites stock or the PO.
 
 ## Orders
 
@@ -79,10 +83,14 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 ## Operational UX
 
 - Global tenant-scoped search with Cmd/Ctrl+K.
-- Operational attention inbox for low/zero stock, fulfilment work, incoming purchase orders and overdue expected arrivals.
+- Operational attention inbox for low/zero stock, fulfilment work, incoming/overdue purchase orders and unresolved delivery discrepancies.
 - First-class Activity & Data workspace.
 - Searchable/filterable audit history.
-- Permission-checked CSV exports for catalogue, inventory, orders, POs, customers, suppliers and audit data.
+- Permission-checked CSV exports for catalogue, inventory, orders, POs, customers, suppliers, delivery discrepancies and audit data.
+- First-class Operations Reports for 7/30/60/90-day windows: stock-at-cost, availability/reservations/incoming, gross confirmed/completed order value, physical fulfilment/returns/receipts, outstanding PO commitment, overdue purchasing, location valuation and top fulfilled SKUs.
+- Commercial Operations Reports use a separate `analytics:read` permission so Fulfilment keeps audit access without gaining purchasing analytics.
+- Schema-v5 saved operational views are private to the signed-in actor inside the business and persist across devices.
+- Inventory saved views support query/location/stock-state filters; Purchasing supports query/supplier/status/due-state filters.
 - Accessible focus-trapped dialogs with Escape handling and focus restoration.
 - Responsive role-aware navigation and mutation controls.
 - Human-review UI for document proposals, delivery-note proposals, replenishment policy and CSV onboarding.
@@ -105,12 +113,17 @@ Cloudflare runtime/unit tests cover or specify:
 - RBAC route classification and fail-closed unknown routes;
 - immutable adjustment/transfer movement history;
 - catalogue edits and archive/restore preserving history;
+- atomic bulk product archive/restore, missing-ID rollback, duplicate selection rejection and audit parity;
 - document and delivery-note deterministic matching;
+- persistent delivery-discrepancy idempotency, history, resolution and audit behavior;
 - human-reviewed supplier SKU learning decisions and server-side supplier-code uniqueness;
-- schema migration v1 -> v2 -> v3, including migration-3 replay when DDL exists but the marker is missing;
+- schema migration v1 -> v2 -> v3 -> v4 -> v5, including replay-safe later migrations;
+- saved-view validation, same-tenant user isolation and guessed-ID delete protection;
 - policy-driven replenishment and arrival-target semantics;
 - catalogue import dry-run validation, fingerprint changes, atomic commit, opening stock movements and stale-preview rejection;
-- cycle-count atomic variance commits, stale-snapshot rejection, reservation protection, tracked-zero establishment and audit history.
+- cycle-count atomic variance commits, stale-snapshot rejection, reservation protection, tracked-zero establishment and audit history;
+- operations-report reconciliation across opening stock, partial PO receiving, outstanding commitment and partial fulfilment;
+- commercial analytics permission separation from broad audit reporting.
 
 ## Verification remains intentionally deferred
 
