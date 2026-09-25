@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { TenantStore } from "../src/worker/tenant-store-planning";
+import type { TenantStore } from "../src/worker/tenant-store-final";
 import { migrateTenantSchema } from "../src/worker/tenant-store-versioned";
 
 type Stub = DurableObjectStub<TenantStore>;
@@ -51,23 +51,27 @@ async function setup(stub: Stub) {
 }
 
 describe("tenant schema evolution", () => {
-  it("records migrations 1, 2 and 3 and creates the planning + PO due-date schema", async () => {
+  it("records migrations 1-4 and creates planning, PO due-date and delivery-discrepancy schema", async () => {
     const stub = tenant();
     await request(stub, "/settings");
 
     await runInDurableObject(stub, async (_instance, state) => {
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3]);
+      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4]);
       const policyTable = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray();
       expect(policyTable).toHaveLength(1);
       const poColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(purchase_orders)").toArray();
       expect(poColumns.some(column => column.name === "expected_delivery_date")).toBe(true);
       const dueIndex = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='index' AND name='purchase_orders_expected_delivery_idx'").toArray();
       expect(dueIndex).toHaveLength(1);
+      const discrepancyTable = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_discrepancies'").toArray();
+      expect(discrepancyTable).toHaveLength(1);
+      const discrepancyIndex = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='index' AND name='delivery_discrepancies_po_status_idx'").toArray();
+      expect(discrepancyIndex).toHaveLength(1);
     });
   });
 
-  it("replays missing v2/v3 migration markers without losing v1 business data", async () => {
+  it("replays missing v2-v4 migration markers without losing v1 business data", async () => {
     const stub = tenant();
     await setup(stub);
 
@@ -77,33 +81,48 @@ describe("tenant schema evolution", () => {
 
       state.storage.transactionSync(() => {
         state.storage.sql.exec("DROP TABLE inventory_policies");
-        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (2, 3)");
+        state.storage.sql.exec("DROP TABLE delivery_discrepancies");
+        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (2, 3, 4)");
       });
       const v1Versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
       expect(v1Versions.map(row => row.id)).toEqual([1]);
 
-      expect(migrateTenantSchema(state.storage)).toBe(3);
+      expect(migrateTenantSchema(state.storage)).toBe(4);
 
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3]);
+      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4]);
       const productCountAfter = state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM products").toArray()[0].count;
       expect(productCountAfter).toBe(productCountBefore);
-      const policyTable = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray();
-      expect(policyTable).toHaveLength(1);
-      const poColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(purchase_orders)").toArray();
-      expect(poColumns.some(column => column.name === "expected_delivery_date")).toBe(true);
+      expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray()).toHaveLength(1);
+      expect(state.storage.sql.exec<{ name: string }>("PRAGMA table_info(purchase_orders)").toArray().some(column => column.name === "expected_delivery_date")).toBe(true);
+      expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_discrepancies'").toArray()).toHaveLength(1);
     });
   });
 
-  it("replays migration 3 idempotently when DDL exists but the marker is missing", async () => {
+  it("replays migration 3 safely when its DDL exists but later markers are missing", async () => {
     const stub = tenant();
     await request(stub, "/settings");
 
     await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 3");
-      expect(migrateTenantSchema(state.storage)).toBe(3);
+      state.storage.transactionSync(() => {
+        state.storage.sql.exec("DROP TABLE delivery_discrepancies");
+        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (3, 4)");
+      });
+      expect(migrateTenantSchema(state.storage)).toBe(4);
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3]);
+      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4]);
+    });
+  });
+
+  it("replays migration 4 idempotently when its table exists but the marker is missing", async () => {
+    const stub = tenant();
+    await request(stub, "/settings");
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 4");
+      expect(migrateTenantSchema(state.storage)).toBe(4);
+      const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
+      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4]);
     });
   });
 });
