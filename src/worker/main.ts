@@ -5,7 +5,7 @@ import { documentsApp } from "./documents";
 import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
-import { TenantStore } from "./tenant-store-app";
+import { TenantStore } from "./tenant-store-runtime";
 
 export { TenantStore };
 
