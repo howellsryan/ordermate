@@ -3,7 +3,7 @@ import type { DeliveryDiscrepancyRecord } from "../shared/delivery-discrepancy";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can } from "./permissions";
-import type { TenantStore } from "./tenant-store-runtime";
+import type { TenantStore } from "./tenant-store-order-planning";
 
 type Env = AuthEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
@@ -54,6 +54,8 @@ type Order = {
   location_name: string;
   status: string;
   fulfilment_status: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  required_by_date?: string | null;
   subtotal_minor: number;
   tax_minor: number;
   total_minor: number;
@@ -124,6 +126,11 @@ function pushLimited(results: SearchResult[], values: SearchResult[], limit = 8)
   results.push(...values.slice(0, limit));
 }
 
+function orderPriorityLabel(priority: Order["priority"] | undefined) {
+  if (!priority || priority === "normal") return "normal";
+  return priority;
+}
+
 operationsApp.get("/search", async c => {
   const context = await tenantContext(c.req.raw, c.env);
   if ("error" in context) return context.error;
@@ -155,8 +162,13 @@ operationsApp.get("/search", async c => {
   }
   pushLimited(results, productMatches);
 
-  pushLimited(results, orders.filter(order => [order.number, order.customer_name, order.location_name, order.status, order.fulfilment_status].some(value => includes(value, query))).map(order => ({
-    id: order.id, type: "Order", title: order.number, subtitle: `${order.customer_name || "Guest"} · ${order.fulfilment_status.replaceAll("_", " ")}`, page: "orders", badge: order.status,
+  pushLimited(results, orders.filter(order => [order.number, order.customer_name, order.location_name, order.status, order.fulfilment_status, order.priority, order.required_by_date].some(value => includes(value, query))).map(order => ({
+    id: order.id,
+    type: "Order",
+    title: order.number,
+    subtitle: `${order.customer_name || "Guest"} · ${order.fulfilment_status.replaceAll("_", " ")} · ${orderPriorityLabel(order.priority)}${order.required_by_date ? ` · required ${order.required_by_date}` : ""}`,
+    page: "orders",
+    badge: order.status,
   })));
 
   pushLimited(results, purchaseOrders.filter(po => [po.number, po.supplier_name, po.location_name, po.status, po.expected_delivery_date].some(value => includes(value, query))).map(po => ({
@@ -203,13 +215,27 @@ operationsApp.get("/attention", async c => {
 
   if (can(context.membership.role, "orders", "read")) {
     const orders = await tenantJson<Order[]>(context.stub, "/orders", actor);
-    for (const order of orders.filter(order => order.status === "confirmed").slice(0, 8)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
+    const confirmed = orders
+      .filter(order => order.status === "confirmed")
+      .sort((a, b) => {
+        const overdueA = !!a.required_by_date && a.required_by_date < today;
+        const overdueB = !!b.required_by_date && b.required_by_date < today;
+        if (overdueA !== overdueB) return overdueA ? -1 : 1;
+        const priority = priorityRank[a.priority || "normal"] - priorityRank[b.priority || "normal"];
+        if (priority !== 0) return priority;
+        return (a.required_by_date || "9999-12-31").localeCompare(b.required_by_date || "9999-12-31") || a.created_at.localeCompare(b.created_at);
+      });
+    for (const order of confirmed.slice(0, 10)) {
+      const overdue = !!order.required_by_date && order.required_by_date < today;
+      const urgent = order.priority === "urgent";
       items.push({
         id: `order:${order.id}`,
-        severity: "warning",
-        type: "Awaiting fulfilment",
+        severity: overdue ? "critical" : "warning",
+        type: overdue ? "Required-by overdue" : urgent ? "Urgent fulfilment" : "Awaiting fulfilment",
         title: order.number,
-        detail: `${order.customer_name || "Guest"} · ${order.location_name} · ${order.line_count} line${order.line_count === 1 ? "" : "s"}`,
+        detail: `${order.customer_name || "Guest"} · ${order.location_name} · ${order.line_count} line${order.line_count === 1 ? "" : "s"} · ${orderPriorityLabel(order.priority)} priority${order.required_by_date ? ` · required ${order.required_by_date}` : ""}`,
         page: "orders",
       });
     }
@@ -282,8 +308,8 @@ function exportRows(kind: ExportKind, data: unknown): { headers: string[]; rows:
     return { headers: ["product", "variant", "sku", "barcode", "location", "on_hand", "reserved", "available", "incoming", "tracked"], rows };
   }
   if (kind === "orders") {
-    const rows = (data as Order[]).map(row => [row.number, row.customer_name, row.location_name, row.status, row.fulfilment_status, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
-    return { headers: ["order_number", "customer", "location", "status", "fulfilment_status", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
+    const rows = (data as Order[]).map(row => [row.number, row.customer_name, row.location_name, row.status, row.fulfilment_status, row.priority, row.required_by_date, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
+    return { headers: ["order_number", "customer", "location", "status", "fulfilment_status", "priority", "required_by_date", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
   }
   if (kind === "purchase-orders") {
     const rows = (data as PurchaseOrder[]).map(row => [row.number, row.supplier_name, row.location_name, row.status, row.expected_delivery_date, row.ordered_at, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
