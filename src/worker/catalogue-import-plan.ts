@@ -58,6 +58,27 @@ function duplicateValues(rows: CatalogueImportRow[], getter: (row: CatalogueImpo
   return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([value]) => value));
 }
 
+function supplierSkuKey(supplierName: string, supplierSku: string) {
+  const supplier = normalizeName(supplierName);
+  const sku = normalizeIdentifier(supplierSku);
+  return supplier && sku ? `${supplier}\u0000${sku}` : "";
+}
+
+function normalizedOptions(row: CatalogueImportRow) {
+  return Object.entries(row.options)
+    .map(([name, value]) => [normalizeName(name), normalizeName(value)] as const)
+    .filter(([name, value]) => name && value)
+    .sort(([a], [b]) => a.localeCompare(b));
+}
+
+function optionShapeKey(row: CatalogueImportRow) {
+  return JSON.stringify(normalizedOptions(row).map(([name]) => name));
+}
+
+function optionCombinationKey(row: CatalogueImportRow) {
+  return JSON.stringify(normalizedOptions(row));
+}
+
 function canonicalRows(rows: CatalogueImportRow[]) {
   return rows.map(row => ({
     ...row,
@@ -81,12 +102,14 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
   const existingProductNames = new Set(existing.products.map(product => normalizeName(product.name)));
   const existingSkus = new Set(existing.products.flatMap(product => product.variants.map(variant => normalizeIdentifier(variant.sku))).filter(Boolean));
   const existingBarcodes = new Set(existing.products.flatMap(product => product.variants.map(variant => (variant.barcode || "").trim())).filter(Boolean));
+  const existingSupplierSkus = new Set(existing.supplierMappings.map(mapping => supplierSkuKey(mapping.supplierName, mapping.supplierSku || "")).filter(Boolean));
   const categoriesByName = new Map(existing.categories.map(category => [normalizeName(category.name), category]));
   const suppliersByName = new Map(existing.suppliers.map(supplier => [normalizeName(supplier.name), supplier]));
   const locationsByCode = new Map(existing.locations.map(location => [normalizeIdentifier(location.code), location]));
 
   const duplicateSkus = duplicateValues(rows, row => normalizeIdentifier(row.sku));
   const duplicateBarcodes = duplicateValues(rows, row => row.barcode.trim());
+  const duplicateSupplierSkus = duplicateValues(rows, row => supplierSkuKey(row.supplierName, row.supplierSku));
 
   const groups = new Map<string, CatalogueImportRow[]>();
   for (const row of rows) {
@@ -94,6 +117,7 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
     const variantName = row.variantName.trim();
     const sku = normalizeIdentifier(row.sku);
     const barcode = row.barcode.trim();
+    const supplierKey = supplierSkuKey(row.supplierName, row.supplierSku);
 
     if (!productName) addIssue(errors, row.rowNumber, "product_name_required", "Product name is required.");
     if (!variantName) addIssue(errors, row.rowNumber, "variant_name_required", "Variant name is required.");
@@ -102,6 +126,8 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
     if (sku && existingSkus.has(sku)) addIssue(errors, row.rowNumber, "sku_exists", `SKU ${row.sku.trim()} already exists in OrderMate.`);
     if (barcode && duplicateBarcodes.has(barcode)) addIssue(errors, row.rowNumber, "duplicate_barcode_in_file", `Barcode ${barcode} appears more than once in this CSV.`);
     if (barcode && existingBarcodes.has(barcode)) addIssue(errors, row.rowNumber, "barcode_exists", `Barcode ${barcode} already exists in OrderMate.`);
+    if (supplierKey && duplicateSupplierSkus.has(supplierKey)) addIssue(errors, row.rowNumber, "duplicate_supplier_sku_in_file", `Supplier SKU ${row.supplierSku.trim()} appears more than once for ${row.supplierName.trim()} in this CSV.`);
+    if (supplierKey && existingSupplierSkus.has(supplierKey)) addIssue(errors, row.rowNumber, "supplier_sku_exists", `Supplier SKU ${row.supplierSku.trim()} is already mapped for ${row.supplierName.trim()} in OrderMate.`);
 
     const priceMinor = parseMinor(row.price);
     const costMinor = parseMinor(row.cost);
@@ -119,7 +145,7 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
 
     if (priceMinor === null) addIssue(warnings, row.rowNumber, "price_defaulted", "Price is blank and will be imported as 0.00.");
     if (costMinor === null) addIssue(warnings, row.rowNumber, "cost_defaulted", "Cost is blank and will be imported as 0.00.");
-    if (taxRateBps === null) addIssue(warnings, row.rowNumber, "tax_defaulted", "Tax percent is blank and will be imported as 0%.");
+    if (taxRateBps === null) addIssue(warnings, row.rowNumber, "tax_defaulted", `Tax percent is blank and will use the workspace default of ${(existing.defaultTaxRateBps / 100).toFixed(2).replace(/\.00$/, "")}%`);
 
     if ((openingStock || 0) > 0) {
       const code = normalizeIdentifier(row.locationCode);
@@ -165,6 +191,21 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
       for (const row of productRows) addIssue(errors, row.rowNumber, "product_category_conflict", `Rows for ${first.productName.trim()} must use the same category, including whether it is blank.`);
     }
 
+    const optionShapes = new Set(productRows.map(optionShapeKey));
+    if (optionShapes.size > 1) {
+      for (const row of productRows) addIssue(errors, row.rowNumber, "product_option_dimensions_conflict", `Every variant of ${first.productName.trim()} must use the same option dimensions.`);
+    }
+    const duplicateCombinations = duplicateValues(productRows, optionCombinationKey);
+    const duplicateVariantNames = duplicateValues(productRows, row => normalizeName(row.variantName));
+    for (const row of productRows) {
+      if (duplicateCombinations.has(optionCombinationKey(row))) {
+        addIssue(errors, row.rowNumber, "duplicate_option_combination", `Variant option combination for ${row.variantName.trim() || row.sku.trim()} appears more than once in ${first.productName.trim()}.`);
+      }
+      if (duplicateVariantNames.has(normalizeName(row.variantName))) {
+        addIssue(errors, row.rowNumber, "duplicate_variant_name", `Variant name ${row.variantName.trim()} appears more than once in ${first.productName.trim()}.`);
+      }
+    }
+
     const categoryName = first.category.trim();
     const category = categoryName
       ? { existingCategoryId: categoriesByName.get(normalizeName(categoryName))?.id || null, name: categoryName }
@@ -191,7 +232,7 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
         barcode: row.barcode.trim() || null,
         priceMinor: parseMinor(row.price) ?? 0,
         costMinor: variantCostMinor ?? 0,
-        taxRateBps: parseTaxBps(row.taxPercent) ?? 0,
+        taxRateBps: parseTaxBps(row.taxPercent) ?? existing.defaultTaxRateBps,
         options: Object.fromEntries(Object.entries(row.options).map(([name, value]) => [name.trim(), value.trim()]).filter(([name, value]) => name && value)),
         openingStock: openingQuantity > 0 && location ? { locationId: location.id, locationCode: location.code, quantity: openingQuantity } : null,
         supplier: supplierName ? {
