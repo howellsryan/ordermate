@@ -4,15 +4,18 @@
 Ship an excellent general-purpose order and inventory SaaS whose core operations are trustworthy, with automation layered on top as reviewable proposals rather than a second source of business truth.
 
 ## Current implementation status
-The rebuild branch now contains the complete operational backbone plus schema-v4 purchasing/planning controls and the first automation/onboarding advantages:
+The rebuild branch now contains the complete operational backbone plus schema-v5 planning/preferences controls and the first automation/onboarding advantages:
 
 - Cloudflare-native multi-tenant platform, Google auth, memberships/RBAC and audit attribution.
 - Products, arbitrary variants/options, modifiers, SKU/barcode, suppliers/customers and safe catalogue retirement.
+- Atomic bulk product archive/restore with all-or-nothing validation and audit parity.
 - Multi-location inventory, immutable movements, adjustments/transfers, cycle counts and tracked-vs-never-stocked semantics.
 - Purchase orders, expected delivery dates, overdue visibility, partial receiving, cancellation and supplier/variant mappings.
 - Persistent delivery discrepancies with open/resolved lifecycle, source evidence and audited resolution.
 - Orders, reservation, partial/full fulfilment, cancellation and returns/restock.
 - Search, exception inbox, record details, activity/audit and CSV export.
+- Private cross-device saved views for Inventory and Purchasing.
+- Deterministic Operations Reports for stock, orders, fulfilment and purchasing.
 - Explainable replenishment recommendations plus per-SKU/location custom rules.
 - Supplier purchase-document extraction -> deterministic matching -> human-reviewed draft PO.
 - Human-reviewed supplier SKU learning from document proposals with canonical ambiguity protection.
@@ -21,7 +24,7 @@ The rebuild branch now contains the complete operational backbone plus schema-v4
 - Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction -> persistent discrepancy only when actionable physical/document evidence differs.
 - Atomic create-only catalogue CSV onboarding with dry-run, stale-preview fingerprinting, supplier mappings and opening-stock ledger movements.
 - Reviewed partial cycle counts with stale-stock protection, reservation safeguards and atomic variance movements.
-- Explicit ordered Durable Object tenant-schema migrations, currently schema v4.
+- Explicit ordered Durable Object tenant-schema migrations, currently schema v5.
 
 The branch remains draft until dependency installation, typecheck, tests and production build are run as the final verification gate.
 
@@ -34,15 +37,16 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - EU D1 control plane and EU tenant Durable Objects.
 - EU R2 documents plus Queue/DLQ automation path.
 - Tenant audit framework.
-- Ordered tenant schema-version migration runner with tested v1 -> v2 -> v3 -> v4 upgrades/replay.
+- Ordered tenant schema-version migration runner with tested v1 -> v2 -> v3 -> v4 -> v5 upgrades/replay.
 
 ## Phase 1 — catalogue and stock
-**Delivered, including onboarding, stocktake and warehouse barcode workflows.**
+**Delivered, including onboarding, bulk retirement, stocktake and warehouse barcode workflows.**
 
 - Products, arbitrary option dimensions and variants.
 - SKU/barcode, tax, costs and prices.
 - Locations, stock ledger, adjustment and transfers.
 - Non-destructive catalogue archive/restore.
+- Atomic archive/restore for up to 200 selected products, preserving the single-record variant/audit semantics.
 - Keyboard-wedge barcode lookup.
 - Dedicated Pick & Fulfil and PO Receiving scan workflows with wrong-item/over-scan protection.
 - Mobile camera scanning through a production decoder rather than native-only `BarcodeDetector`.
@@ -94,6 +98,9 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Responsive cycle-count workflow with counted-item prioritisation, live variance review and locked commit state.
 - Purchase-order expected-arrival/overdue signals that remain separate from canonical PO status.
 - Delivery discrepancy open/resolved queue with source evidence, issue-level explanation and role-aware resolution.
+- Schema-v5 private saved operational views per signed-in actor: Inventory query/location/stock state and Purchasing query/supplier/status/due state.
+- First-class deterministic Operations Reports with 7/30/60/90-day windows, location stock valuation, physical movement trends, top fulfilled SKUs, confirmed/completed gross order value and outstanding PO commitment.
+- Commercial analytics use a separate read permission so Fulfilment can inspect audit/activity without gaining purchasing analytics.
 
 Remaining before production readiness:
 
@@ -115,10 +122,10 @@ The first high-value automation paths are implemented with the same rule: AI may
 6. **Exception inbox** — stockouts/low stock, fulfilment work, incoming/partial POs, overdue expected deliveries and unresolved delivery discrepancies.
 
 ### Next candidates
-1. Saved operational views and bulk actions.
-2. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
-3. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
-4. Storefront and integration architecture once the internal operating core has passed production hardening.
+1. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
+2. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
+3. Storefront and integration architecture once the internal operating core has passed production hardening.
+4. Production data-retention/export/deletion and disaster-recovery tooling before public launch.
 
 ## Out of scope for the initial MVP
 Customer storefront, payment processing, carrier integrations, lots/batches/serials/manufacturing, marketplace/e-commerce integrations and autonomous AI business mutations.
