@@ -6,150 +6,109 @@
 - Branch: `rebuild/cloudflare-saas`
 - Draft PR: #3 — `Rebuild OrderMate as a Cloudflare-native multi-tenant SaaS`
 - Base: `main`
-- Do not merge yet.
+- Keep the PR draft for now.
 
-This branch is a greenfield replacement for the abandoned .NET prototype. It is already pushed to GitHub. The previous delivery session intentionally stopped feature expansion here so the next agent can begin with a full verification pass instead of inheriting more unverified code.
+Resolve the latest branch/PR head before acting and treat the repository as authoritative. Read `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/delivery-plan.md` and `docs/implementation-status.md` before changes.
 
-## First action for the next agent
+## Current verification state
 
-Before adding another feature:
+The rebuild verification/hardening pass is complete for application commit `ce7ee30be57f9d989b3a63c5668b38b29746037f`:
 
-1. Resolve the latest branch/PR head and inspect this document plus `README.md`, `docs/architecture.md`, `docs/delivery-plan.md`, `docs/implementation-status.md` and `AGENTS.md`.
-2. Install the pinned dependency graph with `npm install` and commit the generated `package-lock.json` if installation succeeds.
-3. Run `npm run typecheck`, `npm test` and `npm run build`.
-4. Fix any failures before continuing. Do not weaken domain/security tests merely to make the suite green.
-5. Perform a browser/manual smoke pass of the critical operational flows, especially the newly added Wave Picking workspace.
-6. Re-read Draft PR #3 and update its verification section with real results. Keep the PR draft until verification and review are genuinely complete.
+```text
+Node              24.21.0
+npm               11.19.0
+npm install       PASS — package-lock.json tracked and unchanged
+npm run typecheck PASS
+npm test          PASS — 29 test files, 112/112 tests
+npm run build     PASS
+```
 
-No agent in the previous session claimed the branch was merge-ready because the dependency install/typecheck/test/build gate was deliberately deferred.
+Commits after that application SHA only return the verification workflow to manual-only and update documentation. `.github/workflows/rebuild-verification.yml` is intentionally `workflow_dispatch` only so normal commits do not consume Actions minutes.
+
+Do not rerun broad verification merely out of habit; run it after material runtime changes or before final review/deployment. Do not weaken security/domain tests to make them pass.
+
+## What verification fixed
+
+The hardening pass found and properly resolved:
+
+- npm/Cloudflare toolchain compatibility and the committed lockfile;
+- Node 24 runtime requirement;
+- TypeScript contract/narrowing failures across client and Durable Object layers;
+- Vitest accidentally requiring a remote Workers AI binding instead of staying local;
+- async Durable Object handler failures escaping the request error boundary;
+- missing real v1 -> v6 tenant migration preservation coverage;
+- Wave Picking continuing after a mid-wave fulfilment failure;
+- Wave Picking commit-in-flight/accessibility issues identified by the Agent-Template/Vercel UI review.
 
 ## Current architecture
 
 OrderMate is a Cloudflare-native TypeScript modular monolith:
 
-- React + Vite frontend served through Cloudflare Workers Static Assets.
-- Hono Worker API.
-- Better Auth with Google OAuth.
-- EU-jurisdiction D1 control plane for users/sessions/organizations/memberships/invites.
-- One EU-jurisdiction SQLite-backed Durable Object (`TenantStore`) per business for operational data.
-- EU R2 for purchase/delivery source documents and proposal sidecars.
-- Cloudflare Queues + dead-letter queue for async document automation.
-- Optional Workers AI extraction is implemented but disabled by default for an explicit compliance decision.
-- No Neon/AWS/Vercel/Supabase or other hosted database/runtime dependency.
+- React + Vite frontend on Cloudflare Workers Static Assets;
+- Hono Worker API;
+- Better Auth + Google OAuth;
+- EU-jurisdiction D1 control plane;
+- one EU-jurisdiction SQLite `TenantStore` Durable Object per business;
+- EU R2 for source documents/proposal sidecars;
+- Cloudflare Queues + DLQ;
+- optional Workers AI extraction, disabled by default;
+- no Neon/AWS/Vercel/Supabase runtime/database dependency.
 
-The tenant schema is currently version 6:
+Tenant schema is v6: baseline -> inventory policies -> PO expected delivery -> delivery discrepancies -> actor-private saved views -> order required-by/priority/planning index.
 
-1. verified v1 baseline
-2. `inventory_policies`
-3. PO `expected_delivery_date`
-4. `delivery_discrepancies`
-5. actor-private `saved_views`
-6. order `required_by_date` + constrained `priority` + planning index
+## Critical security/domain boundaries verified
 
-## Major product slices already implemented
-
-### Catalogue / onboarding
-
-- Products, categories, arbitrary option dimensions, variants, SKUs, barcodes, cost/price/tax and modifiers.
-- Historical order commercial snapshots.
-- Product editing plus non-destructive archive/restore.
-- Atomic bulk archive/restore.
-- Reviewed create-only catalogue CSV import with dry-run, fingerprint recheck, supplier mapping and opening stock movements.
-
-### Inventory / warehouse
-
-- Multi-location stock.
-- On-hand, reserved, available and incoming quantities.
-- Immutable inventory movements, adjustments and transfers.
-- Barcode lookup and mobile camera scanning.
-- Single-order Pick & Fulfil and PO Receive Stock workflows.
-- Reviewed partial Cycle Count with stale-snapshot and reservation protection.
-- Stock movement history.
-
-### Purchasing / planning
-
-- Suppliers and supplier-to-variant mappings with supplier SKU/cost/lead time.
-- Purchase orders, partial receiving, cancellation, expected-delivery dates and overdue visibility.
-- Deterministic replenishment and per-SKU/location policies.
-- Purchase-document extraction/proposal flow.
-- Human-reviewed supplier SKU learning.
-- Delivery-note-assisted receiving.
-- Persistent delivery discrepancies with explicit audited resolution.
-
-### Orders / fulfilment
-
-- Customers.
-- Draft/confirm/cancel lifecycle.
-- Reservation and oversell prevention.
-- Partial/full fulfilment and returns.
-- Explicit `required_by_date` and `low / normal / high / urgent` priority.
-- Owner/Admin/Manager can edit planning metadata; Fulfilment can execute fulfilment but cannot redefine commitments.
-- Overdue/urgent order attention and urgency-aware Warehouse queue ordering.
-
-### Operational UX
-
-- Global search and attention inbox.
-- Activity/audit and CSV exports.
-- Saved Inventory/Purchasing views.
-- Deterministic Operations Reports with separate `analytics:read` permission.
-- Responsive role-aware UI.
-
-## Latest completed slice: Wave Picking
-
-Wave Picking is now wired as its own navigation/workspace for Owner/Admin/Manager/Fulfilment.
-
-Important design constraints:
-
-- No schema change.
-- No new inventory mutation endpoint.
-- A wave contains 2-10 confirmed orders from one stock location.
-- The UI aggregates outstanding quantities by variant so a picker can scan a SKU once across multiple orders.
-- Aggregate quantities are deterministically allocated back to exact order lines in the existing urgency order.
-- The review UI exposes the per-order allocation before commit.
-- Every selected order must have at least one staged/allocated unit before commit.
-- Unallocatable/excess counts block commit.
-- Commit calls the existing canonical `/orders/:id/fulfil` endpoint once per affected order.
-- If some orders succeed and another fails, successful orders are removed from the wave and must not be retried. Failed orders require a refreshed/re-scanned follow-up wave.
-- Pure allocator tests cover aggregate target construction, repeated variants, partial picks, already-fulfilled lines and excess-count rejection.
-
-Wave Picking still needs runtime verification and a browser smoke pass. Pay particular attention to partial-failure UX because multiple canonical fulfilment transactions are intentionally sequential rather than pretending the entire wave is one atomic inventory transaction.
-
-## Security/RBAC points not to regress
-
-- Tenant IDs from the browser are selectors only; membership is verified server-side before routing.
-- Tenant operational rows are physically isolated by Durable Object.
+- Tenant ID is a selector only; membership is checked in D1 before tenant Durable Object routing.
+- The Worker overwrites internal actor headers.
 - Unknown tenant routes fail closed.
-- Internal actor headers are replaced by the Worker.
-- `stocktake:create` is separate from generic inventory update permission.
-- `order_planning:update` is separate from order lifecycle update permission.
-- `analytics:read` is separate from broad Activity/Audit read permission.
-- Fulfilment must not gain purchasing analytics or order-planning edits.
-- Same-tenant users must not see/delete another user's saved views.
-- AI/document extraction only proposes reviewed structured changes; it never submits POs, receives stock, adjusts inventory or fulfils orders autonomously.
+- Operational data is physically isolated per tenant Durable Object.
+- `stocktake:create`, `order_planning:update` and `analytics:read` remain separate permission boundaries.
+- Fulfilment can fulfil but cannot edit order planning metadata and has no purchasing analytics grant.
+- Same-tenant users cannot list/delete another actor's saved views.
+- Inventory/order mutations remain canonical and audited.
+- Workers AI remains proposal/review based and never autonomously changes stock, fulfils orders or commits a PO.
+- Tenant migration is in-place/versioned and newer-than-runtime storage fails closed.
 
-## Recommended work after verification
+## Latest hardened slice: Wave Picking
 
-Do not immediately add another broad subsystem. Once the full gate is green:
+Wave Picking is a separate Owner/Admin/Manager/Fulfilment workspace.
 
-1. Fix any UI/accessibility issues discovered in the Wave Picking smoke pass.
-2. Review Draft PR #3 as a whole for security, tenant isolation, stock/order invariants and migration safety.
-3. Add high-value integration/E2E coverage for the critical browser workflows if the existing suite does not adequately exercise them: Google-session tenant switching, catalogue import review/commit, cycle count, single-order fulfilment, Wave Picking, PO receive and delivery-note review.
-4. Run a final responsive/accessibility pass using the Agent-Template UI/UX skills already adopted by the project.
-5. Only then decide whether PR #3 is small enough to merge as one rebuild PR or whether any remaining work should move into follow-up PRs.
-6. Before real deployment, provision/configure Cloudflare resources and secrets exactly as documented in `README.md`; do not place secrets in the repository.
+- 2–10 confirmed orders.
+- One stock location per wave; first selection locks location.
+- Orders enter allocation in priority -> required-by -> order-age order.
+- Outstanding quantities aggregate by variant for scanning.
+- Allocation back to exact order lines is deterministic and visible before commit.
+- Existing partial fulfilments and partial wave quantities are supported.
+- Every selected order must have at least one staged unit.
+- Excess/unallocatable quantities block commit.
+- Every order commits through `/orders/:id/fulfil`; no separate wave stock endpoint exists.
+- Wave commit is intentionally non-atomic.
+- Processing stops on the first failed order. Earlier successes remain committed and are removed; later orders are not attempted. Remaining work must be refreshed/re-scanned. Never retry a previously successful order automatically.
+- Automated tests cover successful commit and stop-on-first-failure/no-retry behavior in addition to allocator cases.
 
-Potential later product work, after the rebuild is verified, includes stronger exception workflows, richer replenishment forecasting, customer/storefront/integration work, and further reviewed automation. These are not blockers for the current verification handoff.
+## Remaining blocker before PR #3 is ready for review
 
-## Definition of a safe next milestone
+A real browser/device smoke pass is still outstanding. The verification environment cannot physically operate a camera or USB/Bluetooth scanner, so this was not falsely marked complete.
 
-A good next milestone is not “one more feature.” It is:
+Exercise at minimum:
 
-- dependency lockfile committed;
-- typecheck green;
-- full tests green;
-- production build green;
-- Wave Picking/manual critical-flow smoke pass complete;
-- PR #3 description updated with actual verification evidence;
-- no known high-severity security, tenant-isolation, inventory or migration issue.
+1. same-location locking and max 10 orders;
+2. manual barcode entry;
+3. real USB/Bluetooth keyboard-wedge scanner input;
+4. camera permission/start/decode/close path;
+5. repeated SKU across several orders;
+6. partial quantities and already-partially-fulfilled orders;
+7. per-order allocation preview;
+8. complete successful wave;
+9. earlier order succeeds then a later order fails;
+10. refresh confirms successful orders are not offered for duplicate fulfilment and the remaining wave must be re-scanned.
 
-Until those are true, keep PR #3 draft and do not deploy it as production-ready.
+If the smoke pass finds an issue, fix it and rerun the affected tests plus the full manual verification workflow if runtime code changes materially. Update PR #3 with the result.
+
+## Review readiness
+
+PR #3 has been updated with the actual verification evidence and remains draft. The critical security/tenancy/inventory/migration review found no known high-severity regression in the reviewed boundaries. The automated gate is green.
+
+Do not add another broad subsystem yet. The next milestone is to complete the physical browser/device smoke, address any findings, then decide whether to mark PR #3 ready for review.
+
+Later follow-up work can include exception workflows, onboarding improvements, richer replenishment forecasting, integrations/storefront, shipping and further reviewed automation. Lots/batches/serial/manufacturing, autonomous AI mutations and destructive catalogue bulk-upserts still require a fresh architecture/plan gate.
