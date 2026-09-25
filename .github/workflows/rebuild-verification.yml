@@ -30,6 +30,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Use npm 11
+        run: |
+          npm install --global npm@11
+          npm --version
+
       - name: Install dependencies
         shell: bash
         run: |
