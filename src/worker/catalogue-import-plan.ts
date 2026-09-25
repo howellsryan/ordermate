@@ -153,13 +153,16 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
       for (const row of productRows) addIssue(errors, row.rowNumber, "product_exists", `Product ${first.productName.trim()} already exists. This onboarding importer is create-only.`);
     }
 
-    const descriptionValues = new Set(productRows.map(row => row.description.trim()).filter(Boolean));
-    const categoryValues = new Set(productRows.map(row => normalizeName(row.category)).filter(Boolean));
+    // Product-level metadata must be identical on every variant row, including
+    // the distinction between blank and populated values. Otherwise the first
+    // row could silently win and drop metadata supplied by a later row.
+    const descriptionValues = new Set(productRows.map(row => row.description.trim()));
+    const categoryValues = new Set(productRows.map(row => normalizeName(row.category)));
     if (descriptionValues.size > 1) {
-      for (const row of productRows) addIssue(errors, row.rowNumber, "product_description_conflict", `Rows for ${first.productName.trim()} must use the same description.`);
+      for (const row of productRows) addIssue(errors, row.rowNumber, "product_description_conflict", `Rows for ${first.productName.trim()} must use the same description, including whether it is blank.`);
     }
     if (categoryValues.size > 1) {
-      for (const row of productRows) addIssue(errors, row.rowNumber, "product_category_conflict", `Rows for ${first.productName.trim()} must use the same category.`);
+      for (const row of productRows) addIssue(errors, row.rowNumber, "product_category_conflict", `Rows for ${first.productName.trim()} must use the same category, including whether it is blank.`);
     }
 
     const categoryName = first.category.trim();
