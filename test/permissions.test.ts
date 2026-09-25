@@ -17,6 +17,17 @@ describe("tenant route permission classification", () => {
     }
   });
 
+  it("uses a dedicated permission boundary for reviewed cycle counts", () => {
+    const permission = permissionForRequest("/inventory/stocktake", "POST");
+    expect(permission).toEqual({ resource: "stocktake", action: "create" });
+    expect(can("owner", permission.resource, permission.action)).toBe(true);
+    expect(can("admin", permission.resource, permission.action)).toBe(true);
+    expect(can("manager", permission.resource, permission.action)).toBe(true);
+    expect(can("inventory", permission.resource, permission.action)).toBe(true);
+    expect(can("fulfilment", permission.resource, permission.action)).toBe(false);
+    expect(can("viewer", permission.resource, permission.action)).toBe(false);
+  });
+
   it("classifies catalogue import preview and commit as catalogue creation", () => {
     for (const path of ["/imports/catalogue/preview", "/imports/catalogue/commit"]) {
       const permission = permissionForRequest(path, "POST");
