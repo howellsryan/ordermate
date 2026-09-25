@@ -15,7 +15,7 @@ export type ReviewedSupplierSkuLine = {
 };
 
 export function normalizeSupplierSku(value: string | null | undefined) {
-  return (value || "").trim().normalize("NFKC").toLocaleUpperCase();
+  return (value || "").trim().normalize("NFKC").toUpperCase();
 }
 
 export function reviewedSupplierSkuConflicts(lines: ReviewedSupplierSkuLine[]) {
