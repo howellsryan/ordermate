@@ -74,3 +74,22 @@ export function date(value: string | number | null | undefined) {
   const parsed = typeof value === "number" ? new Date(value) : new Date(value);
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
+
+export function calendarDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "UTC" }).format(parsed);
+}
+
+export function todayLocalIsoDate() {
+  const current = new Date();
+  const year = current.getFullYear();
+  const month = String(current.getMonth() + 1).padStart(2, "0");
+  const day = String(current.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function isOverdueDate(value: string | null | undefined) {
+  return !!value && value < todayLocalIsoDate();
+}
