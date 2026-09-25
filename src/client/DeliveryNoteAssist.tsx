@@ -109,13 +109,22 @@ export default function DeliveryNoteAssist({ tenant, purchaseOrderId, onApply }:
   };
 
   const proposalEventIds = new Set((proposals.data?.proposals || []).map(proposal => proposal.eventId));
+  const capabilityText = capabilities.isLoading
+    ? "Checking document extraction policy…"
+    : extractionEnabled
+      ? "Cloudflare extraction is enabled for this deployment."
+      : "Stored in EU R2 only; AI extraction is disabled.";
+
   return <section className="delivery-assist">
     <div className="delivery-assist-head"><div><p className="eyebrow">Delivery note assist</p><h3>Match a supplier delivery to this PO</h3><p>AI extracts delivered quantities only. Exact matching proposes receiving counts; you still review and commit through Warehouse.</p></div><Sparkles size={19} /></div>
     <div className="delivery-actions">
       <input ref={inputRef} hidden type="file" accept="application/pdf,image/*" onChange={event => { const file = event.target.files?.[0]; if (file) upload.mutate(file); event.currentTarget.value = ""; }} />
       <button type="button" className="secondary" disabled={upload.isPending} onClick={() => inputRef.current?.click()}><FileUp size={15} /> {upload.isPending ? "Uploading…" : "Upload delivery note"}</button>
-      <span>{extractionEnabled ? "Cloudflare extraction is enabled for this deployment." : "Stored in EU R2 only; AI extraction is disabled."}</span>
+      <span>{capabilityText}</span>
     </div>
+    {capabilities.error && <ErrorText error={capabilities.error} />}
+    {sources.error && <ErrorText error={sources.error} />}
+    {proposals.error && <ErrorText error={proposals.error} />}
     {upload.error && <ErrorText error={upload.error} />}
     {extract.error && <ErrorText error={extract.error} />}
 
@@ -127,7 +136,7 @@ export default function DeliveryNoteAssist({ tenant, purchaseOrderId, onApply }:
         const queuedRecently = source.status === "queued" && Date.now() - new Date(source.uploaded).getTime() < 10 * 60 * 1000;
         return <div className="delivery-source-row" key={source.key}><span className="delivery-file-icon"><FileText size={15} /></span><span><strong>{source.name}</strong><small>{date(source.uploaded)} · {queuedRecently ? "Extraction queued" : source.status === "stored" ? "Stored only" : "No proposal yet"}</small></span><div><button type="button" className="table-action" onClick={() => preview(source.key)}><Eye size={13} /> Source</button>{extractionEnabled && !queuedRecently && <button type="button" className="table-action" disabled={extract.isPending} onClick={() => extract.mutate(source.key)}><Sparkles size={13} /> {source.status === "queued" ? "Retry" : "Extract"}</button>}</div></div>;
       })}
-    </div> : <div className="delivery-empty"><FileText size={18} /><span>No delivery note attached to this PO yet.</span></div>}
+    </div> : !sources.isLoading && !proposals.isLoading ? <div className="delivery-empty"><FileText size={18} /><span>No delivery note attached to this PO yet.</span></div> : <div className="delivery-empty"><div className="loader" /><span>Loading delivery-note history…</span></div>}
 
     {openKey && <DeliveryProposalModal tenant={tenant} proposalKey={openKey} onClose={() => setOpenKey(null)} onApply={(counts) => { onApply(counts, openKey); setOpenKey(null); }} />}
   </section>;
@@ -144,8 +153,8 @@ function DeliveryProposalModal({ tenant, proposalKey, onClose, onApply }: { tena
 }
 
 function DeliveryProposalReview({ tenant, proposal, onClose, onApply }: { tenant: OrganizationSummary; proposal: DeliveryProposal; onClose: () => void; onApply: (counts: WarehouseScanCounts) => void }) {
-  const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(proposal.lines.map(line => [line.lineId, String(line.suggestedReceiveQuantity)])));
-  useEffect(() => setQuantities(Object.fromEntries(proposal.lines.map(line => [line.lineId, String(line.suggestedReceiveQuantity)]))), [proposal.eventId]);
+  const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(proposal.lines.map(line => [line.lineId, String(line.suggestedReceiveQuantity)] as const)));
+  useEffect(() => setQuantities(Object.fromEntries(proposal.lines.map(line => [line.lineId, String(line.suggestedReceiveQuantity)] as const))), [proposal.eventId]);
   const valid = proposal.lines.every(line => {
     const quantity = Number(quantities[line.lineId] || 0);
     return Number.isInteger(quantity) && quantity >= 0 && quantity <= line.remaining;
@@ -164,11 +173,20 @@ function DeliveryProposalReview({ tenant, proposal, onClose, onApply }: { tenant
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
   };
 
+  const apply = () => {
+    const stagedCounts = Object.fromEntries(
+      proposal.lines
+        .map(line => [line.lineId, Number(quantities[line.lineId] || 0)] as const)
+        .filter(([, quantity]) => quantity > 0),
+    );
+    onApply(stagedCounts);
+  };
+
   return <div className="delivery-review">
     <div className="delivery-evidence"><div><span>PO</span><strong>{proposal.purchaseOrderNumber}</strong><small>{proposal.supplierName} · {proposal.locationName}</small></div><div><span>Delivery reference</span><strong>{proposal.extracted.supplierReference || "Not extracted"}</strong><small>{proposal.extracted.documentDate || "No date extracted"}</small></div><div><span>Source</span><strong>{proposal.sourceName}</strong><button type="button" className="table-action" onClick={preview}><Eye size={13} /> View original</button></div><div><span>AI status</span><Status value={proposal.status} /><small>{proposal.extracted.purchaseOrderReference ? `Document PO: ${proposal.extracted.purchaseOrderReference}` : "No PO reference extracted"}</small></div></div>
     {proposal.warnings.length > 0 && <div className="delivery-warnings"><AlertTriangle size={16} /><div><strong>Document warnings</strong>{proposal.warnings.map((warning, index) => <span key={index}>{warning}</span>)}</div></div>}
     <div className="delivery-lines"><div className="delivery-lines-head"><span>Purchase-order line</span><span>Ordered / already received</span><span>Extracted</span><span>Receive now</span></div>{proposal.lines.map(line => <div className="delivery-line" key={line.lineId}><div><strong>{line.description}</strong><small className="mono">{line.sku}</small>{line.matchMethods.length > 0 && <small>Matched by {line.matchMethods.join(" + ").replaceAll("_", " ")}</small>}{line.warnings.map((warning, index) => <span className="line-warning" key={index}>{warning}</span>)}</div><span>{line.quantityOrdered} / {line.quantityReceived}</span><strong>{line.extractedQuantity}</strong><input aria-label={`Receive ${line.description}`} type="number" min="0" max={line.remaining} step="1" value={quantities[line.lineId] || "0"} onChange={event => setQuantities(current => ({ ...current, [line.lineId]: event.target.value }))} /></div>)}</div>
     {proposal.unexpectedLines.length > 0 && <div className="delivery-unexpected"><div><AlertTriangle size={16} /><strong>Unmatched / over-delivered document lines</strong></div>{proposal.unexpectedLines.map(line => <div key={`${line.index}:${line.description}`}><span>{line.description || line.sku || line.supplierSku || line.barcode || `Document line ${line.index + 1}`}</span><strong>{line.quantity ?? "?"}</strong><small>{line.warnings.join(" ")}</small></div>)}</div>}
-    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Close</button><button type="button" className="primary" disabled={!valid || selected <= 0 || proposal.status === "accepted"} onClick={() => onApply(Object.fromEntries(proposal.lines.map(line => [line.lineId, Number(quantities[line.lineId] || 0)]).filter(([, quantity]) => quantity > 0)))}><FileCheck2 size={15} /> Load {selected} unit{selected === 1 ? "" : "s"} into receiving</button></div>
+    <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Close</button><button type="button" className="primary" disabled={!valid || selected <= 0 || proposal.status === "accepted"} onClick={apply}><FileCheck2 size={15} /> Load {selected} unit{selected === 1 ? "" : "s"} into receiving</button></div>
   </div>;
 }
