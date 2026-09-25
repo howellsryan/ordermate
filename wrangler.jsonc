@@ -15,7 +15,7 @@
     {
       "binding": "CONTROL_DB",
       "database_name": "ordermate-control",
-      "database_id": "REPLACE_WITH_WRANGLER_CREATED_D1_ID",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations/control"
     }
   ],
