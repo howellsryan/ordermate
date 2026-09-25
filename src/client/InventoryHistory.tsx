@@ -30,6 +30,8 @@ export default function InventoryHistory({ tenant }: { tenant: OrganizationSumma
   const history = useQuery({
     queryKey: ["tenant", tenant.id, "inventory-movements"],
     queryFn: () => tenantOpsApi<Movement[]>(tenant.id, "/movements"),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const types = useMemo(() => [...new Set((history.data || []).map(item => item.movement_type))].sort(), [history.data]);
