@@ -70,7 +70,7 @@ export function PurchaseOrderDetailModal({ tenant, purchaseOrderId, onClose }: {
       <div className="record-summary po-summary">
         <Summary label="Supplier" value={po.supplier_name} />
         <Summary label="Destination" value={po.location_name} />
-        <Summary label="Expected" value={po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "Not set"} strong={overdue} />
+        <Summary label="Expected" value={po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "Not set"} />
         <Summary label="Total" value={money(po.total_minor, po.currency)} strong />
       </div>
       <div className="record-status-row"><span>Status <Status value={po.status} /></span>{overdue && <span className="po-overdue-flag">Expected {calendarDate(po.expected_delivery_date)} · overdue</span>}</div>
