@@ -17,6 +17,7 @@ import "./maintenance.css";
 import "./warehouse.css";
 import "./delivery-notes.css";
 import "./camera-scanner.css";
+import "./catalogue-import.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
