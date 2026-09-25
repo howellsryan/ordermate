@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Archive, CheckCircle2, Sparkles, Warehouse } from "lucide-react";
+import { AlertTriangle, Archive, Sparkles, Warehouse } from "lucide-react";
 import type { OrganizationSummary, DashboardSummary } from "../../shared/types";
 import { money, tenantApi, tenantOpsApi } from "../api";
 import type { AttentionResponse, SearchResult } from "../model";
@@ -30,7 +30,6 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <DataState loading={attention.isLoading} error={attention.error} empty={!attention.data?.items.length} emptyText="Nothing needs attention right now.">
         <div className="attention-list">{attention.data?.items.slice(0, 8).map(item => <button key={item.id} className={`attention-item attention-${item.severity}`} onClick={() => onNavigate(item.page)}><span className="attention-marker" /><span className="attention-copy"><small>{item.type}</small><strong>{item.title}</strong><span>{item.detail}</span></span><span className="attention-open">Open</span></button>)}</div>
       </DataState>
-      {!attention.isLoading && !attention.error && !attention.data?.items.length && <div className="attention-clear"><CheckCircle2 size={18} /><span>Stock, confirmed orders and incoming purchase orders are currently clear.</span></div>}
     </section>
 
     <section className="overview-grid">
