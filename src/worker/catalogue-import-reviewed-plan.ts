@@ -22,6 +22,14 @@ function stateForFingerprint(existing: CatalogueImportExisting) {
     categories: existing.categories.map(category => normalizeName(category.name)).sort(),
     suppliers: existing.suppliers.map(supplier => normalizeName(supplier.name)).sort(),
     locations: existing.locations.map(location => normalizeIdentifier(location.code)).sort(),
+    supplierMappings: existing.supplierMappings
+      .map(mapping => ({
+        supplier: normalizeName(mapping.supplierName),
+        supplierSku: normalizeIdentifier(mapping.supplierSku || ""),
+        sku: normalizeIdentifier(mapping.sku),
+      }))
+      .sort((a, b) => a.supplier.localeCompare(b.supplier) || a.supplierSku.localeCompare(b.supplierSku) || a.sku.localeCompare(b.sku)),
+    defaultTaxRateBps: existing.defaultTaxRateBps,
   };
 }
 
