@@ -2,8 +2,36 @@ import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
 const CURRENT_TENANT_SCHEMA_VERSION = 1;
+const V1_REQUIRED_TABLES = [
+  "tenant_settings",
+  "sequences",
+  "categories",
+  "products",
+  "product_variants",
+  "variant_option_values",
+  "modifiers",
+  "product_modifiers",
+  "locations",
+  "inventory_levels",
+  "inventory_movements",
+  "suppliers",
+  "supplier_variants",
+  "purchase_orders",
+  "purchase_order_lines",
+  "customers",
+  "orders",
+  "order_lines",
+  "order_line_modifiers",
+  "inventory_reservations",
+  "fulfilments",
+  "fulfilment_lines",
+  "returns",
+  "return_lines",
+  "audit_events",
+] as const;
 
 type MigrationRow = { version: number };
+type TableRow = { name: string };
 
 /**
  * Final exported TenantStore class.
@@ -25,6 +53,19 @@ export class TenantStore extends RuntimeTenantStore {
     });
   }
 
+  private assertV1Baseline() {
+    const present = new Set(
+      this.versionedCtx.storage.sql
+        .exec<TableRow>("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .toArray()
+        .map(row => row.name),
+    );
+    const missing = V1_REQUIRED_TABLES.filter(table => !present.has(table));
+    if (missing.length) {
+      throw new Error(`Tenant v1 schema bootstrap is incomplete; missing: ${missing.join(", ")}`);
+    }
+  }
+
   private runSchemaMigrations() {
     const sql = this.versionedCtx.storage.sql;
     sql.exec(`
@@ -43,9 +84,7 @@ export class TenantStore extends RuntimeTenantStore {
     }
 
     if (current < 1) {
-      // The superclass has already applied the idempotent v1 bootstrap before
-      // requests are admitted. Existing pre-migration-tracker tenants and new
-      // tenants therefore share the same baseline and can be marked v1 safely.
+      this.assertV1Baseline();
       this.versionedCtx.storage.transactionSync(() => {
         sql.exec(
           "INSERT OR IGNORE INTO _sql_schema_migrations (id, applied_at) VALUES (1, ?)",
@@ -60,4 +99,4 @@ export class TenantStore extends RuntimeTenantStore {
   }
 }
 
-export { CURRENT_TENANT_SCHEMA_VERSION };
+export { CURRENT_TENANT_SCHEMA_VERSION, V1_REQUIRED_TABLES };
