@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 1;
+const CURRENT_TENANT_SCHEMA_VERSION = 2;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -34,15 +34,12 @@ type MigrationRow = { version: number };
 type TableRow = { name: string };
 
 /**
- * Final exported TenantStore class.
- *
- * Core v1 bootstrap remains responsible for creating the initial idempotent
- * schema. This layer records that baseline and is the only place future v2+
- * schema migrations may be added. Durable Object class identity remains
- * `TenantStore`; this does not create or move a namespace.
+ * Final versioned storage layer for the existing TenantStore Durable Object.
+ * Durable Object class identity remains `TenantStore`; migrations evolve the
+ * embedded SQLite database in place rather than creating/replacing namespaces.
  */
 export class TenantStore extends RuntimeTenantStore {
-  private readonly versionedCtx: DurableObjectState;
+  protected readonly versionedCtx: DurableObjectState;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
     super(ctx, env);
@@ -66,6 +63,14 @@ export class TenantStore extends RuntimeTenantStore {
     }
   }
 
+  private recordMigration(id: number) {
+    this.versionedCtx.storage.sql.exec(
+      "INSERT INTO _sql_schema_migrations (id, applied_at) VALUES (?, ?)",
+      id,
+      new Date().toISOString(),
+    );
+  }
+
   private runSchemaMigrations() {
     const sql = this.versionedCtx.storage.sql;
     sql.exec(`
@@ -75,7 +80,7 @@ export class TenantStore extends RuntimeTenantStore {
       )
     `);
 
-    const current = sql.exec<MigrationRow>(
+    let current = sql.exec<MigrationRow>(
       "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations",
     ).toArray()[0]?.version ?? 0;
 
@@ -85,17 +90,33 @@ export class TenantStore extends RuntimeTenantStore {
 
     if (current < 1) {
       this.assertV1Baseline();
-      this.versionedCtx.storage.transactionSync(() => {
-        sql.exec(
-          "INSERT OR IGNORE INTO _sql_schema_migrations (id, applied_at) VALUES (1, ?)",
-          new Date().toISOString(),
-        );
-      });
+      this.versionedCtx.storage.transactionSync(() => this.recordMigration(1));
+      current = 1;
     }
 
-    // Future schema changes belong here, in monotonically increasing blocks:
-    // if (current < 2) transactionSync(() => { ...; INSERT migration id 2; });
-    // Never mutate the tenant schema elsewhere without adding the migration.
+    if (current < 2) {
+      this.versionedCtx.storage.transactionSync(() => {
+        sql.exec(`
+          CREATE TABLE inventory_policies (
+            variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+            location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+            reorder_point INTEGER NOT NULL CHECK(reorder_point >= 0),
+            target_stock INTEGER NOT NULL CHECK(target_stock >= reorder_point),
+            preferred_supplier_id TEXT REFERENCES suppliers(id) ON DELETE SET NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL,
+            PRIMARY KEY(variant_id, location_id)
+          );
+          CREATE INDEX inventory_policies_supplier_idx ON inventory_policies(preferred_supplier_id);
+        `);
+        this.recordMigration(2);
+      });
+      current = 2;
+    }
+
+    if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
+      throw new Error(`Tenant schema migration stopped at ${current}; expected ${CURRENT_TENANT_SCHEMA_VERSION}`);
+    }
   }
 }
 
