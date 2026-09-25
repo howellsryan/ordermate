@@ -12,19 +12,22 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const canCreateLocation = ["owner", "admin", "inventory"].includes(tenant.role);
+  const canUpdateStock = ["owner", "admin", "manager", "inventory", "fulfilment"].includes(tenant.role);
   const inventory = useQuery({ queryKey: ["tenant", tenant.id, "inventory"], queryFn: () => tenantApi<InventoryRow[]>(tenant.id, "/inventory") });
   const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
   };
 
   return <>
-    <PageHeader eyebrow="Stock" title="Inventory" description="On hand, reserved, available and incoming stock stay separate. Every physical change leaves an auditable movement." actions={<><button className="secondary" onClick={() => setScanOpen(true)}><ScanLine size={17} /> Scan barcode</button><button className="secondary" onClick={() => setLocationOpen(true)}><Store size={17} /> Add location</button><button className="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft size={17} /> Transfer</button><button className="primary" onClick={() => setAdjustOpen(true)}><Plus size={17} /> Adjust stock</button></>} />
+    <PageHeader eyebrow="Stock" title="Inventory" description="On hand, reserved, available and incoming stock stay separate. Every physical change leaves an auditable movement." actions={<><button className="secondary" onClick={() => setScanOpen(true)}><ScanLine size={17} /> Scan barcode</button>{canCreateLocation && <button className="secondary" onClick={() => setLocationOpen(true)}><Store size={17} /> Add location</button>}{canUpdateStock && <button className="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft size={17} /> Transfer</button>}{canUpdateStock && <button className="primary" onClick={() => setAdjustOpen(true)}><Plus size={17} /> Adjust stock</button>}</>} />
     <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!inventory.data?.length} emptyText="Create a product and stock location to begin tracking inventory."><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{inventory.data?.map((row, index) => <tr key={`${row.variant_id}:${row.location_id}:${index}`}><td><strong>{row.product_name} <span className="muted">· {row.variant_name}</span></strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : ""}</small></td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.reserved}</td><td><strong className={row.available <= 5 ? "danger-text" : ""}>{row.available}</strong></td><td>{row.incoming}</td></tr>)}</tbody></table></DataState></div>
-    {locationOpen && <LocationModal tenant={tenant} onClose={() => setLocationOpen(false)} onCreated={() => { setLocationOpen(false); refresh(); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "locations"] }); }} />}
-    {adjustOpen && <AdjustModal tenant={tenant} rows={inventory.data || []} onClose={() => setAdjustOpen(false)} onDone={() => { setAdjustOpen(false); refresh(); }} />}
-    {transferOpen && <TransferModal tenant={tenant} rows={inventory.data || []} locations={locations.data || []} onClose={() => setTransferOpen(false)} onDone={() => { setTransferOpen(false); refresh(); }} />}
+    {locationOpen && canCreateLocation && <LocationModal tenant={tenant} onClose={() => setLocationOpen(false)} onCreated={() => { setLocationOpen(false); refresh(); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "locations"] }); }} />}
+    {adjustOpen && canUpdateStock && <AdjustModal tenant={tenant} rows={inventory.data || []} onClose={() => setAdjustOpen(false)} onDone={() => { setAdjustOpen(false); refresh(); }} />}
+    {transferOpen && canUpdateStock && <TransferModal tenant={tenant} rows={inventory.data || []} locations={locations.data || []} onClose={() => setTransferOpen(false)} onDone={() => { setTransferOpen(false); refresh(); }} />}
     {scanOpen && <BarcodeModal tenant={tenant} onClose={() => setScanOpen(false)} />}
   </>;
 }
