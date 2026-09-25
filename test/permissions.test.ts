@@ -17,6 +17,18 @@ describe("tenant route permission classification", () => {
     }
   });
 
+  it("classifies catalogue import preview and commit as catalogue creation", () => {
+    for (const path of ["/imports/catalogue/preview", "/imports/catalogue/commit"]) {
+      const permission = permissionForRequest(path, "POST");
+      expect(permission).toEqual({ resource: "catalogue", action: "create" });
+      expect(can("owner", permission.resource, permission.action)).toBe(true);
+      expect(can("manager", permission.resource, permission.action)).toBe(true);
+      expect(can("inventory", permission.resource, permission.action)).toBe(false);
+      expect(can("fulfilment", permission.resource, permission.action)).toBe(false);
+      expect(can("viewer", permission.resource, permission.action)).toBe(false);
+    }
+  });
+
   it("classifies order and purchase-order lifecycle actions as updates", () => {
     expect(permissionForRequest("/orders/123/confirm", "POST")).toEqual({ resource: "orders", action: "update" });
     expect(permissionForRequest("/orders/123/fulfil", "POST")).toEqual({ resource: "orders", action: "update" });
