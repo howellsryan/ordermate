@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, Trash2, XCircle } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
 import DocumentInbox from "../DocumentInbox";
+import Replenishment, { type PurchaseOrderSeed } from "../Replenishment";
 import { PurchaseOrderDetailModal } from "../RecordDetails";
 import { date, money, tenantApi } from "../api";
 import type { Location, Product, PurchaseOrder, PurchaseOrderDetail, Supplier } from "../model";
@@ -14,6 +15,7 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   const qc = useQueryClient();
   const [viewId, setViewId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [poSeed, setPoSeed] = useState<PurchaseOrderSeed | null>(null);
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const canWrite = tenant.role !== "viewer";
@@ -21,32 +23,53 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
     if (viewId) qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", viewId] });
   };
   const submit = useMutation({ mutationFn: (poId: string) => tenantApi(tenant.id, `/purchase-orders/${poId}/submit`, { method: "POST", body: JSON.stringify({}) }), onSuccess: refresh });
+  const openBlankPo = () => { setPoSeed(null); setCreateOpen(true); };
+  const openSuggestedPo = (seed: PurchaseOrderSeed) => { setPoSeed(seed); setCreateOpen(true); };
 
   return <>
-    <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> New purchase order</button> : undefined} />
+    <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={openBlankPo}><Plus size={17} /> New purchase order</button> : undefined} />
+    <Replenishment tenant={tenant} onCreatePurchaseOrder={openSuggestedPo} />
     <DocumentInbox tenant={tenant} />
     <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>)}</tbody></table></DataState></div>
     {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
-    {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); refresh(); }} />}
+    {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} seed={poSeed || undefined} onClose={() => { setCreateOpen(false); setPoSeed(null); }} onCreated={() => { setCreateOpen(false); setPoSeed(null); refresh(); }} />}
     {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
     {cancelId && canWrite && <CancelPurchaseOrderModal tenant={tenant} purchaseOrderId={cancelId} onClose={() => setCancelId(null)} onDone={() => { setCancelId(null); refresh(); }} />}
   </>;
 }
 
-function PurchaseOrderModal({ tenant, onClose, onCreated }: { tenant: OrganizationSummary; onClose: () => void; onCreated: () => void }) {
+function PurchaseOrderModal({ tenant, seed, onClose, onCreated }: { tenant: OrganizationSummary; seed?: PurchaseOrderSeed; onClose: () => void; onCreated: () => void }) {
   const suppliers = useQuery({ queryKey: ["tenant", tenant.id, "suppliers"], queryFn: () => tenantApi<Supplier[]>(tenant.id, "/suppliers") });
   const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const variants = useMemo(() => (products.data || []).flatMap(product => product.variants.map(variant => ({ ...variant, productName: product.name }))), [products.data]);
-  const [supplierId, setSupplierId] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<DraftLine[]>([{ id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }]);
+  const [supplierId, setSupplierId] = useState(seed?.supplierId || "");
+  const [locationId, setLocationId] = useState(seed?.locationId || "");
+  const [notes, setNotes] = useState(seed ? `Replenishment suggestion for ${seed.sourceLabel} — review before submitting.` : "");
+  const [lines, setLines] = useState<DraftLine[]>(seed ? [{
+    id: crypto.randomUUID(),
+    variantId: seed.variantId,
+    quantity: String(seed.quantity),
+    cost: seed.costMinor == null ? "" : (seed.costMinor / 100).toFixed(2),
+    tax: "",
+  }] : [{ id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }]);
+
+  useEffect(() => {
+    if (!seed || !variants.length) return;
+    const variant = variants.find(item => item.id === seed.variantId);
+    if (!variant) return;
+    setLines(current => current.map(line => line.variantId === seed.variantId ? {
+      ...line,
+      cost: line.cost || (variant.cost_minor / 100).toFixed(2),
+      tax: line.tax || (variant.tax_rate_bps / 100).toString(),
+    } : line));
+  }, [seed?.variantId, variants.length]);
 
   const patchLine = (lineId: string, patch: Partial<DraftLine>) => setLines(current => current.map(line => line.id === lineId ? { ...line, ...patch } : line));
   const selectVariant = (lineId: string, variantId: string) => {
@@ -61,12 +84,13 @@ function PurchaseOrderModal({ tenant, onClose, onCreated }: { tenant: Organizati
     onSuccess: onCreated,
   });
 
-  return <Modal title="New purchase order" subtitle="Costs and tax are snapshotted now. Receiving later creates the actual stock movements." onClose={onClose} wide><form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.data?.map(supplier => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></Field><Field label="Receive into"><select required value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field><Field label="Notes"><input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Supplier reference, delivery note…" /></Field><div />
+  return <Modal title={seed ? "Review suggested purchase order" : "New purchase order"} subtitle={seed ? "OrderMate has pre-filled the supplier, destination and suggested quantity. Review every commercial value before creating the draft." : "Costs and tax are snapshotted now. Receiving later creates the actual stock movements."} onClose={onClose} wide><form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.data?.map(supplier => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></Field><Field label="Receive into"><select required value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field><Field label="Notes"><input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Supplier reference, delivery note…" /></Field><div />
+      {seed && <div className="suggestion-review full-span"><strong>Suggested, not automatic</strong><span>The recommendation only pre-fills this draft. Nothing affects incoming or on-hand stock until you create, submit and later receive the PO.</span></div>}
       <div className="form-section full-span"><div><p className="eyebrow">Lines</p><h3>What are you ordering?</h3></div><button type="button" className="secondary" onClick={() => setLines(current => [...current, { id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }])}><Plus size={15} /> Add line</button></div>
       <div className="line-editor full-span"><div className="line-editor-head"><span>Variant</span><span>Qty</span><span>Unit cost</span><span>Tax %</span><span /></div>{lines.map(line => <div className="line-editor-row" key={line.id}><select required value={line.variantId} onChange={event => selectVariant(line.id, event.target.value)}><option value="">Choose product variant</option>{variants.map(variant => <option value={variant.id} key={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select><input required type="number" min="1" step="1" value={line.quantity} onChange={event => patchLine(line.id, { quantity: event.target.value })} /><input required type="number" min="0" step="0.01" value={line.cost} onChange={event => patchLine(line.id, { cost: event.target.value })} /><input required type="number" min="0" step="0.01" value={line.tax} onChange={event => patchLine(line.id, { tax: event.target.value })} /><button type="button" className="icon-button" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines(current => current.filter(item => item.id !== line.id))}><Trash2 size={16} /></button></div>)}</div>
       {(!suppliers.data?.length || !locations.data?.length || !variants.length) && <p className="form-note full-span">A purchase order needs at least one supplier, location and product variant. Add those first if a selector is empty.</p>}
       {mutation.error && <ErrorText error={mutation.error} />}
-      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !supplierId || !locationId || lines.some(line => !line.variantId)}>Create draft PO</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !supplierId || !locationId || lines.some(line => !line.variantId || !line.cost || !line.tax)}>Create draft PO</button></div>
     </form></Modal>;
 }
 
