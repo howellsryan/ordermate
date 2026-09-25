@@ -32,6 +32,78 @@ const V1_REQUIRED_TABLES = [
 
 type MigrationRow = { version: number };
 type TableRow = { name: string };
+type SqlStorage = DurableObjectState["storage"];
+
+function assertV1Baseline(storage: SqlStorage) {
+  const present = new Set(
+    storage.sql
+      .exec<TableRow>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .toArray()
+      .map(row => row.name),
+  );
+  const missing = V1_REQUIRED_TABLES.filter(table => !present.has(table));
+  if (missing.length) {
+    throw new Error(`Tenant v1 schema bootstrap is incomplete; missing: ${missing.join(", ")}`);
+  }
+}
+
+function recordMigration(storage: SqlStorage, id: number) {
+  storage.sql.exec(
+    "INSERT INTO _sql_schema_migrations (id, applied_at) VALUES (?, ?)",
+    id,
+    new Date().toISOString(),
+  );
+}
+
+export function migrateTenantSchema(storage: SqlStorage) {
+  const sql = storage.sql;
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
+      id INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    )
+  `);
+
+  let current = sql.exec<MigrationRow>(
+    "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations",
+  ).toArray()[0]?.version ?? 0;
+
+  if (current > CURRENT_TENANT_SCHEMA_VERSION) {
+    throw new Error(`Tenant schema version ${current} is newer than runtime version ${CURRENT_TENANT_SCHEMA_VERSION}`);
+  }
+
+  if (current < 1) {
+    assertV1Baseline(storage);
+    storage.transactionSync(() => recordMigration(storage, 1));
+    current = 1;
+  }
+
+  if (current < 2) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE inventory_policies (
+          variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+          location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+          reorder_point INTEGER NOT NULL CHECK(reorder_point >= 0),
+          target_stock INTEGER NOT NULL CHECK(target_stock >= reorder_point),
+          preferred_supplier_id TEXT REFERENCES suppliers(id) ON DELETE SET NULL,
+          updated_at TEXT NOT NULL,
+          updated_by TEXT NOT NULL,
+          PRIMARY KEY(variant_id, location_id)
+        );
+        CREATE INDEX inventory_policies_supplier_idx ON inventory_policies(preferred_supplier_id);
+      `);
+      recordMigration(storage, 2);
+    });
+    current = 2;
+  }
+
+  if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
+    throw new Error(`Tenant schema migration stopped at ${current}; expected ${CURRENT_TENANT_SCHEMA_VERSION}`);
+  }
+
+  return current;
+}
 
 /**
  * Final versioned storage layer for the existing TenantStore Durable Object.
@@ -46,77 +118,8 @@ export class TenantStore extends RuntimeTenantStore {
     this.versionedCtx = ctx;
 
     ctx.blockConcurrencyWhile(async () => {
-      this.runSchemaMigrations();
+      migrateTenantSchema(ctx.storage);
     });
-  }
-
-  private assertV1Baseline() {
-    const present = new Set(
-      this.versionedCtx.storage.sql
-        .exec<TableRow>("SELECT name FROM sqlite_master WHERE type = 'table'")
-        .toArray()
-        .map(row => row.name),
-    );
-    const missing = V1_REQUIRED_TABLES.filter(table => !present.has(table));
-    if (missing.length) {
-      throw new Error(`Tenant v1 schema bootstrap is incomplete; missing: ${missing.join(", ")}`);
-    }
-  }
-
-  private recordMigration(id: number) {
-    this.versionedCtx.storage.sql.exec(
-      "INSERT INTO _sql_schema_migrations (id, applied_at) VALUES (?, ?)",
-      id,
-      new Date().toISOString(),
-    );
-  }
-
-  private runSchemaMigrations() {
-    const sql = this.versionedCtx.storage.sql;
-    sql.exec(`
-      CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
-        id INTEGER PRIMARY KEY,
-        applied_at TEXT NOT NULL
-      )
-    `);
-
-    let current = sql.exec<MigrationRow>(
-      "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations",
-    ).toArray()[0]?.version ?? 0;
-
-    if (current > CURRENT_TENANT_SCHEMA_VERSION) {
-      throw new Error(`Tenant schema version ${current} is newer than runtime version ${CURRENT_TENANT_SCHEMA_VERSION}`);
-    }
-
-    if (current < 1) {
-      this.assertV1Baseline();
-      this.versionedCtx.storage.transactionSync(() => this.recordMigration(1));
-      current = 1;
-    }
-
-    if (current < 2) {
-      this.versionedCtx.storage.transactionSync(() => {
-        sql.exec(`
-          CREATE TABLE inventory_policies (
-            variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
-            location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
-            reorder_point INTEGER NOT NULL CHECK(reorder_point >= 0),
-            target_stock INTEGER NOT NULL CHECK(target_stock >= reorder_point),
-            preferred_supplier_id TEXT REFERENCES suppliers(id) ON DELETE SET NULL,
-            updated_at TEXT NOT NULL,
-            updated_by TEXT NOT NULL,
-            PRIMARY KEY(variant_id, location_id)
-          );
-          CREATE INDEX inventory_policies_supplier_idx ON inventory_policies(preferred_supplier_id);
-        `);
-        this.recordMigration(2);
-      });
-      current = 2;
-    }
-
-    if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
-      throw new Error(`Tenant schema migration stopped at ${current}; expected ${CURRENT_TENANT_SCHEMA_VERSION}`);
-    }
   }
 }
 
