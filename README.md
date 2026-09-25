@@ -9,11 +9,27 @@ OrderMate is a Cloudflare-native multi-tenant SaaS for products, purchasing, ord
 - Better Auth with Google OAuth.
 - D1 control plane for users, sessions, organizations, memberships and workspace invitations.
 - One EU-jurisdiction SQLite-backed Durable Object per tenant for operational data.
-- EU-jurisdiction R2 for product images and documents.
-- Cloudflare Queues/Workflows for asynchronous and durable automation.
+- EU-jurisdiction R2 for source documents, proposal sidecars and future product media.
+- Cloudflare Queues for asynchronous document/automation events, with a dead-letter queue for bounded failure handling.
+- Optional Cloudflare Workers AI document extraction. It is built in but disabled by default for an explicit compliance decision.
 - Wrangler is the source of truth for deployable Cloudflare resources.
 
 See `docs/architecture.md` and `docs/delivery-plan.md`.
+
+## Delivered product foundations
+
+OrderMate currently includes:
+
+- Google sign-in, multiple businesses per user, invitations and role-based access.
+- products, arbitrary option dimensions, variants, SKUs, barcodes and modifiers;
+- multi-location stock with on-hand, reserved, available and incoming quantities;
+- immutable inventory movements, transfers, adjustments and barcode lookup;
+- suppliers, supplier-SKU mappings, purchase orders, partial receiving and cancellation;
+- deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
+- customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
+- global search, operational attention inbox, audit/activity, CSV exports and record detail views;
+- tenant-scoped R2 purchasing documents and a human-review AI extraction workflow;
+- non-destructive catalogue archive/restore and maintainable supplier/customer records.
 
 ## Local setup
 
@@ -35,7 +51,14 @@ See `docs/architecture.md` and `docs/delivery-plan.md`.
    npm run cf:bootstrap
    ```
 
-   The script creates `ordermate-control` as an EU-jurisdiction D1 database, writes its `CONTROL_DB` binding into `wrangler.jsonc`, creates the EU-jurisdiction `ordermate-documents` R2 bucket, and creates the `ordermate-events` queue. The tenant SQLite Durable Object namespace is created from the Wrangler migration on deploy.
+   The script creates:
+
+   - `ordermate-control` as an EU-jurisdiction D1 database and writes its `CONTROL_DB` binding into `wrangler.jsonc`;
+   - `ordermate-documents` as an EU-jurisdiction R2 bucket;
+   - `ordermate-events` as the application queue; and
+   - `ordermate-events-dead` as its extraction dead-letter queue.
+
+   The tenant SQLite Durable Object namespace is created from the Wrangler migration on deploy. The Workers AI binding is declared directly in `wrangler.jsonc` and does not require another provider credential.
 
 4. Create a Google OAuth **Web application** client. For local development, add the Better Auth redirect URI for the origin printed by Vite, ending in:
 
@@ -67,6 +90,32 @@ See `docs/architecture.md` and `docs/delivery-plan.md`.
    npm run dev
    ```
 
+## AI purchase-document extraction
+
+The workflow is deliberately proposal-based:
+
+`EU R2 source -> Queue -> Cloudflare document conversion -> Workers AI JSON extraction -> deterministic OrderMate matching -> R2 proposal -> human review -> draft PO`
+
+AI never submits a PO, receives stock, adjusts inventory or fulfils an order.
+
+Exact matching is limited to known supplier identity, supplier SKU, barcode and OrderMate SKU. Ambiguous lines stay unmatched for human correction. Raw converted Markdown is not persisted; R2 stores the original source and the structured proposal.
+
+### Residency gate
+
+`AI_DOCUMENT_EXTRACTION_ENABLED` is `false` by default in `wrangler.jsonc`.
+
+This is intentional. D1, Durable Object storage and R2 are explicitly configured for EU jurisdiction where supported. Workers AI is still a Cloudflare service, but Cloudflare's current Data Localization compatibility documentation does not list Workers AI as supporting Regional Services. Enable document extraction only after that processing posture is acceptable for the product's compliance requirements:
+
+```jsonc
+"vars": {
+  "AI_DOCUMENT_EXTRACTION_ENABLED": "true"
+}
+```
+
+When the flag is false, purchasing documents can still be stored and reviewed from EU R2, but no document event is sent for AI extraction.
+
+PDFs use Cloudflare Markdown conversion with PDF metadata disabled before structured extraction. Image conversion is treated as best-effort and proposals from images are always flagged for explicit review.
+
 ## Verification
 
 Before proposing a material change for merge:
@@ -77,7 +126,7 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation and inventory consistency are required regression tests.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, deterministic document matching and non-destructive record maintenance are required regression areas.
 
 ## Production configuration
 
