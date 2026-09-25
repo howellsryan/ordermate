@@ -35,6 +35,7 @@ export function can(role: Role, resource: Resource, action: Action): boolean {
 export function permissionForRequest(path: string, method: string): { resource: Resource; action: Action } {
   const action: Action = method === "GET" || method === "HEAD" ? "read" : method === "DELETE" ? "delete" : method === "POST" ? "create" : "update";
 
+  if (path.startsWith("/imports/catalogue")) return { resource: "catalogue", action: "create" };
   if (path.startsWith("/products") || path.startsWith("/categories")) return { resource: "catalogue", action };
   if (path.startsWith("/locations")) return { resource: "inventory", action };
   if (path.startsWith("/inventory-policies")) return { resource: "purchasing", action };
