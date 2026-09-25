@@ -64,6 +64,7 @@ function pageVisible(role: Role, page: Page) {
   if (role === "owner" || role === "admin") return true;
   if (page === "warehouse") return role !== "viewer";
   if (page === "stocktake") return role === "manager" || role === "inventory";
+  if (page === "reports") return role !== "fulfilment";
   if (page === "team" || page === "settings") return role === "manager" || role === "viewer";
   if (page === "purchasing" || page === "suppliers") return role !== "fulfilment";
   return true;
