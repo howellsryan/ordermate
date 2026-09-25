@@ -1,0 +1,11 @@
+@layer components {
+  .person-edit { margin-left: auto; flex: 0 0 auto; }
+  .people-error { margin-bottom: 14px; }
+  .people-error .form-error { margin: 0; }
+  .status-archived { background: #ece9e2; color: #746f67; }
+
+  @media (max-width: 560px) {
+    .list-card .person-edit { min-width: 32px; padding-inline: 9px; }
+    .list-card .person-edit svg { margin: 0; }
+  }
+}
