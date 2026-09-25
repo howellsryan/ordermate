@@ -27,6 +27,14 @@ export type CatalogueImportExisting = {
   categories: Array<{ id: string; name: string }>;
   suppliers: Array<{ id: string; name: string }>;
   locations: Array<{ id: string; name: string; code: string }>;
+  supplierMappings: Array<{
+    supplierId: string;
+    supplierName: string;
+    variantId: string;
+    sku: string;
+    supplierSku: string | null;
+  }>;
+  defaultTaxRateBps: number;
 };
 
 export type CatalogueImportIssue = {
