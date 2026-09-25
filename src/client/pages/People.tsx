@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleUserRound, Plus, Truck } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import SupplierCatalogue from "../SupplierCatalogue";
 import { tenantApi } from "../api";
 import type { Customer, Supplier } from "../model";
 import { CardList, ErrorText, Field, Modal, PageHeader } from "../ui";
@@ -11,7 +12,12 @@ export function Suppliers({ tenant }: { tenant: OrganizationSummary }) {
   const [open, setOpen] = useState(false);
   const canWrite = ["owner", "admin", "manager", "inventory"].includes(tenant.role);
   const query = useQuery({ queryKey: ["tenant", tenant.id, "suppliers"], queryFn: () => tenantApi<Supplier[]>(tenant.id, "/suppliers") });
-  return <><PageHeader eyebrow="Purchasing" title="Suppliers" description="The commercial relationships behind incoming stock and future replenishment intelligence." actions={canWrite ? <button className="primary" onClick={() => setOpen(true)}><Plus size={17} /> Add supplier</button> : undefined} /><CardList items={query.data || []} loading={query.isLoading} empty="No suppliers yet." render={supplier => <><div className="list-icon"><Truck size={19} /></div><div><strong>{supplier.name}</strong><small>{supplier.email || supplier.phone || "No contact details"}</small></div></>} />{open && canWrite && <PersonModal kind="supplier" tenant={tenant} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "suppliers"] }); }} />}</>;
+  return <>
+    <PageHeader eyebrow="Purchasing" title="Suppliers" description="The commercial relationships behind incoming stock, source-document matching and replenishment intelligence." actions={canWrite ? <button className="primary" onClick={() => setOpen(true)}><Plus size={17} /> Add supplier</button> : undefined} />
+    <CardList items={query.data || []} loading={query.isLoading} empty="No suppliers yet." render={supplier => <><div className="list-icon"><Truck size={19} /></div><div><strong>{supplier.name}</strong><small>{supplier.email || supplier.phone || "No contact details"}</small></div></>} />
+    <SupplierCatalogue tenant={tenant} suppliers={query.data || []} />
+    {open && canWrite && <PersonModal kind="supplier" tenant={tenant} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "suppliers"] }); }} />}
+  </>;
 }
 
 export function Customers({ tenant }: { tenant: OrganizationSummary }) {
