@@ -8,6 +8,7 @@ import "./operational-polish.css";
 import "./document-inbox.css";
 import "./record-details.css";
 import "./inventory-history.css";
+import "./product-edit.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
