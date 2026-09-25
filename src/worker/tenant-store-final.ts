@@ -27,6 +27,13 @@ type StocktakeCurrentRow = {
   tracked: number;
 };
 
+type PurchaseOrderDueRow = {
+  status: string;
+  ordered_at: string | null;
+  expected_delivery_date: string | null;
+  lead_time_days: number | null;
+};
+
 const stocktakeInput = z.object({
   locationId: z.string().min(1),
   reason: z.string().trim().max(500).optional(),
@@ -36,6 +43,10 @@ const stocktakeInput = z.object({
     expectedReserved: z.number().int().min(0).max(1_000_000),
     countedOnHand: z.number().int().min(0).max(1_000_000),
   })).min(1).max(500),
+});
+
+const expectedDeliveryInput = z.object({
+  expectedDeliveryDate: z.union([z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()]),
 });
 
 function normalizeSupplierSku(value: string) {
@@ -50,6 +61,23 @@ function id() {
   return crypto.randomUUID();
 }
 
+function isRealIsoDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function addUtcDays(isoTimestamp: string, days: number) {
+  const date = new Date(isoTimestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Final canonical runtime guards and reviewed operational batch mutations.
  *
@@ -57,6 +85,7 @@ function id() {
  *   to one OrderMate variant.
  * - Cycle counts compare against the stock position the operator reviewed and
  *   commit all accepted variances in one SQLite transaction.
+ * - Purchase-order submission snapshots a reviewable expected delivery date.
  */
 export class TenantStore extends ImportTenantStore {
   private readonly finalCtx: DurableObjectState;
@@ -72,6 +101,16 @@ export class TenantStore extends ImportTenantStore {
 
     if (request.method === "POST" && path === "/inventory/stocktake") {
       return this.commitStocktake(request);
+    }
+
+    const expectedDelivery = path.match(/^\/purchase-orders\/([^/]+)\/expected-delivery$/);
+    if (request.method === "PATCH" && expectedDelivery) {
+      return this.updateExpectedDeliveryDate(decodeURIComponent(expectedDelivery[1]), request);
+    }
+
+    const submitPurchaseOrder = path.match(/^\/purchase-orders\/([^/]+)\/submit$/);
+    if (request.method === "POST" && submitPurchaseOrder) {
+      return this.submitPurchaseOrderWithDueDate(decodeURIComponent(submitPurchaseOrder[1]), request);
     }
 
     if (request.method === "POST" && path === "/supplier-variants") {
@@ -107,6 +146,94 @@ export class TenantStore extends ImportTenantStore {
     }
 
     return super.fetch(request);
+  }
+
+  private auditFinal(request: Request, action: string, entityType: string, entityId: string, metadata?: unknown) {
+    const actorId = request.headers.get("x-ordermate-actor-id") || "system";
+    const actorRole = request.headers.get("x-ordermate-actor-role") || "unknown";
+    this.finalCtx.storage.sql.exec(
+      "INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      id(), actorId, actorRole, action, entityType, entityId, metadata === undefined ? null : JSON.stringify(metadata), now(),
+    );
+  }
+
+  private purchaseOrderDueRow(poId: string) {
+    return this.finalCtx.storage.sql.exec<PurchaseOrderDueRow>(
+      `SELECT po.status,
+              po.ordered_at,
+              po.expected_delivery_date,
+              MAX(sv.lead_time_days) AS lead_time_days
+       FROM purchase_orders po
+       LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+       LEFT JOIN supplier_variants sv ON sv.supplier_id = po.supplier_id AND sv.variant_id = pol.variant_id
+       WHERE po.id = ?
+       GROUP BY po.id`,
+      poId,
+    ).toArray()[0];
+  }
+
+  private submitPurchaseOrderWithDueDate(poId: string, request: Request) {
+    const current = this.purchaseOrderDueRow(poId);
+    if (!current) return Response.json({ error: "Purchase order not found" }, { status: 404 });
+    if (current.status !== "draft") return Response.json({ error: "Only draft purchase orders can be submitted" }, { status: 409 });
+
+    const timestamp = now();
+    const expectedDeliveryDate = current.expected_delivery_date
+      || (current.lead_time_days == null ? null : addUtcDays(timestamp, Math.max(0, current.lead_time_days)));
+
+    this.finalCtx.storage.transactionSync(() => {
+      this.finalCtx.storage.sql.exec(
+        "UPDATE purchase_orders SET status = 'ordered', ordered_at = ?, expected_delivery_date = ?, updated_at = ? WHERE id = ? AND status = 'draft'",
+        timestamp,
+        expectedDeliveryDate,
+        timestamp,
+        poId,
+      );
+      this.auditFinal(request, "purchase_order.submitted", "purchase_order", poId, {
+        expectedDeliveryDate,
+        expectedDeliverySource: current.expected_delivery_date ? "manual" : current.lead_time_days == null ? "unknown" : "supplier_lead_time",
+        leadTimeDays: current.expected_delivery_date ? null : current.lead_time_days,
+      });
+    });
+
+    return Response.json({ ok: true, expectedDeliveryDate });
+  }
+
+  private async updateExpectedDeliveryDate(poId: string, request: Request) {
+    let input: z.infer<typeof expectedDeliveryInput>;
+    try {
+      input = expectedDeliveryInput.parse(await request.json());
+    } catch (cause) {
+      if (cause instanceof z.ZodError) return Response.json({ error: "Expected delivery date must use YYYY-MM-DD" }, { status: 400 });
+      throw cause;
+    }
+    if (input.expectedDeliveryDate && !isRealIsoDate(input.expectedDeliveryDate)) {
+      return Response.json({ error: "Expected delivery date is not a valid calendar date" }, { status: 400 });
+    }
+
+    const existing = this.finalCtx.storage.sql.exec<{ status: string; expected_delivery_date: string | null }>(
+      "SELECT status, expected_delivery_date FROM purchase_orders WHERE id = ?",
+      poId,
+    ).toArray()[0];
+    if (!existing) return Response.json({ error: "Purchase order not found" }, { status: 404 });
+    if (existing.status === "received" || existing.status === "cancelled") {
+      return Response.json({ error: "Expected delivery cannot be changed on a closed purchase order" }, { status: 409 });
+    }
+
+    const timestamp = now();
+    this.finalCtx.storage.transactionSync(() => {
+      this.finalCtx.storage.sql.exec(
+        "UPDATE purchase_orders SET expected_delivery_date = ?, updated_at = ? WHERE id = ?",
+        input.expectedDeliveryDate,
+        timestamp,
+        poId,
+      );
+      this.auditFinal(request, "purchase_order.expected_delivery_updated", "purchase_order", poId, {
+        from: existing.expected_delivery_date,
+        to: input.expectedDeliveryDate,
+      });
+    });
+    return Response.json({ ok: true, expectedDeliveryDate: input.expectedDeliveryDate });
   }
 
   private async commitStocktake(request: Request) {
@@ -219,7 +346,6 @@ export class TenantStore extends ImportTenantStore {
           );
         }
 
-        // Retain the explicit reservation invariant inside the transaction too.
         if (line.countedOnHand < reserved) throw new Error("Cycle count would reduce on-hand below reserved stock");
       }
 
