@@ -21,6 +21,7 @@ import "./camera-scanner.css";
 import "./catalogue-import.css";
 import "./stocktake.css";
 import "./saved-views.css";
+import "./bulk-actions.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
