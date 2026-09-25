@@ -1,6 +1,9 @@
 name: Rebuild verification
 
 on:
+  push:
+    branches:
+      - rebuild/cloudflare-saas
   workflow_dispatch:
 
 permissions:
@@ -12,6 +15,7 @@ concurrency:
 
 jobs:
   verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -50,7 +54,7 @@ jobs:
           fi
 
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "4189822+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
           git commit -m "chore: lock npm dependencies"
           git push origin HEAD:rebuild/cloudflare-saas
@@ -61,5 +65,8 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
+      - name: Build production configuration
         run: npm run build
+
+      - name: Build staging configuration
+        run: npm run build:staging
