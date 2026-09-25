@@ -36,7 +36,8 @@ function actorId(request: Request) {
 }
 
 function parseRecord(row: SavedViewRecord): SavedView {
-  return { ...row, config: JSON.parse(row.config_json) } as SavedView;
+  const { config_json: configJson, ...record } = row;
+  return { ...record, config: JSON.parse(configJson) } as SavedView;
 }
 
 export class TenantStore extends DiscrepancyTenantStore {
