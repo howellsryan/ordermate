@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS tenant_settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sequences (
+  name TEXT PRIMARY KEY,
+  next_value INTEGER NOT NULL DEFAULT 1 CHECK(next_value > 0)
+);
+
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -43,6 +48,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS variants_product_idx ON product_variants(product_id);
+CREATE INDEX IF NOT EXISTS variants_barcode_idx ON product_variants(barcode);
 
 CREATE TABLE IF NOT EXISTS variant_option_values (
   variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
@@ -80,7 +86,7 @@ CREATE TABLE IF NOT EXISTS inventory_levels (
   variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
   location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
   on_hand INTEGER NOT NULL DEFAULT 0 CHECK(on_hand >= 0),
-  reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0),
+  reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0 AND reserved <= on_hand),
   updated_at TEXT NOT NULL,
   PRIMARY KEY(variant_id, location_id)
 );
@@ -98,6 +104,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS inventory_movements_variant_idx ON inventory_movements(variant_id, location_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS inventory_movements_reference_idx ON inventory_movements(reference_type, reference_id);
 
 CREATE TABLE IF NOT EXISTS suppliers (
   id TEXT PRIMARY KEY,
@@ -142,7 +149,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
   sku_snapshot TEXT NOT NULL,
   description_snapshot TEXT NOT NULL,
   quantity_ordered INTEGER NOT NULL CHECK(quantity_ordered > 0),
-  quantity_received INTEGER NOT NULL DEFAULT 0 CHECK(quantity_received >= 0),
+  quantity_received INTEGER NOT NULL DEFAULT 0 CHECK(quantity_received >= 0 AND quantity_received <= quantity_ordered),
   unit_cost_minor INTEGER NOT NULL CHECK(unit_cost_minor >= 0),
   tax_rate_bps INTEGER NOT NULL DEFAULT 0,
   net_minor INTEGER NOT NULL,
@@ -188,8 +195,8 @@ CREATE TABLE IF NOT EXISTS order_lines (
   variant_name_snapshot TEXT NOT NULL,
   sku_snapshot TEXT NOT NULL,
   quantity INTEGER NOT NULL CHECK(quantity > 0),
-  quantity_fulfilled INTEGER NOT NULL DEFAULT 0 CHECK(quantity_fulfilled >= 0),
-  quantity_returned INTEGER NOT NULL DEFAULT 0 CHECK(quantity_returned >= 0),
+  quantity_fulfilled INTEGER NOT NULL DEFAULT 0 CHECK(quantity_fulfilled >= 0 AND quantity_fulfilled <= quantity),
+  quantity_returned INTEGER NOT NULL DEFAULT 0 CHECK(quantity_returned >= 0 AND quantity_returned <= quantity_fulfilled),
   unit_price_minor INTEGER NOT NULL CHECK(unit_price_minor >= 0),
   tax_rate_bps INTEGER NOT NULL DEFAULT 0,
   net_minor INTEGER NOT NULL,
@@ -197,6 +204,19 @@ CREATE TABLE IF NOT EXISTS order_lines (
   gross_minor INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS order_lines_order_idx ON order_lines(order_id);
+
+CREATE TABLE IF NOT EXISTS order_line_modifiers (
+  id TEXT PRIMARY KEY,
+  order_line_id TEXT NOT NULL REFERENCES order_lines(id) ON DELETE CASCADE,
+  modifier_id TEXT REFERENCES modifiers(id) ON DELETE SET NULL,
+  name_snapshot TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+  unit_price_delta_minor INTEGER NOT NULL,
+  net_minor INTEGER NOT NULL,
+  tax_minor INTEGER NOT NULL,
+  gross_minor INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS order_line_modifiers_line_idx ON order_line_modifiers(order_line_id);
 
 CREATE TABLE IF NOT EXISTS inventory_reservations (
   id TEXT PRIMARY KEY,
