@@ -14,6 +14,7 @@ The rebuild branch now contains the complete v1 operational backbone plus schema
 - Search, exception inbox, record details, activity/audit and CSV export.
 - Explainable replenishment recommendations plus per-SKU/location custom rules.
 - Supplier purchase-document extraction -> deterministic matching -> human-reviewed draft PO.
+- Human-reviewed supplier SKU learning from document proposals with canonical ambiguity protection.
 - Dedicated Warehouse workspace for barcode-driven Pick & Fulfil and Receive Stock.
 - Cross-browser mobile camera barcode capture using lazy-loaded ZXing.
 - Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction.
@@ -56,6 +57,7 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Purchase-order cancellation without rewriting already received stock.
 - Deterministic replenishment recommendations.
 - Sparse per-variant/location reorder point, arrival target and preferred supplier policy.
+- Reviewed supplier-code learning: extracted supplier SKUs can be remembered only after a user confirms supplier + variant; replacements require explicit opt-in and conflicting mappings are rejected server-side.
 
 ## Phase 3 — order lifecycle
 **Delivered for v1.**
@@ -91,17 +93,17 @@ The first high-value automation paths are implemented with the same rule: AI may
 
 ### Delivered
 1. **Supplier PO intake** — PDF/image -> Cloudflare conversion/extraction -> exact supplier/SKU/barcode/internal-SKU matching -> human review -> draft PO.
-2. **Delivery-note assistance** — source document tied to one open PO -> delivered quantity extraction -> exact selected-PO matching -> shortages/overages/unmatched evidence -> human review -> staged Warehouse counts -> normal PO receipt.
-3. **Replenishment** — available/reserved/incoming stock + 30-day fulfilment demand + supplier lead time + optional custom policy -> explainable suggestion -> reviewable draft PO.
-4. **Exception inbox** — stockouts/low stock, fulfilment work and incoming/partial PO attention.
+2. **Reviewed supplier SKU learning** — a human-confirmed supplier+variant may remember the extracted supplier code for future exact matching; conflicting or replacement mappings remain explicit.
+3. **Delivery-note assistance** — source document tied to one open PO -> delivered quantity extraction -> exact selected-PO matching -> shortages/overages/unmatched evidence -> human review -> staged Warehouse counts -> normal PO receipt.
+4. **Replenishment** — available/reserved/incoming stock + 30-day fulfilment demand + supplier lead time + optional custom policy -> explainable suggestion -> reviewable draft PO.
+5. **Exception inbox** — stockouts/low stock, fulfilment work and incoming/partial PO attention.
 
 ### Next candidates
-1. Supplier SKU alias learning from confirmed human mappings, never silent model-selected identities.
-2. Formal delivery-note discrepancy history/closure if businesses need persistent shortage/overage workflows beyond proposal evidence.
-3. Saved operational views and bulk actions.
-4. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
-5. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
-6. Storefront and integration architecture once the internal operating core has passed production hardening.
+1. Formal delivery-note discrepancy history/closure if businesses need persistent shortage/overage workflows beyond proposal evidence.
+2. Saved operational views and bulk actions.
+3. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
+4. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
+5. Storefront and integration architecture once the internal operating core has passed production hardening.
 
 ## Out of scope for the initial MVP
 Customer storefront, payment processing, carrier integrations, lots/batches/serials/manufacturing, marketplace/e-commerce integrations and autonomous AI business mutations.
