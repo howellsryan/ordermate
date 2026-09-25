@@ -1,0 +1,17 @@
+@layer components {
+  .confirm-stack { display: flex; flex-direction: column; gap: 15px; }
+  .confirm-stack > p { line-height: 1.55; }
+  .confirm-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+  .confirm-facts > span { min-height: 70px; padding: 12px; display: flex; flex-direction: column; justify-content: center; gap: 5px; background: #fffefa; }
+  .confirm-facts > span + span { border-left: 1px solid var(--line); }
+  .confirm-facts small { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+  .confirm-facts strong { font-size: 11px; }
+  .danger-button { min-height: 38px; border: 1px solid #c9877e; border-radius: 10px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #a55349; color: white; font-size: 10px; font-weight: 800; }
+  .danger-button:hover { background: #91473f; }
+  .danger-button:disabled { opacity: .55; cursor: wait; }
+
+  @media (max-width: 600px) {
+    .confirm-facts { grid-template-columns: 1fr; }
+    .confirm-facts > span + span { border-left: 0; border-top: 1px solid var(--line); }
+  }
+}
