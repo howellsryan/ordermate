@@ -28,13 +28,14 @@ OrderMate currently includes:
 - immutable inventory movements, transfers, adjustments and barcode lookup;
 - reviewed partial cycle counts with stale-stock protection, reservation safeguards and one atomic stocktake commit;
 - a dedicated Warehouse workspace for barcode-driven picking and PO receiving using hardware scanners, manual input or lazy-loaded mobile camera scanning;
+- Wave Picking for 2-10 same-location confirmed orders, with aggregate scanning, deterministic per-order allocation review and fulfilment through the existing canonical order endpoints;
 - suppliers, supplier-SKU mappings, purchase orders, expected delivery dates, overdue visibility, partial receiving and cancellation;
 - persistent delivery discrepancies with evidence and audited open/resolved handling;
 - deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
 - per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
 - reviewed supplier-SKU learning from purchase-document proposals without fuzzy or ambiguous mapping;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
-- explicit order required-by dates and low/normal/high/urgent planning priority, with urgency-aware Warehouse picking;
+- explicit order required-by dates and low/normal/high/urgent planning priority with urgency-aware fulfilment queues;
 - global search, operational attention inbox, audit/activity, CSV exports and record detail views;
 - private cross-device saved views for Inventory and Purchasing;
 - deterministic Operations Reports for stock valuation/health, confirmed/completed order value, physical throughput and purchasing commitments;
@@ -124,6 +125,19 @@ Cycle Count is a reviewed partial stocktake rather than a destructive full-locat
 - any stale stock/reservation change rejects the whole batch before mutation; and
 - successful variances share one stocktake reference and are committed atomically with an audit event.
 
+## Wave Picking
+
+Wave Picking is an efficiency layer over the canonical order fulfilment engine, not a second stock-mutation path.
+
+- select 2-10 confirmed orders from one stock location;
+- scan aggregate SKU quantities once using hardware/manual/camera entry;
+- review deterministic allocation back to exact order lines in urgency order;
+- every selected order must have at least one allocated unit before commit;
+- excess/unallocatable staged quantities block commit; and
+- each affected order is fulfilled through the existing `/orders/:id/fulfil` endpoint.
+
+If one order fails after other orders have succeeded, successful orders are not retried. The operator refreshes and re-scans only the failed remainder. This intentionally prefers correct per-order reservation semantics over pretending a multi-order wave is one atomic inventory transaction.
+
 ## Saved views and bulk catalogue actions
 
 Inventory and Purchasing filters can be saved per signed-in user inside the tenant datastore, so operational views follow the user across devices without becoming shared workspace state. Users in the same business cannot list or delete one another's views.
@@ -142,16 +156,6 @@ Reports are deterministic read models over canonical tenant records. The workspa
 - top fulfilled SKUs plus daily order/movement trends.
 
 Commercial Operations Reports use a separate `analytics:read` permission. Fulfilment users retain Activity/Audit access without receiving purchasing analytics.
-
-## Order priority and required-by dates
-
-Open orders can carry an explicit required-by date and one of four planning priorities: `low`, `normal`, `high` or `urgent`.
-
-These values are deliberate operator/customer commitments rather than inferred dates. Owner/Admin/Manager may edit them while an order is open; Fulfilment users may execute picking and fulfilment but cannot redefine the commitment.
-
-The Warehouse pick queue is deterministic: priority first (`urgent` -> `high` -> `normal` -> `low`), then earliest required-by date, then oldest order. Overdue required-by orders are promoted to critical operational attention and highlighted in Orders/Warehouse without changing the canonical order lifecycle.
-
-Priority and required-by values are audited, searchable and included in order CSV exports.
 
 ## Purchase-order expected delivery
 
@@ -205,7 +209,9 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, order urgency, PO due-date/discrepancy rules, saved-view privacy, report reconciliation, deterministic document matching and import/bulk atomicity are required regression areas.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse/wave-pick invariants, PO due-date/discrepancy rules, saved-view privacy, report reconciliation, deterministic document matching and import/bulk atomicity are required regression areas.
+
+The current rebuild PR intentionally remains draft until the dependency graph is installed, a lockfile is committed, those commands pass, and critical browser flows (including Wave Picking) receive a manual smoke pass. See `docs/next-agent-handoff.md` for the continuation sequence.
 
 ## Production configuration
 
