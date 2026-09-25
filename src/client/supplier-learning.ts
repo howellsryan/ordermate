@@ -8,8 +8,26 @@ export type SupplierLearningDecision = {
   label: string;
 };
 
+export type ReviewedSupplierSkuLine = {
+  index: number;
+  supplierSku: string;
+  variantId: string;
+};
+
 export function normalizeSupplierSku(value: string | null | undefined) {
   return (value || "").trim().normalize("NFKC").toLocaleUpperCase();
+}
+
+export function reviewedSupplierSkuConflicts(lines: ReviewedSupplierSkuLine[]) {
+  const variantsBySku = new Map<string, Set<string>>();
+  for (const line of lines) {
+    const sku = normalizeSupplierSku(line.supplierSku);
+    if (!sku || !line.variantId) continue;
+    const variants = variantsBySku.get(sku) || new Set<string>();
+    variants.add(line.variantId);
+    variantsBySku.set(sku, variants);
+  }
+  return new Set([...variantsBySku.entries()].filter(([, variants]) => variants.size > 1).map(([sku]) => sku));
 }
 
 export function supplierLearningDecision(
@@ -17,10 +35,19 @@ export function supplierLearningDecision(
   supplierId: string,
   variantId: string,
   supplierSku: string,
+  reviewedConflict = false,
 ): SupplierLearningDecision {
   const normalized = normalizeSupplierSku(supplierSku);
   if (!supplierId || !variantId || !normalized) {
     return { defaultSelected: false, disabled: true, label: "No supplier SKU to remember" };
+  }
+
+  if (reviewedConflict) {
+    return {
+      defaultSelected: false,
+      disabled: true,
+      label: `Cannot remember ${supplierSku}: reviewed lines assign this supplier SKU to more than one variant`,
+    };
   }
 
   const currentMapping = mappings.find(mapping => mapping.supplier_id === supplierId && mapping.variant_id === variantId);
