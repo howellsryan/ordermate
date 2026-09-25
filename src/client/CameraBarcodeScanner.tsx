@@ -12,6 +12,11 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<ScannerControls | null>(null);
   const moduleRef = useRef<BrowserReaderModule | null>(null);
+  const onScanRef = useRef(onScan);
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +65,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: {
           consumed = true;
           try { callbackControls.stop(); } catch { /* cleanup below also stops all streams */ }
           stop();
-          onScan(barcode);
+          onScanRef.current(barcode);
           setOpen(false);
         });
         if (cancelled) {
@@ -89,7 +94,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: {
       cancelled = true;
       stop();
     };
-  }, [open, onScan]);
+  }, [open]);
 
   return <>
     <button type="button" className="secondary camera-scan-button" onClick={() => setOpen(true)}><Camera size={15} /> {label}</button>
