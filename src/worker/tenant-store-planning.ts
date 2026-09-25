@@ -87,7 +87,7 @@ export class TenantStore extends VersionedTenantStore {
       return this.deletePolicy(decodeURIComponent(policyDelete[1]), decodeURIComponent(policyDelete[2]), request);
     }
     if (request.method === "GET" && path === "/replenishment") {
-      return Response.json(this.replenishmentSuggestions());
+      return Response.json(this.planningReplenishmentSuggestions());
     }
 
     return super.fetch(request);
@@ -247,7 +247,7 @@ export class TenantStore extends VersionedTenantStore {
     return Response.json({ ok: true });
   }
 
-  private replenishmentSuggestions() {
+  private planningReplenishmentSuggestions() {
     const defaultThreshold = this.planningCtx.storage.sql.exec<{ low_stock_threshold: number }>(
       "SELECT low_stock_threshold FROM tenant_settings WHERE id = 1",
     ).toArray()[0]?.low_stock_threshold ?? 0;
