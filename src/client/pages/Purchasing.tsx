@@ -5,11 +5,15 @@ import type { OrganizationSummary } from "../../shared/types";
 import DocumentInbox from "../DocumentInbox";
 import Replenishment, { type PurchaseOrderSeed } from "../Replenishment";
 import { PurchaseOrderDetailModal } from "../RecordDetails";
-import { date, money, tenantApi } from "../api";
+import { calendarDate, date, isOverdueDate, money, tenantApi } from "../api";
 import type { Location, Product, PurchaseOrder, PurchaseOrderDetail, Supplier } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "../ui";
 
 type DraftLine = { id: string; variantId: string; quantity: string; cost: string; tax: string };
+
+function purchaseOrderOverdue(po: PurchaseOrder) {
+  return ["ordered", "partially_received"].includes(po.status) && isOverdueDate(po.expected_delivery_date);
+}
 
 export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
@@ -36,7 +40,7 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
     <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={openBlankPo}><Plus size={17} /> New purchase order</button> : undefined} />
     <Replenishment tenant={tenant} onCreatePurchaseOrder={openSuggestedPo} />
     <DocumentInbox tenant={tenant} />
-    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>)}</tbody></table></DataState></div>
+    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Expected</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => { const overdue = purchaseOrderOverdue(po); return <tr key={po.id} className={overdue ? "po-row-overdue" : ""}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td><span className={`po-due-cell ${overdue ? "overdue" : ""}`}><strong>{po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "—"}</strong><small>{overdue ? "Overdue" : po.status === "draft" && !po.expected_delivery_date ? "Set manually or on submit" : po.expected_delivery_date ? "Expected arrival" : "No lead-time estimate"}</small></span></td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>; })}</tbody></table></DataState></div>
     {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
     {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} seed={poSeed || undefined} onClose={() => { setCreateOpen(false); setPoSeed(null); }} onCreated={() => { setCreateOpen(false); setPoSeed(null); refresh(); }} />}
     {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
