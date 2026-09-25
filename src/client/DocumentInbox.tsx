@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileImage, FileText, FileUp, UploadCloud } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date } from "./api";
+import DocumentProposals from "./DocumentProposals";
 import { ErrorText } from "./ui";
 
 type DocumentSummary = {
@@ -36,7 +37,10 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
       form.set("purpose", "purchase-source");
       return controlApi<DocumentSummary>("/documents", { method: "POST", headers: { "x-ordermate-tenant": tenant.id }, body: form });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "documents", "purchase-source"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "documents", "purchase-source"] });
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "documents", "proposals"] });
+    },
   });
 
   const chooseFile = (file?: File | null) => {
@@ -69,7 +73,7 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
 
   return <section className="panel document-inbox">
     <div className="panel-heading"><div><p className="eyebrow">Source documents</p><h3>Purchasing inbox</h3></div><FileUp size={21} /></div>
-    <p>Keep supplier PDFs and delivery images beside the purchasing workflow. Uploading stores the source in tenant-scoped R2 and emits a safe event for the future extraction pipeline.</p>
+    <p>Upload a supplier PDF or image. OrderMate stores the original in tenant-scoped EU R2, converts/extracts it with Cloudflare Workers AI, then presents a proposal for human review. AI never creates or receives stock directly.</p>
 
     {canUpload && <div
       className={`document-drop ${dragging ? "dragging" : ""}`}
@@ -80,17 +84,20 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
     >
       <input ref={inputRef} type="file" hidden accept="application/pdf,image/*" onChange={event => { chooseFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
       <UploadCloud size={24} />
-      <div><strong>{upload.isPending ? "Uploading securely…" : "Drop a supplier PDF or image"}</strong><span>PDF, PNG, JPEG or other browser image formats · maximum 15 MB</span></div>
+      <div><strong>{upload.isPending ? "Uploading securely…" : "Drop a supplier PDF or image"}</strong><span>PDF, PNG, JPEG or other browser image formats · maximum 15 MB · extraction runs asynchronously</span></div>
       <button type="button" className="secondary" disabled={upload.isPending} onClick={() => inputRef.current?.click()}>Choose file</button>
     </div>}
 
     {upload.error && <ErrorText error={upload.error} />}
     {previewError && <ErrorText error={previewError} />}
 
+    <DocumentProposals tenant={tenant} />
+
+    <div className="source-history-heading"><span>Original source files</span><small>Immutable review evidence stored in R2</small></div>
     <div className="document-list">
       {documents.isLoading ? <div className="document-state"><div className="loader" /><span>Loading source documents…</span></div> : documents.error ? <ErrorText error={documents.error} /> : !documents.data?.documents.length ? <div className="document-state"><FileText size={22} /><strong>No source documents yet</strong><span>Upload the first supplier document when you have one.</span></div> : documents.data.documents.map(document => {
         const ImageIcon = document.contentType.startsWith("image/") ? FileImage : FileText;
-        return <button className="document-row" key={document.key} onClick={() => preview(document)}><span className="document-icon"><ImageIcon size={17} /></span><span className="document-copy"><strong>{document.name}</strong><small>{date(document.uploaded)} · {fileSize(document.size)}</small></span><span className="document-status">Stored</span><Eye size={15} /></button>;
+        return <button className="document-row" key={document.key} onClick={() => preview(document)}><span className="document-icon"><ImageIcon size={17} /></span><span className="document-copy"><strong>{document.name}</strong><small>{date(document.uploaded)} · {fileSize(document.size)}</small></span><span className="document-status">Source</span><Eye size={15} /></button>;
       })}
     </div>
     {documents.data?.truncated && <small className="document-note">Showing the first 100 source documents. Pagination will be enabled before this limit becomes operationally relevant.</small>}
