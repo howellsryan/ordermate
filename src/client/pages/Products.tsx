@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, FileUp, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
@@ -10,6 +10,7 @@ import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "
 
 type OptionDefinition = { id: string; name: string; values: string };
 type VariantMeta = { sku: string; barcode: string; price: string; cost: string };
+type ProductStatus = "active" | "archived";
 
 export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
@@ -18,26 +19,61 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const [importOpen, setImportOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [statusProduct, setStatusProduct] = useState<Product | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<ProductStatus | null>(null);
   const canWrite = ["owner", "admin", "manager"].includes(tenant.role);
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const modifiers = useQuery({ queryKey: ["tenant", tenant.id, "modifiers"], queryFn: () => tenantApi<ProductModifier[]>(tenant.id, "/modifiers") });
   const refresh = () => qc.invalidateQueries({ queryKey: ["tenant", tenant.id] });
+  const selectedProducts = (products.data || []).filter(product => selectedIds.includes(product.id));
+  const allSelected = Boolean(products.data?.length) && products.data!.every(product => selectedIds.includes(product.id));
+
+  useEffect(() => {
+    setSelectedIds(current => current.filter(productId => products.data?.some(product => product.id === productId)));
+  }, [products.data]);
+  useEffect(() => setSelectedIds([]), [tenant.id]);
+
+  const toggleProduct = (productId: string) => setSelectedIds(current => current.includes(productId) ? current.filter(id => id !== productId) : current.length >= 200 ? current : [...current, productId]);
+  const toggleAll = () => setSelectedIds(allSelected ? [] : (products.data || []).slice(0, 200).map(product => product.id));
 
   return <>
     <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={canWrite ? <><button className="secondary" onClick={() => setImportOpen(true)}><FileUp size={17} /> Import CSV</button><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></> : undefined} />
+    {canWrite && selectedIds.length > 0 && <div className="panel bulk-action-bar"><div><strong>{selectedIds.length} product{selectedIds.length === 1 ? "" : "s"} selected</strong><span>Bulk retirement is atomic and preserves tracked stock and historical records.</span></div><div><button type="button" className="secondary" onClick={() => setSelectedIds([])}>Clear</button><button type="button" className="secondary" disabled={selectedProducts.every(product => product.status === "active")} onClick={() => setBulkStatus("active")}><RotateCcw size={15} /> Restore selected</button><button type="button" className="danger-button" disabled={selectedProducts.every(product => product.status === "archived")} onClick={() => setBulkStatus("archived")}><Archive size={15} /> Archive selected</button></div></div>}
     <div className="panel table-panel">
       <DataState loading={products.isLoading} error={products.error} empty={!products.data?.length} emptyText="Add your first product, then receive or adjust stock against its variants.">
-        <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th><th /></tr></thead><tbody>
-          {products.data?.map(product => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td><td className="row-actions">{canWrite && <><button className="table-action" onClick={() => setEditProduct(product)}><Pencil size={14} /> Edit</button><button className="table-action quiet" onClick={() => setStatusProduct(product)}>{product.status === "active" ? <Archive size={14} /> : <RotateCcw size={14} />}{product.status === "active" ? "Archive" : "Restore"}</button></>}</td></tr>)}
+        <table><thead><tr>{canWrite && <th className="select-cell"><input type="checkbox" aria-label="Select all products" checked={allSelected} onChange={toggleAll} /></th>}<th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th><th /></tr></thead><tbody>
+          {products.data?.map(product => <tr key={product.id} className={selectedIds.includes(product.id) ? "row-selected" : ""}>{canWrite && <td className="select-cell"><input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={() => toggleProduct(product.id)} /></td>}<td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td><td className="row-actions">{canWrite && <><button className="table-action" onClick={() => setEditProduct(product)}><Pencil size={14} /> Edit</button><button className="table-action quiet" onClick={() => setStatusProduct(product)}>{product.status === "active" ? <Archive size={14} /> : <RotateCcw size={14} />}{product.status === "active" ? "Archive" : "Restore"}</button></>}</td></tr>)}
         </tbody></table>
       </DataState>
     </div>
     {editProduct && canWrite && <ProductEditModal tenant={tenant} product={editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); refresh(); }} />}
     {statusProduct && canWrite && <ProductStatusModal tenant={tenant} product={statusProduct} onClose={() => setStatusProduct(null)} onSaved={() => { setStatusProduct(null); refresh(); }} />}
+    {bulkStatus && canWrite && <BulkProductStatusModal tenant={tenant} products={selectedProducts} status={bulkStatus} onClose={() => setBulkStatus(null)} onSaved={() => { setBulkStatus(null); setSelectedIds([]); refresh(); }} />}
     {importOpen && canWrite && <CatalogueImportModal tenant={tenant} onClose={() => setImportOpen(false)} onCommitted={refresh} />}
     {productOpen && canWrite && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
     {modifierOpen && canWrite && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
   </>;
+}
+
+function BulkProductStatusModal({ tenant, products, status, onClose, onSaved }: { tenant: OrganizationSummary; products: Product[]; status: ProductStatus; onClose: () => void; onSaved: () => void }) {
+  const restoring = status === "active";
+  const mutation = useMutation({
+    mutationFn: () => tenantApi<{ changed: number; unchanged: number }>(tenant.id, "/products/bulk-status", {
+      method: "PATCH",
+      body: JSON.stringify({ productIds: products.map(product => product.id), status }),
+    }),
+    onSuccess: onSaved,
+  });
+
+  return <Modal title={`${restoring ? "Restore" : "Archive"} ${products.length} selected product${products.length === 1 ? "" : "s"}?`} subtitle="OrderMate verifies the complete selection first, then applies the status change to every selected product in one tenant transaction." onClose={onClose}>
+    <div className="confirm-stack">
+      <div className="confirm-facts"><span><small>Selected</small><strong>{products.length} product{products.length === 1 ? "" : "s"}</strong></span><span><small>Transaction</small><strong>All selected or none</strong></span></div>
+      <p>{restoring ? "Existing product and variant identities become commercially active again. Historical records are unchanged." : "Selected products stop appearing in new orders, purchase orders and replenishment. Tracked physical stock, movements and historical snapshots remain intact."}</p>
+      <div className="bulk-product-list">{products.slice(0, 8).map(product => <span key={product.id}>{product.name}</span>)}{products.length > 8 && <span>+ {products.length - 8} more</span>}</div>
+      {mutation.error && <ErrorText error={mutation.error} />}
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" className={restoring ? "primary" : "danger-button"} disabled={mutation.isPending || !products.length} onClick={() => mutation.mutate()}>{restoring ? <RotateCcw size={16} /> : <Archive size={16} />}{mutation.isPending ? "Applying…" : restoring ? "Restore selected" : "Archive selected"}</button></div>
+    </div>
+  </Modal>;
 }
 
 function ProductStatusModal({ tenant, product, onClose, onSaved }: { tenant: OrganizationSummary; product: Product; onClose: () => void; onSaved: () => void }) {
