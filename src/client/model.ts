@@ -137,6 +137,7 @@ export type Customer = {
 export type PurchaseOrder = {
   id: string;
   number: string;
+  supplier_id: string;
   supplier_name: string;
   location_name: string;
   status: string;
