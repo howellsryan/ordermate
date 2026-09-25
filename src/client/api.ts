@@ -36,6 +36,35 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
   return response.json();
 }
 
+export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("x-ordermate-tenant", tenantId);
+  if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
+  const response = await fetch(`/api/ops${path}`, { ...init, headers, credentials: "include" });
+  if (!response.ok) throw await errorFrom(response);
+  return response.json();
+}
+
+export async function downloadTenantCsv(tenantId: string, kind: string) {
+  const response = await fetch(`/api/ops/export/${encodeURIComponent(kind)}`, {
+    credentials: "include",
+    headers: { "x-ordermate-tenant": tenantId },
+  });
+  if (!response.ok) throw await errorFrom(response);
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match?.[1] || `ordermate-${kind}.csv`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function money(minor: number | null | undefined, currency = "GBP") {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format((minor ?? 0) / 100);
 }
