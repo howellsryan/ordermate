@@ -14,6 +14,7 @@ import "./confirmations.css";
 import "./supply-planning.css";
 import "./maintenance.css";
 import "./warehouse.css";
+import "./delivery-notes.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
