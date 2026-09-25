@@ -7,7 +7,7 @@ import {
   type ExtractedDeliveryDocument,
   type DeliveryProposal,
 } from "./delivery-matching";
-import type { TenantStore } from "./tenant-store-runtime";
+import type { TenantStore } from "./tenant-store-order-planning";
 
 export type DeliveryNoteUploadedEvent = {
   type: "delivery_note.uploaded";

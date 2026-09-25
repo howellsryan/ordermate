@@ -111,7 +111,7 @@ async function tenantJson<T>(stub: DurableObjectStub<TenantStore>, path: string,
   });
   const response = await stub.fetch(new Request(`https://tenant.internal${path}`, { headers }));
   if (!response.ok) {
-    const payload = await response.json<{ error?: string }>().catch(() => ({}));
+    const payload = await response.json<{ error?: string }>().catch((): { error?: string } => ({}));
     throw new Error(payload.error || `Tenant read failed (${response.status})`);
   }
   return response.json<T>();

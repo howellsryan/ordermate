@@ -96,15 +96,15 @@ export class TenantStore extends FinalTenantStore {
     return super.fetch(request);
   }
 
-  private actor(request: Request) {
+  private discrepancyActor(request: Request) {
     const actorId = request.headers.get("x-ordermate-actor-id") || "";
     const actorRole = request.headers.get("x-ordermate-actor-role") || "";
     if (!actorId || !actorRole) return null;
     return { actorId, actorRole };
   }
 
-  private audit(request: Request, action: string, entityId: string, metadata?: unknown) {
-    const actor = this.actor(request);
+  private auditDiscrepancy(request: Request, action: string, entityId: string, metadata?: unknown) {
+    const actor = this.discrepancyActor(request);
     if (!actor) throw new Error("Missing authenticated actor context");
     this.discrepancyCtx.storage.sql.exec(
       "INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, ?, 'delivery_discrepancy', ?, ?, ?)",
@@ -154,7 +154,7 @@ export class TenantStore extends FinalTenantStore {
   }
 
   private async createDiscrepancy(request: Request) {
-    const actor = this.actor(request);
+    const actor = this.discrepancyActor(request);
     if (!actor) return Response.json({ error: "Missing authenticated actor context" }, { status: 401 });
 
     let input: DeliveryDiscrepancyCreateRequest;
@@ -205,7 +205,7 @@ export class TenantStore extends FinalTenantStore {
         createdAt,
         actor.actorId,
       );
-      this.audit(request, "delivery_discrepancy.opened", discrepancyId, {
+      this.auditDiscrepancy(request, "delivery_discrepancy.opened", discrepancyId, {
         purchaseOrderId: input.purchaseOrderId,
         proposalEventId: input.proposalEventId,
         issueCount: input.issues.length,
@@ -217,7 +217,7 @@ export class TenantStore extends FinalTenantStore {
   }
 
   private async resolveDiscrepancy(discrepancyId: string, request: Request) {
-    const actor = this.actor(request);
+    const actor = this.discrepancyActor(request);
     if (!actor) return Response.json({ error: "Missing authenticated actor context" }, { status: 401 });
 
     let input: z.infer<typeof resolveSchema>;
@@ -247,7 +247,7 @@ export class TenantStore extends FinalTenantStore {
         input.resolutionNote,
         discrepancyId,
       );
-      this.audit(request, "delivery_discrepancy.resolved", discrepancyId, {
+      this.auditDiscrepancy(request, "delivery_discrepancy.resolved", discrepancyId, {
         resolutionCode: input.resolutionCode,
         resolutionNote: input.resolutionNote,
       });

@@ -149,7 +149,7 @@ export class TenantStore extends PlanningTenantStore {
     return Response.json(await buildReviewedCatalogueImportPlan(body.rows, this.snapshot()));
   }
 
-  private actor(request: Request) {
+  private importActor(request: Request) {
     const actorId = request.headers.get("x-ordermate-actor-id") || "";
     const actorRole = request.headers.get("x-ordermate-actor-role") || "";
     if (!actorId || !actorRole) throw new Error("Missing authenticated actor context");
@@ -205,7 +205,7 @@ export class TenantStore extends PlanningTenantStore {
     const parsed = await this.parseRows(request, true);
     if (parsed instanceof Response) return parsed;
     const body = parsed as CatalogueImportCommitRequest;
-    const actor = this.actor(request);
+    const actor = this.importActor(request);
     const reviewedPlan = await buildReviewedCatalogueImportPlan(body.rows, this.snapshot());
 
     if (reviewedPlan.fingerprint !== body.expectedFingerprint) {

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileImage, FileText, FileUp, LockKeyhole, Sparkles, UploadCloud } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
-import { controlApi, date } from "./api";
+import { controlApi, date, errorFrom } from "./api";
 import DocumentProposals from "./DocumentProposals";
 import { ErrorText } from "./ui";
 
@@ -64,10 +64,7 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
     setPreviewError(null);
     try {
       const response = await fetch(`/api/documents/file?key=${encodeURIComponent(document.key)}`, { credentials: "include", headers: { "x-ordermate-tenant": tenant.id } });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(payload.error || `Preview failed (${response.status})`);
-      }
+      if (!response.ok) throw await errorFrom(response);
       const blobUrl = URL.createObjectURL(await response.blob());
       const anchor = window.document.createElement("a");
       anchor.href = blobUrl;
@@ -96,7 +93,7 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
 
     {upload.error && <ErrorText error={upload.error} />}
     {extract.error && <ErrorText error={extract.error} />}
-    {previewError && <ErrorText error={previewError} />}
+    {previewError !== null && <ErrorText error={previewError} />}
 
     <DocumentProposals tenant={tenant} />
 

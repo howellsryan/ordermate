@@ -236,7 +236,7 @@ deliveryDocumentsApp.post("/proposal/complete", async c => {
       }),
     }));
     if (!discrepancyResponse.ok) {
-      const error = await discrepancyResponse.json<{ error?: string }>().catch(() => ({}));
+      const error = await discrepancyResponse.json<{ error?: string }>().catch((): { error?: string } => ({}));
       return c.json({ error: error.error || "Delivery discrepancy could not be recorded" }, 409);
     }
     discrepancyId = (await discrepancyResponse.json<{ id: string }>()).id;

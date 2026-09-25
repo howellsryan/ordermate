@@ -144,15 +144,15 @@ export class TenantStore extends VersionedTenantStore {
     ).toArray();
   }
 
-  private actor(request: Request) {
+  private planningActor(request: Request) {
     const id = request.headers.get("x-ordermate-actor-id") || "";
     const role = request.headers.get("x-ordermate-actor-role") || "";
     if (!id || !role) throw new Error("Missing authenticated actor context");
     return { id, role };
   }
 
-  private audit(request: Request, action: string, entityId: string, metadata: Record<string, unknown>) {
-    const actor = this.actor(request);
+  private auditPlanning(request: Request, action: string, entityId: string, metadata: Record<string, unknown>) {
+    const actor = this.planningActor(request);
     this.planningCtx.storage.sql.exec(
       `INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at)
        VALUES (?, ?, ?, ?, 'inventory_policy', ?, ?, ?)`,
@@ -195,7 +195,7 @@ export class TenantStore extends VersionedTenantStore {
       if (!mapping) return Response.json({ error: "Preferred supplier must be an active supplier mapped to this variant" }, { status: 409 });
     }
 
-    const actor = this.actor(request);
+    const actor = this.planningActor(request);
     const updatedAt = now();
     this.planningCtx.storage.transactionSync(() => {
       this.planningCtx.storage.sql.exec(
@@ -217,7 +217,7 @@ export class TenantStore extends VersionedTenantStore {
         updatedAt,
         actor.id,
       );
-      this.audit(request, "inventory_policy.updated", `${input.variantId}:${input.locationId}`, {
+      this.auditPlanning(request, "inventory_policy.updated", `${input.variantId}:${input.locationId}`, {
         variantId: input.variantId,
         locationId: input.locationId,
         reorderPoint: input.reorderPoint,
@@ -242,7 +242,7 @@ export class TenantStore extends VersionedTenantStore {
         variantId,
         locationId,
       );
-      this.audit(request, "inventory_policy.deleted", `${variantId}:${locationId}`, { variantId, locationId });
+      this.auditPlanning(request, "inventory_policy.deleted", `${variantId}:${locationId}`, { variantId, locationId });
     });
     return Response.json({ ok: true });
   }

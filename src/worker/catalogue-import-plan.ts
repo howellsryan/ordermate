@@ -240,7 +240,7 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
           supplierName,
           supplierSku: row.supplierSku.trim() || null,
           lastCostMinor: parseMinor(row.supplierCost) ?? variantCostMinor ?? 0,
-          leadTimeDays: parseWhole(row.leadTimeDays),
+          leadTimeDays: parseWhole(row.leadTimeDays) ?? null,
         } : null,
       };
     });

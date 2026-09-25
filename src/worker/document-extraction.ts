@@ -7,7 +7,7 @@ import {
   type MatchingVariant,
   type PurchaseProposal,
 } from "./document-matching";
-import type { TenantStore } from "./tenant-store-runtime";
+import type { TenantStore } from "./tenant-store-order-planning";
 
 export type DocumentUploadedEvent = {
   type: "document.uploaded";

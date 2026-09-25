@@ -224,3 +224,40 @@ export type AuditEvent = {
   metadata_json?: string | null;
   created_at: string;
 };
+
+export type WorkspacePage =
+  | "overview"
+  | "orders"
+  | "warehouse"
+  | "wave-pick"
+  | "stocktake"
+  | "products"
+  | "inventory"
+  | "purchasing"
+  | "suppliers"
+  | "customers"
+  | "reports"
+  | "activity"
+  | "team"
+  | "settings";
+
+export type SearchResult = {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  page: WorkspacePage;
+  badge?: string;
+};
+
+export type AttentionResponse = {
+  total: number;
+  items: Array<{
+    id: string;
+    severity: "critical" | "warning" | "info";
+    type: string;
+    title: string;
+    detail: string;
+    page: WorkspacePage;
+  }>;
+};

@@ -17,7 +17,7 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const error = (message: string, status = 400) => json({ error: message }, status);
-const fail = (message: string, status = 400): never => { throw new DomainError(message, status); };
+function fail(message: string, status = 400): never { throw new DomainError(message, status); }
 
 const productInput = z.object({
   name: z.string().trim().min(1).max(200),
