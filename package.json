@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:staging": "node scripts/build-staging.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -14,7 +15,9 @@
     "cf:bootstrap": "node scripts/bootstrap-cloudflare.mjs",
     "db:migrate:local": "wrangler d1 migrations apply CONTROL_DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply CONTROL_DB --remote",
-    "deploy": "npm run build && wrangler deploy"
+    "db:migrate:staging": "wrangler d1 migrations apply CONTROL_DB --remote --env staging",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:staging": "npm run build:staging && wrangler deploy --env staging"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.0",
