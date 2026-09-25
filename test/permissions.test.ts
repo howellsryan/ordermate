@@ -21,6 +21,7 @@ describe("tenant route permission classification", () => {
     expect(permissionForRequest("/orders/123/confirm", "POST")).toEqual({ resource: "orders", action: "update" });
     expect(permissionForRequest("/orders/123/fulfil", "POST")).toEqual({ resource: "orders", action: "update" });
     expect(permissionForRequest("/purchase-orders/123/receive", "POST")).toEqual({ resource: "purchasing", action: "update" });
+    expect(permissionForRequest("/purchase-orders/123/cancel", "POST")).toEqual({ resource: "purchasing", action: "update" });
   });
 
   it("allows every role to read dashboard and audit reporting without granting commercial settings", () => {
