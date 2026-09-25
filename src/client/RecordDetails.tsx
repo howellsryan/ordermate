@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardCheck, PackageCheck } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { date, money, tenantApi } from "./api";
 import type { OrderDetail, PurchaseOrderDetail } from "./model";
