@@ -1,4 +1,4 @@
-import { TenantStore as CoreTenantStore } from "./tenant-store";
+import { TenantStore as CoreTenantStore, type TenantEnv } from "./tenant-store";
 
 type MovementRow = {
   id: string;
@@ -26,12 +26,19 @@ type MovementRow = {
  * change. It reads the existing v1 schema and does not migrate or duplicate data.
  */
 export class TenantStore extends CoreTenantStore {
+  private readonly runtimeCtx: DurableObjectState;
+
+  constructor(ctx: DurableObjectState, env: TenantEnv) {
+    super(ctx, env);
+    this.runtimeCtx = ctx;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
 
     if (request.method === "GET" && path === "/inventory/movements") {
-      const movements = this.ctx.storage.sql.exec<MovementRow>(
+      const movements = this.runtimeCtx.storage.sql.exec<MovementRow>(
         `SELECT im.id,
                 im.variant_id,
                 p.name AS product_name,
