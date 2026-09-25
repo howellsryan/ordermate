@@ -1,0 +1,17 @@
+@layer components {
+  .bulk-action-bar { padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-color: #c8d2bc; background: #f5f7ef; }
+  .bulk-action-bar > div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .bulk-action-bar > div:first-child strong { font-size: 11px; color: var(--ink); }
+  .bulk-action-bar > div:first-child span { font-size: 10px; color: var(--muted); }
+  .bulk-action-bar > div:last-child { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+  .select-cell { width: 38px; text-align: center; }
+  .select-cell input { width: 15px; height: 15px; accent-color: var(--ink); }
+  tr.row-selected > td { background: #f5f7ef; }
+  .bulk-product-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .bulk-product-list span { display: inline-flex; align-items: center; min-height: 27px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: #fffefa; font-size: 10px; color: var(--ink); }
+
+  @media (max-width: 760px) {
+    .bulk-action-bar { align-items: stretch; flex-direction: column; }
+    .bulk-action-bar > div:last-child { justify-content: flex-start; }
+  }
+}
