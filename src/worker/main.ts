@@ -1,6 +1,7 @@
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import baseWorker from "./index";
+import { processDocumentUploaded, type DocumentUploadedEvent } from "./document-extraction";
 import { documentsApp } from "./documents";
 import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
@@ -13,6 +14,7 @@ type Env = AuthEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
+  AI: Ai;
 };
 
 type Membership = { id: string; role: Role };
@@ -71,6 +73,18 @@ async function enforceControlPlaneRead(request: Request, env: Env, url: URL) {
   return null;
 }
 
+function isDocumentUploadedEvent(value: unknown): value is DocumentUploadedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Record<string, unknown>;
+  return event.type === "document.uploaded"
+    && typeof event.eventId === "string"
+    && typeof event.tenantId === "string"
+    && typeof event.key === "string"
+    && event.purpose === "purchase-source"
+    && typeof event.uploadedBy === "string"
+    && typeof event.createdAt === "string";
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
@@ -106,14 +120,17 @@ export default {
     return url.pathname.startsWith("/api/") ? secureApiResponse(maskUnexpectedApiError(url.pathname, response)) : response;
   },
 
-  async queue(batch: MessageBatch) {
+  async queue(batch: MessageBatch, env: Env) {
     for (const message of batch.messages) {
+      const envelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
       try {
-        const envelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
-        console.log("OrderMate event", envelope.type || "unknown", envelope.eventId || message.id);
+        if (isDocumentUploadedEvent(message.body)) {
+          await processDocumentUploaded(message.body, env);
+        }
+        console.log("OrderMate event processed", envelope.type || "unknown", envelope.eventId || message.id);
         message.ack();
       } catch (cause) {
-        console.error("Queue event failed", cause instanceof Error ? cause.message : "unknown error");
+        console.error("OrderMate event failed", envelope.type || "unknown", envelope.eventId || message.id, cause instanceof Error ? cause.message : "unknown error");
         message.retry();
       }
     }
