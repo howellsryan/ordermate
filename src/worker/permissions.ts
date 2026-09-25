@@ -1,23 +1,23 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", settings: "*", members: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", settings: "*", members: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], purchasing: "*", orders: "*", customers: "*", reports: ["read"], settings: ["read", "update"], members: ["read"],
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], settings: ["read", "update"], members: ["read"],
   },
   inventory: {
-    catalogue: ["read"], inventory: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"],
+    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"],
   },
   fulfilment: {
     catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"],
@@ -38,6 +38,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
   if (path.startsWith("/imports/catalogue")) return { resource: "catalogue", action: "create" };
   if (path.startsWith("/products") || path.startsWith("/categories")) return { resource: "catalogue", action };
   if (path.startsWith("/locations")) return { resource: "inventory", action };
+  if (path === "/inventory/stocktake") return { resource: "stocktake", action: "create" };
   if (path.startsWith("/inventory-policies")) return { resource: "purchasing", action };
   if (path.startsWith("/inventory")) return { resource: "inventory", action: method === "POST" ? "update" : action };
   if (path.startsWith("/suppliers")) return { resource: "purchasing", action };
