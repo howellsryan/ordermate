@@ -36,6 +36,7 @@ const commitSchema = previewSchema.extend({ expectedFingerprint: z.string().rege
 type ProductRow = { id: string; name: string; variant_id: string | null; sku: string | null; barcode: string | null };
 type NamedRow = { id: string; name: string };
 type LocationRow = { id: string; name: string; code: string };
+type SupplierMappingSnapshotRow = { supplier_id: string; supplier_name: string; variant_id: string; sku: string; supplier_sku: string | null };
 type TableInfoRow = { name: string };
 
 class ImportStaleError extends Error {}
@@ -111,11 +112,33 @@ export class TenantStore extends PlanningTenantStore {
       productsById.set(row.id, product);
     }
 
+    const supplierMappings = sql.exec<SupplierMappingSnapshotRow>(
+      `SELECT sv.supplier_id,
+              s.name AS supplier_name,
+              sv.variant_id,
+              v.sku,
+              sv.supplier_sku
+       FROM supplier_variants sv
+       JOIN suppliers s ON s.id = sv.supplier_id
+       JOIN product_variants v ON v.id = sv.variant_id`,
+    ).toArray();
+    const settings = sql.exec<{ default_tax_rate_bps: number }>(
+      "SELECT default_tax_rate_bps FROM tenant_settings WHERE id = 1",
+    ).toArray()[0];
+
     return {
       products: [...productsById.values()],
       categories: sql.exec<NamedRow>("SELECT id, name FROM categories").toArray(),
       suppliers: sql.exec<NamedRow>("SELECT id, name FROM suppliers").toArray(),
       locations: sql.exec<LocationRow>("SELECT id, name, code FROM locations WHERE active = 1").toArray(),
+      supplierMappings: supplierMappings.map(mapping => ({
+        supplierId: mapping.supplier_id,
+        supplierName: mapping.supplier_name,
+        variantId: mapping.variant_id,
+        sku: mapping.sku,
+        supplierSku: mapping.supplier_sku,
+      })),
+      defaultTaxRateBps: settings?.default_tax_rate_bps ?? 0,
     };
   }
 
