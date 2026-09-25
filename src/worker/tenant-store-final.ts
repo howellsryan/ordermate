@@ -31,6 +31,8 @@ type PurchaseOrderDueRow = {
   status: string;
   ordered_at: string | null;
   expected_delivery_date: string | null;
+  line_count: number;
+  mapped_lead_time_count: number;
   lead_time_days: number | null;
 };
 
@@ -162,6 +164,8 @@ export class TenantStore extends ImportTenantStore {
       `SELECT po.status,
               po.ordered_at,
               po.expected_delivery_date,
+              COUNT(pol.id) AS line_count,
+              COUNT(sv.lead_time_days) AS mapped_lead_time_count,
               MAX(sv.lead_time_days) AS lead_time_days
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
@@ -178,8 +182,11 @@ export class TenantStore extends ImportTenantStore {
     if (current.status !== "draft") return Response.json({ error: "Only draft purchase orders can be submitted" }, { status: 409 });
 
     const timestamp = now();
-    const expectedDeliveryDate = current.expected_delivery_date
-      || (current.lead_time_days == null ? null : addUtcDays(timestamp, Math.max(0, current.lead_time_days)));
+    const hasCompleteLeadTime = current.line_count > 0
+      && current.mapped_lead_time_count === current.line_count
+      && current.lead_time_days != null;
+    const derivedDate = hasCompleteLeadTime ? addUtcDays(timestamp, Math.max(0, current.lead_time_days!)) : null;
+    const expectedDeliveryDate = current.expected_delivery_date || derivedDate;
 
     this.finalCtx.storage.transactionSync(() => {
       this.finalCtx.storage.sql.exec(
@@ -191,8 +198,8 @@ export class TenantStore extends ImportTenantStore {
       );
       this.auditFinal(request, "purchase_order.submitted", "purchase_order", poId, {
         expectedDeliveryDate,
-        expectedDeliverySource: current.expected_delivery_date ? "manual" : current.lead_time_days == null ? "unknown" : "supplier_lead_time",
-        leadTimeDays: current.expected_delivery_date ? null : current.lead_time_days,
+        expectedDeliverySource: current.expected_delivery_date ? "manual" : derivedDate ? "supplier_lead_time" : "unknown",
+        leadTimeDays: derivedDate ? current.lead_time_days : null,
       });
     });
 
