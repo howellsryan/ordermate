@@ -8,7 +8,7 @@ The rebuild branch now contains the complete v1 operational backbone plus schema
 
 - Cloudflare-native multi-tenant platform, Google auth, memberships/RBAC and audit attribution.
 - Products, arbitrary variants/options, modifiers, SKU/barcode, suppliers/customers and safe catalogue retirement.
-- Multi-location inventory, immutable movements, adjustments/transfers and tracked-vs-never-stocked semantics.
+- Multi-location inventory, immutable movements, adjustments/transfers, cycle counts and tracked-vs-never-stocked semantics.
 - Purchase orders, partial receiving, cancellation and supplier/variant mappings.
 - Orders, reservation, partial/full fulfilment, cancellation and returns/restock.
 - Search, exception inbox, record details, activity/audit and CSV export.
@@ -19,6 +19,7 @@ The rebuild branch now contains the complete v1 operational backbone plus schema
 - Cross-browser mobile camera barcode capture using lazy-loaded ZXing.
 - Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction.
 - Atomic create-only catalogue CSV onboarding with dry-run, stale-preview fingerprinting, supplier mappings and opening-stock ledger movements.
+- Reviewed partial cycle counts with stale-stock protection, reservation safeguards and atomic variance movements.
 - Explicit ordered Durable Object tenant-schema migrations, currently schema v2.
 
 The branch remains draft until dependency installation, typecheck, tests and production build are run as the final verification gate.
@@ -35,7 +36,7 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Ordered tenant schema-version migration runner with tested v1 -> v2 upgrade.
 
 ## Phase 1 — catalogue and stock
-**Delivered, including onboarding and warehouse barcode workflows.**
+**Delivered, including onboarding, stocktake and warehouse barcode workflows.**
 
 - Products, arbitrary option dimensions and variants.
 - SKU/barcode, tax, costs and prices.
@@ -45,6 +46,9 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Dedicated Pick & Fulfil and PO Receiving scan workflows with wrong-item/over-scan protection.
 - Mobile camera scanning through a production decoder rather than native-only `BarcodeDetector`.
 - Reviewed CSV catalogue onboarding: products/variants/categories/suppliers/options/opening stock in one atomic tenant transaction.
+- First-class Cycle Count workspace: partial counts only touch explicitly reviewed SKUs; zero is distinct from uncounted; hardware/manual/camera entry is supported.
+- Cycle-count commit checks the reviewed on-hand/reserved snapshot immediately before one atomic transaction, blocks counts below reserved stock, writes variance movements under one stocktake reference and records an audit summary.
+- A counted never-stocked SKU can intentionally establish a tracked zero position without inventing a quantity movement.
 
 ## Phase 2 — purchasing
 **Delivered for the current operational model.**
@@ -79,6 +83,7 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Responsive/keyboard-accessible dialogs and mobile warehouse workflows.
 - Role-aware surfaces.
 - Create-only CSV onboarding with browser parse, tenant dry-run, line-numbered issues and explicit reviewed commit.
+- Responsive cycle-count workflow with counted-item prioritisation, live variance review and locked commit state.
 
 Remaining before production readiness:
 
