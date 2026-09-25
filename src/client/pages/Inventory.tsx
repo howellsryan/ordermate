@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightLeft, Barcode, Camera, MapPin, Plus, ScanLine, Store } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import InventoryHistory from "../InventoryHistory";
 import { tenantApi } from "../api";
 import type { InventoryRow, Location } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader } from "../ui";
@@ -18,6 +19,7 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory-movements"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
   };
@@ -25,6 +27,7 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   return <>
     <PageHeader eyebrow="Stock" title="Inventory" description="On hand, reserved, available and incoming stock stay separate. Every physical change leaves an auditable movement." actions={<><button className="secondary" onClick={() => setScanOpen(true)}><ScanLine size={17} /> Scan barcode</button>{canCreateLocation && <button className="secondary" onClick={() => setLocationOpen(true)}><Store size={17} /> Add location</button>}{canUpdateStock && <button className="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft size={17} /> Transfer</button>}{canUpdateStock && <button className="primary" onClick={() => setAdjustOpen(true)}><Plus size={17} /> Adjust stock</button>}</>} />
     <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!inventory.data?.length} emptyText="Create a product and stock location to begin tracking inventory."><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{inventory.data?.map((row, index) => <tr key={`${row.variant_id}:${row.location_id}:${index}`}><td><strong>{row.product_name} <span className="muted">· {row.variant_name}</span></strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : ""}</small></td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.reserved}</td><td><strong className={row.available <= 5 ? "danger-text" : ""}>{row.available}</strong></td><td>{row.incoming}</td></tr>)}</tbody></table></DataState></div>
+    <InventoryHistory tenant={tenant} />
     {locationOpen && canCreateLocation && <LocationModal tenant={tenant} onClose={() => setLocationOpen(false)} onCreated={() => { setLocationOpen(false); refresh(); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "locations"] }); }} />}
     {adjustOpen && canUpdateStock && <AdjustModal tenant={tenant} rows={inventory.data || []} onClose={() => setAdjustOpen(false)} onDone={() => { setAdjustOpen(false); refresh(); }} />}
     {transferOpen && canUpdateStock && <TransferModal tenant={tenant} rows={inventory.data || []} locations={locations.data || []} onClose={() => setTransferOpen(false)} onDone={() => { setTransferOpen(false); refresh(); }} />}
