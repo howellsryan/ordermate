@@ -1,131 +1,156 @@
-# Delivery plan
+# OrderMate delivery plan
 
-## Goal
-Ship an excellent general-purpose order and inventory SaaS whose core operations are trustworthy, with automation layered on top as reviewable proposals rather than a second source of business truth.
+## Product direction
 
-## Current implementation status
-The rebuild branch now contains the complete operational backbone plus schema-v5 planning/preferences controls and the first automation/onboarding advantages:
+OrderMate is being rebuilt as a Cloudflare-native operational SaaS for businesses that need catalogue, order, purchasing and inventory control. The product deliberately starts broad rather than assuming one retail vertical, but its core is designed for multi-location physical-stock operations.
 
-- Cloudflare-native multi-tenant platform, Google auth, memberships/RBAC and audit attribution.
-- Products, arbitrary variants/options, modifiers, SKU/barcode, suppliers/customers and safe catalogue retirement.
-- Atomic bulk product archive/restore with all-or-nothing validation and audit parity.
-- Multi-location inventory, immutable movements, adjustments/transfers, cycle counts and tracked-vs-never-stocked semantics.
-- Purchase orders, expected delivery dates, overdue visibility, partial receiving, cancellation and supplier/variant mappings.
-- Persistent delivery discrepancies with open/resolved lifecycle, source evidence and audited resolution.
-- Orders, reservation, partial/full fulfilment, cancellation and returns/restock.
-- Search, exception inbox, record details, activity/audit and CSV export.
-- Private cross-device saved views for Inventory and Purchasing.
-- Deterministic Operations Reports for stock, orders, fulfilment and purchasing.
-- Explainable replenishment recommendations plus per-SKU/location custom rules.
-- Supplier purchase-document extraction -> deterministic matching -> human-reviewed draft PO.
-- Human-reviewed supplier SKU learning from document proposals with canonical ambiguity protection.
-- Dedicated Warehouse workspace for barcode-driven Pick & Fulfil and Receive Stock.
-- Cross-browser mobile camera barcode capture using lazy-loaded ZXing.
-- Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction -> persistent discrepancy only when actionable physical/document evidence differs.
-- Atomic create-only catalogue CSV onboarding with dry-run, stale-preview fingerprinting, supplier mappings and opening-stock ledger movements.
-- Reviewed partial cycle counts with stale-stock protection, reservation safeguards and atomic variance movements.
-- Explicit ordered Durable Object tenant-schema migrations, currently schema v5.
+Canonical business mutations remain deterministic, transactional and auditable. AI is an evidence-extraction/proposal layer only.
 
-The branch remains draft until dependency installation, typecheck, tests and production build are run as the final verification gate.
+## Platform constraints
 
-## Phase 0 — platform foundation
-**Delivered on the rebuild branch.**
+- Cloudflare hosts the application runtime and durable application data.
+- Wrangler owns deployable infrastructure/configuration.
+- Google is the OAuth identity provider only.
+- No AWS/Neon/Vercel/Supabase/other hosted runtime/database dependency is part of the architecture.
+- Tenant operational data is physically isolated in one EU-jurisdiction SQLite Durable Object per business.
+- D1 is the identity/session/organization control plane.
+- R2 stores source documents/proposals.
+- Queues provide asynchronous event handling; bounded failures go to a DLQ.
+- Workers AI remains optional and disabled by default pending explicit compliance acceptance.
 
-- Cloudflare Worker + React/Vite application.
-- Google OAuth / Better Auth.
-- Organization membership and static RBAC.
-- EU D1 control plane and EU tenant Durable Objects.
-- EU R2 documents plus Queue/DLQ automation path.
-- Tenant audit framework.
-- Ordered tenant schema-version migration runner with tested v1 -> v2 -> v3 -> v4 -> v5 upgrades/replay.
+## Delivered vertical slices
 
-## Phase 1 — catalogue and stock
-**Delivered, including onboarding, bulk retirement, stocktake and warehouse barcode workflows.**
+### Foundation
+- React/Vite + Hono Worker deployment shape.
+- Better Auth Google OAuth.
+- D1 organizations/members/invites.
+- per-business Durable Object storage.
+- role-based server authorization and role-aware UI.
+- cross-site mutation protection, masked API 5xx responses and tenant-scoped actor attribution.
+- ordered Durable Object schema migrations with verified v1 baseline and replay-safe evolution through **v6**.
 
-- Products, arbitrary option dimensions and variants.
-- SKU/barcode, tax, costs and prices.
-- Locations, stock ledger, adjustment and transfers.
-- Non-destructive catalogue archive/restore.
-- Atomic archive/restore for up to 200 selected products, preserving the single-record variant/audit semantics.
-- Keyboard-wedge barcode lookup.
-- Dedicated Pick & Fulfil and PO Receiving scan workflows with wrong-item/over-scan protection.
-- Mobile camera scanning through a production decoder rather than native-only `BarcodeDetector`.
-- Reviewed CSV catalogue onboarding: products/variants/categories/suppliers/options/opening stock in one atomic tenant transaction.
-- First-class Cycle Count workspace: partial counts only touch explicitly reviewed SKUs; zero is distinct from uncounted; hardware/manual/camera entry is supported.
-- Cycle-count commit checks the reviewed on-hand/reserved snapshot immediately before one atomic transaction, blocks counts below reserved stock, writes variance movements under one stocktake reference and records an audit summary.
-- A counted never-stocked SKU can intentionally establish a tracked zero position without inventing a quantity movement.
+### Catalogue
+- products/categories/modifiers.
+- arbitrary option dimensions + generated variants.
+- SKU/barcode/price/cost/tax.
+- audited product editing.
+- archive/restore without historical deletion.
+- atomic bulk archive/restore.
+- reviewed create-only CSV onboarding with server dry-run/fingerprint/atomic commit.
 
-## Phase 2 — purchasing
-**Delivered for the current operational model.**
+### Inventory
+- multi-location stock.
+- on-hand/reserved/available/incoming.
+- immutable movement ledger.
+- adjustments/transfers/barcode lookup.
+- tracked-zero vs never-stocked semantics.
+- partial stocktake/cycle count with stale-snapshot and reservation protection.
 
-- Suppliers and supplier references.
-- Supplier-to-variant SKU/cost/lead-time mappings.
-- Draft/submitted purchase orders.
-- Partial receiving and receiving history.
-- Incoming-stock visibility.
-- Purchase-order cancellation without rewriting already received stock.
-- Deterministic replenishment recommendations.
-- Sparse per-variant/location reorder point, arrival target and preferred supplier policy.
-- Reviewed supplier-code learning: extracted supplier SKUs can be remembered only after a user confirms supplier + variant; replacements require explicit opt-in and conflicting mappings are rejected server-side.
-- Expected delivery dates on purchase orders with manual override.
-- At submission, OrderMate derives an expected date only when every PO line has a lead-time mapping for that supplier, using the slowest mapped line; incomplete coverage deliberately leaves the date unset rather than inventing precision.
-- Overdue open POs are surfaced in the PO list, detail view, operational attention inbox, search context and exports without introducing a second lifecycle state.
-- Delivery-note discrepancies become tenant operational records only for concrete evidence: PO-reference mismatch, unexpected/over-delivered document lines, or physical received quantity differing from the reviewed delivery note.
-- Ordinary partial shipments that match the document do **not** create discrepancy noise.
-- Discrepancies are idempotent per proposal, remain linked to immutable R2 proposal/source evidence, appear in Purchasing and Attention, export to CSV and require an audited human resolution note.
-- Resolving a discrepancy never mutates inventory or rewrites the purchase order receipt.
+### Purchasing
+- suppliers and supplier/variant mapping.
+- draft/submitted POs, partial receive/cancel.
+- expected-delivery dates with conservative supplier-lead-time derivation.
+- overdue operational visibility.
+- deterministic replenishment + per-SKU/location policies.
+- supplier SKU learning only from explicit human review.
+- delivery discrepancy open/resolved lifecycle.
 
-## Phase 3 — order lifecycle
-**Delivered for v1.**
+### Orders
+- customers.
+- snapshot-based draft orders.
+- confirmation/reservation and oversell protection.
+- partial/full fulfilment.
+- cancellation/release.
+- returns with optional restock.
+- schema-v6 explicit `required_by_date` + `low/normal/high/urgent` priority.
+- dedicated order-planning RBAC: warehouse fulfilment can execute work without redefining customer/operational commitments.
+- deterministic urgency-aware Warehouse picking.
 
-- Customers and draft orders.
-- Confirmation/reservation.
-- Partial/full fulfilment.
-- Cancellation, return and optional restock.
-- Tax snapshots and immutable commercial history.
-- Warehouse picking layered over the canonical fulfilment endpoint.
+### Warehouse
+- dedicated Pick & Fulfil and Receive Stock workspace.
+- hardware/manual barcode input.
+- lazy-loaded ZXing mobile camera scanning.
+- exact document-aware scan validation and bounded counts.
+- delivery-note-assisted receiving remains a reviewed staging step before canonical receipt.
+- cycle counting available as a separate reviewed reconciliation workflow.
 
-## Phase 4 — operational polish
-**Substantially delivered; final runtime/browser verification remains.**
+### Operations UX
+- global search.
+- role-aware attention inbox.
+- record detail views.
+- searchable audit history and permission-checked CSV export.
+- actor-private cross-device saved views for Inventory/Purchasing.
+- deterministic 7/30/60/90-day Operations Reports with separate commercial `analytics:read` authorization.
+- order priority/required-by shown in Orders, detail, Warehouse, search, attention and exports.
 
-- Dense but calm dashboard.
-- Global tenant search and operational exception inbox.
-- Record detail views and audit/activity timeline.
-- CSV export, including purchase-order expected dates and delivery discrepancy history.
-- Responsive/keyboard-accessible dialogs and mobile warehouse workflows.
-- Role-aware surfaces.
-- Create-only CSV onboarding with browser parse, tenant dry-run, line-numbered issues and explicit reviewed commit.
-- Responsive cycle-count workflow with counted-item prioritisation, live variance review and locked commit state.
-- Purchase-order expected-arrival/overdue signals that remain separate from canonical PO status.
-- Delivery discrepancy open/resolved queue with source evidence, issue-level explanation and role-aware resolution.
-- Schema-v5 private saved operational views per signed-in actor: Inventory query/location/stock state and Purchasing query/supplier/status/due state.
-- First-class deterministic Operations Reports with 7/30/60/90-day windows, location stock valuation, physical movement trends, top fulfilled SKUs, confirmed/completed gross order value and outstanding PO commitment.
-- Commercial analytics use a separate read permission so Fulfilment can inspect audit/activity without gaining purchasing analytics.
+### Document automation
+- purchase source upload to EU R2.
+- Queue + Workers AI extraction when compliance flag is enabled.
+- strict structured proposal validation.
+- deterministic exact supplier/SKU/barcode/internal-SKU matching.
+- human-reviewed draft PO creation.
+- delivery-note proposal anchored to one existing PO.
+- no autonomous PO/stock/order mutation.
 
-Remaining before production readiness:
+## Current schema evolution
 
-1. run dependency installation, typecheck, full tests and production build;
-2. complete final accessibility/browser/responsive review against Agent-Template gates;
-3. correct any issues revealed by real runtime/browser verification;
-4. establish production backup/recovery, retention/export/deletion procedures; and
-5. commit the generated lockfile and deployment runbook evidence.
+1. **v1** verified baseline operational schema.
+2. **v2** `inventory_policies`.
+3. **v3** `purchase_orders.expected_delivery_date` + index.
+4. **v4** `delivery_discrepancies`.
+5. **v5** actor-private `saved_views`.
+6. **v6** `orders.required_by_date`, constrained `orders.priority`, open-order planning index.
 
-## Phase 5 — automation advantage
-The first high-value automation paths are implemented with the same rule: AI may propose structured evidence; deterministic application code and a human decide what is committed.
+Future schema changes must remain ordered, replay-safe and covered by fresh + previous-version upgrade tests.
 
-### Delivered
-1. **Supplier PO intake** — PDF/image -> Cloudflare conversion/extraction -> exact supplier/SKU/barcode/internal-SKU matching -> human review -> draft PO.
-2. **Reviewed supplier SKU learning** — a human-confirmed supplier+variant may remember the extracted supplier code for future exact matching; conflicting or replacement mappings remain explicit.
-3. **Delivery-note assistance** — source document tied to one open PO -> delivered quantity extraction -> exact selected-PO matching -> human review -> staged Warehouse counts -> normal PO receipt.
-4. **Delivery discrepancy control** — after a reviewed receipt, concrete document/physical differences become a persistent open purchasing issue with immutable proposal/source evidence and audited resolution.
-5. **Replenishment** — available/reserved/incoming stock + 30-day fulfilment demand + supplier lead time + optional custom policy -> explainable suggestion -> reviewable draft PO.
-6. **Exception inbox** — stockouts/low stock, fulfilment work, incoming/partial POs, overdue expected deliveries and unresolved delivery discrepancies.
+## Next delivery priorities
 
-### Next candidates
-1. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
-2. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
-3. Storefront and integration architecture once the internal operating core has passed production hardening.
-4. Production data-retention/export/deletion and disaster-recovery tooling before public launch.
+### 1. Batch/wave picking
+Goal: reduce repeated walking and scanning when several confirmed orders can be picked together.
 
-## Out of scope for the initial MVP
-Customer storefront, payment processing, carrier integrations, lots/batches/serials/manufacturing, marketplace/e-commerce integrations and autonomous AI business mutations.
+Safety boundary:
+- grouping/aggregate pick counts are operational staging only;
+- each order remains the canonical unit of reservation and fulfilment;
+- a wave must never create a new inventory mutation path;
+- fulfilment submissions still go through existing `/orders/:id/fulfil` transactions;
+- partial failure must remain visible per order rather than pretending the whole wave is atomic when it is not.
+
+### 2. Onboarding/commercial hardening
+- stronger first-workspace empty states and guided setup.
+- clearer location/catalogue/supplier setup sequencing.
+- optional template/sample data path without contaminating real tenant records.
+
+### 3. Production readiness gate
+- install pinned dependency graph and commit lockfile.
+- typecheck.
+- Cloudflare/Vitest runtime tests.
+- production build.
+- responsive/accessibility review.
+- security review for authorization, CSP/headers, secrets/logging and cross-tenant IDs.
+- migration replay verification.
+- Cloudflare bootstrap/deployment only after runtime verification is green.
+
+## Deferred product areas
+
+Not part of the current operational MVP unless explicitly reprioritized:
+
+- customer storefront;
+- payment processing;
+- carrier/shipping and marketplace integrations;
+- batches/lots/serials/expiry/manufacturing;
+- destructive existing-catalogue bulk-update imports;
+- autonomous AI business mutations;
+- production opt-in to Workers AI inference.
+
+## Verification status
+
+Implementation continues before the final verification pass. Do not describe the branch as merge-ready until these have actually passed:
+
+```sh
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+The generated `package-lock.json` must be committed before production deployment.
