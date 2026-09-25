@@ -168,6 +168,8 @@ export type PurchaseOrderDetail = PurchaseOrder & {
   lines: PurchaseOrderLine[];
 };
 
+export type OrderPriority = "low" | "normal" | "high" | "urgent";
+
 export type Order = {
   id: string;
   number: string;
@@ -175,6 +177,8 @@ export type Order = {
   location_name: string;
   status: string;
   fulfilment_status: string;
+  priority: OrderPriority;
+  required_by_date?: string | null;
   subtotal_minor: number;
   tax_minor: number;
   total_minor: number;
