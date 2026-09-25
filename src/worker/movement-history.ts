@@ -52,7 +52,7 @@ movementHistoryApp.get("/", async c => {
     "x-ordermate-actor-name": session.user.name,
   });
   const response = await stub.fetch(new Request("https://tenant.internal/inventory/movements", { headers }));
-  if (!response.ok) return c.json({ error: "Could not load stock history" }, response.status as 400 | 401 | 403 | 404 | 409 | 500);
+  if (!response.ok) return c.json({ error: "Could not load stock history" }, 502);
   const movements = await response.json<Movement[]>();
 
   const members = await c.env.CONTROL_DB.prepare(
