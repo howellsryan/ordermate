@@ -1,6 +1,9 @@
 name: Rebuild verification
 
 on:
+  push:
+    branches:
+      - rebuild/cloudflare-saas
   workflow_dispatch:
 
 permissions:
@@ -12,6 +15,7 @@ concurrency:
 
 jobs:
   verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
