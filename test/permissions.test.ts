@@ -23,6 +23,20 @@ describe("tenant route permission classification", () => {
     expect(permissionForRequest("/purchase-orders/123/receive", "POST")).toEqual({ resource: "purchasing", action: "update" });
   });
 
+  it("allows every role to read dashboard and audit reporting without granting commercial settings", () => {
+    for (const role of ["owner", "admin", "manager", "inventory", "fulfilment", "viewer"] as const) {
+      expect(can(role, "reports", "read")).toBe(true);
+    }
+    expect(can("fulfilment", "settings", "read")).toBe(false);
+    expect(can("inventory", "settings", "read")).toBe(false);
+  });
+
+  it("keeps fulfilment isolated from purchasing data", () => {
+    expect(can("fulfilment", "purchasing", "read")).toBe(false);
+    expect(can("inventory", "purchasing", "read")).toBe(true);
+    expect(can("viewer", "purchasing", "read")).toBe(true);
+  });
+
   it("fails closed for unknown tenant routes", () => {
     const permission = permissionForRequest("/future-unclassified-endpoint", "GET");
     expect(permission.resource).toBe("unknown");
