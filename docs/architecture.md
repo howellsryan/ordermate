@@ -31,13 +31,20 @@ Inventory is per variant and location. `on_hand`, `reserved` and derived `availa
 
 A product/location cross-product is not automatically a stock position. The read model distinguishes never-stocked (`tracked=0`) from tracked zero stock. Low-stock alerts and replenishment only act on genuine tracked positions. Archived variants with physical stock remain visible for control/traceability but are excluded from replenishment.
 
+### Warehouse operations
+Warehouse scanning is a client-side staging workflow over the canonical order/PO lifecycle endpoints; it is not a second inventory engine.
+
+Pick & Fulfil is available to fulfilment-capable roles. Receive Stock is available to purchasing/inventory-capable roles. USB/Bluetooth keyboard-wedge scanners and manual barcode entry feed deterministic exact-barcode counting. Wrong items, ambiguous duplicate barcodes and scans beyond the document's outstanding quantity are rejected before submission. Products without a barcode can be corrected manually with bounded +/- controls.
+
+Scanned quantities do not change business data. The operator must explicitly commit them through the existing `/orders/:id/fulfil` or `/purchase-orders/:id/receive` transaction. Those endpoints remain responsible for reservation rules, over-receipt protection, immutable inventory movements and audit attribution.
+
 ### Purchasing
 Suppliers own purchase orders. PO lines snapshot supplier references, unit cost and tax. Partial receiving is supported and receiving creates inventory movements. Purchase-order cancellation removes only outstanding incoming commitment; it never reverses already received physical stock.
 
 `supplier_variants` maps supplier SKU, latest known cost and lead time onto stable OrderMate variant identities. Replenishment uses the existing inventory/movement/PO data and these mappings to produce explainable suggestions. Suggestions never create purchasing commitments automatically: the user reviews a pre-filled draft PO.
 
-### AI document intake
-The purchasing document path is deliberately proposal-based:
+### AI purchasing-document intake
+The supplier purchase-document path is deliberately proposal-based:
 
 `EU R2 source -> Queue -> Cloudflare document conversion -> Workers AI JSON extraction -> deterministic matching -> R2 proposal -> human review -> normal draft PO`
 
@@ -54,6 +61,15 @@ Rules:
 9. the reviewed proposal creates a standard draft PO through the same canonical purchasing endpoint as a manually entered PO.
 
 Currency mismatch is a hard block for AI-assisted draft creation because OrderMate does not silently convert supplier costs. Image conversion is considered best-effort and is always flagged for explicit review.
+
+### AI delivery-note assistance
+Delivery notes use the same trust boundary but are anchored to one existing open purchase order:
+
+`EU R2 delivery note -> Queue -> extraction of delivered identifiers/quantities -> exact selected-PO matching -> R2 proposal -> human review -> staged Warehouse counts -> canonical PO receipt`
+
+The extraction prompt ignores prices/tax and only asks for document references, product identifiers and physically delivered quantities. Exact supplier SKU, barcode and OrderMate SKU evidence may propose a match. Conflicting identifiers, unknown lines, wrong PO references, image extraction and over-delivery force review. Suggested quantities are capped at the selected PO's outstanding quantity.
+
+A reviewed delivery proposal still does not alter inventory. It only pre-fills the Warehouse receiving counts. The operator can scan/edit them further and must explicitly press Receive. The live PO receiving transaction re-validates the outstanding quantities before any stock movement. The R2 proposal is marked accepted only after that canonical receipt succeeds.
 
 ### Orders
 Order lines snapshot product/variant/SKU, price, tax and selected modifiers. Confirmation creates reservations. Partial fulfilment consumes only the quantity leaving the location and retains the outstanding reservation. Cancellation releases outstanding reservations. Returns are independent events and may optionally restock.
@@ -74,21 +90,25 @@ All amounts are integer minor units. Each line stores net, tax and gross values 
 9. Custom mutations reject cross-site requests before business handlers run.
 10. Queue logging is limited to event type/ID; source filenames, tenant IDs, user IDs and document contents are not logged.
 
-Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching and archive/restore invariants.
+Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching, warehouse scan invariants and archive/restore invariants.
 
-## Schema evolution contract
+## Schema evolution
 
-The initial release has no legacy tenant data to migrate, so a new `TenantStore` can safely bootstrap the complete v1 schema with idempotent `CREATE ... IF NOT EXISTS` statements.
+The v1 domain schema still uses the original idempotent bootstrap, but schema-version tracking is now implemented before any post-v1 domain change.
 
-That bootstrap is **not** the migration strategy for later releases. Before the first post-v1 schema change is shipped to production, tenant storage must gain an explicit monotonically increasing schema version and ordered, transactional migrations. A future migration must:
+The final exported `TenantStore` runs a versioning layer under the Durable Object initialization barrier. `_sql_schema_migrations` stores monotonically increasing applied migration IDs. Existing pre-tracker v1 tenant objects and fresh v1 objects are safely marked migration `1` after the idempotent v1 bootstrap. A tenant whose stored migration version is newer than the running application fails closed instead of being interpreted by older code.
 
-1. read the tenant's current schema version;
-2. apply every missing migration in order inside the Durable Object's serialized execution boundary;
-3. update the version only after the migration succeeds;
-4. be covered by tests for both a fresh tenant and an upgrade from the previous schema version; and
+Cloudflare Durable Objects do not support `PRAGMA user_version`, so OrderMate follows Cloudflare's documented explicit migration-table pattern rather than relying on that SQLite pragma.
+
+Every future schema migration must:
+
+1. live in the ordered tenant migration runner and have one monotonically increasing ID;
+2. read the current applied migration version before changing schema;
+3. perform its schema/data mutation in the Durable Object's serialized execution boundary and record the migration only after success;
+4. be covered by tests for a fresh tenant and an upgrade from the previous schema version; and
 5. never require replacing a tenant Durable Object or copying live business data merely to deploy application code.
 
-This remains a merge gate for schema v2. New features must reuse the v1 schema or first implement this mechanism.
+No v2 domain migration has been introduced yet. Features added so far continue to reuse the v1 operational schema plus tenant-scoped R2 sidecars.
 
 ## Compliance posture
 
