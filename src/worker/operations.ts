@@ -72,6 +72,8 @@ type PurchaseOrder = {
   total_minor: number;
   currency: string;
   line_count: number;
+  expected_delivery_date?: string | null;
+  ordered_at?: string | null;
   created_at: string;
 };
 
@@ -156,8 +158,8 @@ operationsApp.get("/search", async c => {
     id: order.id, type: "Order", title: order.number, subtitle: `${order.customer_name || "Guest"} · ${order.fulfilment_status.replaceAll("_", " ")}`, page: "orders", badge: order.status,
   })));
 
-  pushLimited(results, purchaseOrders.filter(po => [po.number, po.supplier_name, po.location_name, po.status].some(value => includes(value, query))).map(po => ({
-    id: po.id, type: "Purchase order", title: po.number, subtitle: `${po.supplier_name} · ${po.location_name}`, page: "purchasing", badge: po.status,
+  pushLimited(results, purchaseOrders.filter(po => [po.number, po.supplier_name, po.location_name, po.status, po.expected_delivery_date].some(value => includes(value, query))).map(po => ({
+    id: po.id, type: "Purchase order", title: po.number, subtitle: `${po.supplier_name} · ${po.location_name}${po.expected_delivery_date ? ` · expected ${po.expected_delivery_date}` : ""}`, page: "purchasing", badge: po.status,
   })));
 
   pushLimited(results, customers.filter(person => [person.name, person.email, person.phone].some(value => includes(value, query))).map(person => ({
@@ -214,13 +216,15 @@ operationsApp.get("/attention", async c => {
 
   if (can(context.membership.role, "purchasing", "read")) {
     const purchaseOrders = await tenantJson<PurchaseOrder[]>(context.stub, "/purchase-orders", actor);
-    for (const po of purchaseOrders.filter(po => po.status === "partially_received" || po.status === "ordered").slice(0, 8)) {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const po of purchaseOrders.filter(po => po.status === "partially_received" || po.status === "ordered").slice(0, 12)) {
+      const overdue = !!po.expected_delivery_date && po.expected_delivery_date < today;
       items.push({
         id: `po:${po.id}`,
-        severity: po.status === "partially_received" ? "warning" : "info",
-        type: po.status === "partially_received" ? "Partial receipt" : "Incoming stock",
+        severity: overdue ? "critical" : po.status === "partially_received" ? "warning" : "info",
+        type: overdue ? "Overdue purchase order" : po.status === "partially_received" ? "Partial receipt" : "Incoming stock",
         title: po.number,
-        detail: `${po.supplier_name} · ${po.location_name} · ${po.line_count} line${po.line_count === 1 ? "" : "s"}`,
+        detail: `${po.supplier_name} · ${po.location_name} · ${po.line_count} line${po.line_count === 1 ? "" : "s"}${po.expected_delivery_date ? ` · expected ${po.expected_delivery_date}` : " · expected date not set"}`,
         page: "purchasing",
       });
     }
@@ -267,8 +271,8 @@ function exportRows(kind: ExportKind, data: unknown): { headers: string[]; rows:
     return { headers: ["order_number", "customer", "location", "status", "fulfilment_status", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
   }
   if (kind === "purchase-orders") {
-    const rows = (data as PurchaseOrder[]).map(row => [row.number, row.supplier_name, row.location_name, row.status, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
-    return { headers: ["purchase_order_number", "supplier", "location", "status", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
+    const rows = (data as PurchaseOrder[]).map(row => [row.number, row.supplier_name, row.location_name, row.status, row.expected_delivery_date, row.ordered_at, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
+    return { headers: ["purchase_order_number", "supplier", "location", "status", "expected_delivery_date", "ordered_at", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
   }
   if (kind === "audit") {
     const rows = (data as AuditEvent[]).map(row => [row.created_at, row.actor_id, row.actor_role, row.action, row.entity_type, row.entity_id, row.metadata_json]);
