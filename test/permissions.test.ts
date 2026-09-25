@@ -51,6 +51,19 @@ describe("tenant route permission classification", () => {
     expect(can("viewer", "purchasing", "update")).toBe(false);
   });
 
+  it("classifies delivery discrepancy history/resolution as purchasing but keeps the internal create route fail-closed", () => {
+    expect(permissionForRequest("/delivery-discrepancies", "GET")).toEqual({ resource: "purchasing", action: "read" });
+    expect(permissionForRequest("/delivery-discrepancies/discrepancy-1", "PATCH")).toEqual({ resource: "purchasing", action: "update" });
+    expect(can("inventory", "purchasing", "update")).toBe(true);
+    expect(can("viewer", "purchasing", "read")).toBe(true);
+    expect(can("viewer", "purchasing", "update")).toBe(false);
+    expect(can("fulfilment", "purchasing", "read")).toBe(false);
+
+    const internal = permissionForRequest("/internal/delivery-discrepancies", "POST");
+    expect(internal.resource).toBe("unknown");
+    expect(can("owner", internal.resource, internal.action)).toBe(false);
+  });
+
   it("classifies supplier mappings and replenishment as purchasing operations", () => {
     expect(permissionForRequest("/supplier-variants", "GET")).toEqual({ resource: "purchasing", action: "read" });
     expect(permissionForRequest("/supplier-variants", "POST")).toEqual({ resource: "purchasing", action: "update" });
