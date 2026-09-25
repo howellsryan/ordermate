@@ -5,7 +5,7 @@ import { Modal } from "./ui";
 type ScannerControls = { stop: () => void };
 type BrowserReaderModule = typeof import("@zxing/browser");
 
-export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: { onScan: (barcode: string) => void; label?: string }) {
+export default function CameraBarcodeScanner({ onScan, label = "Use camera", disabled = false }: { onScan: (barcode: string) => void; label?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -17,6 +17,10 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: {
   useEffect(() => {
     onScanRef.current = onScan;
   }, [onScan]);
+
+  useEffect(() => {
+    if (disabled && open) setOpen(false);
+  }, [disabled, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,7 +101,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera" }: {
   }, [open]);
 
   return <>
-    <button type="button" className="secondary camera-scan-button" onClick={() => setOpen(true)}><Camera size={15} /> {label}</button>
+    <button type="button" className="secondary camera-scan-button" disabled={disabled} onClick={() => setOpen(true)}><Camera size={15} /> {label}</button>
     {open && <Modal title="Scan one barcode" subtitle="Point the rear camera at the product barcode. OrderMate closes the camera after one successful read so a stationary label cannot be counted repeatedly." onClose={() => setOpen(false)}>
       <div className="camera-scanner">
         <div className="camera-preview">
