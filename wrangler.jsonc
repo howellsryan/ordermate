@@ -1,0 +1,58 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ordermate",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "CONTROL_DB",
+      "database_name": "ordermate-control",
+      "database_id": "REPLACE_WITH_WRANGLER_CREATED_D1_ID",
+      "migrations_dir": "migrations/control"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TENANT_STORES",
+        "class_name": "TenantStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TenantStore"]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "ordermate-documents",
+      "jurisdiction": "eu"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "EVENTS_QUEUE",
+        "queue": "ordermate-events"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "ordermate-events",
+        "max_batch_size": 25,
+        "max_batch_timeout": 5
+      }
+    ]
+  }
+}

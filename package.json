@@ -1,0 +1,40 @@
+{
+  "name": "ordermate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cf:typegen": "wrangler types",
+    "cf:bootstrap": "node scripts/bootstrap-cloudflare.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply CONTROL_DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply CONTROL_DB --remote",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.0",
+    "better-auth": "^1.6.0",
+    "hono": "^4.9.0",
+    "lucide-react": "^0.544.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.13.0",
+    "@cloudflare/workers-types": "^4.20260925.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.45.0"
+  }
+}
