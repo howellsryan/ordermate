@@ -1,20 +1,20 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "order_planning" | "customers" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
     catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
@@ -50,6 +50,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
     const lifecycleAction = method === "POST" && /\/(submit|receive|cancel)$/.test(path) ? "update" : action;
     return { resource: "purchasing", action: lifecycleAction };
   }
+  if (/^\/orders\/[^/]+\/planning$/.test(path)) return { resource: "order_planning", action: "update" };
   if (path.startsWith("/orders")) {
     const lifecycleAction = method === "POST" && /\/(confirm|fulfil|cancel|return)$/.test(path) ? "update" : action;
     return { resource: "orders", action: lifecycleAction };
