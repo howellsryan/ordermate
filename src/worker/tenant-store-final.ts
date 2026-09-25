@@ -40,7 +40,7 @@ export class TenantStore extends ImportTenantStore {
     const path = url.pathname.replace(/\/$/, "") || "/";
 
     if (request.method === "POST" && path === "/supplier-variants") {
-      const body = await request.clone().json<SupplierVariantBody>().catch(() => null);
+      const body = await request.clone().json().catch(() => null) as SupplierVariantBody | null;
       const supplierId = typeof body?.supplierId === "string" ? body.supplierId : "";
       const variantId = typeof body?.variantId === "string" ? body.variantId : "";
       const supplierSku = typeof body?.supplierSku === "string" ? body.supplierSku.trim() : "";
