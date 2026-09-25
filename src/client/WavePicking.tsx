@@ -97,6 +97,7 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   const plan = useMemo(() => distributeWaveCounts(details.data || [], counts), [details.data, counts]);
   const staged = Object.values(counts).reduce((sum, quantity) => sum + quantity, 0);
   const allocated = Object.values(aggregatePlanCounts(plan.orders)).reduce((sum, quantity) => sum + quantity, 0);
+  const everySelectedOrderAffected = plan.orders.length === orders.length;
 
   const commit = useMutation({
     mutationFn: async () => {
@@ -169,9 +170,10 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
         <div className="panel-heading"><div><p className="eyebrow">Commit preview</p><h3>Per-order allocation</h3></div><span>{allocated} unit{allocated === 1 ? "" : "s"}</span></div>
         {plan.orders.length ? plan.orders.map(order => <div className="wave-allocation-order" key={order.orderId}><span><strong>{order.orderNumber}</strong><small>{order.lines.length} line{order.lines.length === 1 ? "" : "s"}</small></span><b>{order.lines.reduce((sum, line) => sum + line.quantity, 0)} units</b></div>) : <p className="form-note">Scan or add quantities to see how the wave will be split across orders.</p>}
       </div>
+      {staged > 0 && !everySelectedOrderAffected && <div className="wave-error"><AlertTriangle size={16} /><span>Every selected order must have at least one staged unit before the wave can be committed. Remove untouched orders or scan an item for them.</span></div>}
       {unallocated > 0 && <div className="wave-error"><AlertTriangle size={16} /><span>{unallocated} staged unit{unallocated === 1 ? "" : "s"} cannot be allocated to current outstanding lines. Refresh the wave before committing.</span></div>}
       {commit.error && <ErrorText error={commit.error} />}
-      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose} disabled={commit.isPending}><X size={15} /> Close</button><button className="primary" disabled={commit.isPending || allocated === 0 || unallocated > 0 || !sameLocation} onClick={() => commit.mutate()}><PackageCheck size={15} /> Fulfil staged wave</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose} disabled={commit.isPending}><X size={15} /> Close</button><button className="primary" disabled={commit.isPending || allocated === 0 || unallocated > 0 || !sameLocation || !everySelectedOrderAffected} onClick={() => commit.mutate()}><PackageCheck size={15} /> Fulfil staged wave</button></div>
     </div>}
   </Modal>;
 }
