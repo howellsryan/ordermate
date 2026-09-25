@@ -86,6 +86,11 @@ export class TenantStore extends CoreTenantStore {
       return this.updateProduct(decodeURIComponent(path.split("/")[2]), request);
     }
 
+    const cancelPurchaseOrder = path.match(/^\/purchase-orders\/([^/]+)\/cancel$/);
+    if (request.method === "POST" && cancelPurchaseOrder) {
+      return this.cancelPurchaseOrder(decodeURIComponent(cancelPurchaseOrder[1]), request);
+    }
+
     return super.fetch(request);
   }
 
@@ -168,6 +173,46 @@ export class TenantStore extends CoreTenantStore {
       if (cause instanceof Error && cause.message.includes("UNIQUE constraint failed")) return Response.json({ error: "SKU and barcode values must be unique inside this business" }, { status: 409 });
       console.error("TenantStore product update failed", cause);
       return Response.json({ error: "Could not update product" }, { status: 500 });
+    }
+
+    return Response.json({ ok: true });
+  }
+
+  private cancelPurchaseOrder(purchaseOrderId: string, request: Request) {
+    const actorId = request.headers.get("x-ordermate-actor-id") || "system";
+    const actorRole = request.headers.get("x-ordermate-actor-role") || "unknown";
+    const updatedAt = timestamp();
+
+    try {
+      this.runtimeCtx.storage.transactionSync(() => {
+        const purchaseOrder = this.runtimeCtx.storage.sql.exec<{ status: string }>(
+          "SELECT status FROM purchase_orders WHERE id = ?",
+          purchaseOrderId,
+        ).toArray()[0];
+        if (!purchaseOrder) throw new Error("PURCHASE_ORDER_NOT_FOUND");
+        if (purchaseOrder.status === "cancelled") return;
+        if (purchaseOrder.status === "received") throw new Error("PURCHASE_ORDER_ALREADY_RECEIVED");
+
+        this.runtimeCtx.storage.sql.exec(
+          "UPDATE purchase_orders SET status = 'cancelled', updated_at = ? WHERE id = ?",
+          updatedAt,
+          purchaseOrderId,
+        );
+        this.runtimeCtx.storage.sql.exec(
+          "INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'purchase_order.cancelled', 'purchase_order', ?, ?, ?)",
+          crypto.randomUUID(),
+          actorId,
+          actorRole,
+          purchaseOrderId,
+          JSON.stringify({ previousStatus: purchaseOrder.status }),
+          updatedAt,
+        );
+      });
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "PURCHASE_ORDER_NOT_FOUND") return Response.json({ error: "Purchase order not found" }, { status: 404 });
+      if (cause instanceof Error && cause.message === "PURCHASE_ORDER_ALREADY_RECEIVED") return Response.json({ error: "A fully received purchase order cannot be cancelled" }, { status: 409 });
+      console.error("TenantStore purchase-order cancellation failed", cause);
+      return Response.json({ error: "Could not cancel purchase order" }, { status: 500 });
     }
 
     return Response.json({ ok: true });
