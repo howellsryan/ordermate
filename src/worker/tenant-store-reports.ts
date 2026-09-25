@@ -96,7 +96,7 @@ export class TenantStore extends BulkTenantStore {
       "SELECT COUNT(*) AS count FROM orders WHERE status IN ('draft','confirmed')",
     ).toArray()[0]?.count || 0;
     const orderValue = sql.exec<SumRow>(
-      "SELECT SUM(total_minor) AS total FROM orders WHERE status != 'cancelled' AND date(created_at) >= date('now', ?)",
+      "SELECT SUM(total_minor) AS total FROM orders WHERE status IN ('confirmed','completed') AND date(created_at) >= date('now', ?)",
       window,
     ).toArray()[0];
     const fulfilledUnits = sql.exec<SumRow>(
@@ -169,7 +169,7 @@ export class TenantStore extends BulkTenantStore {
     const orderTrendRows = sql.exec<OrderTrendRow>(
       `SELECT date(created_at) AS day,
               COUNT(*) AS orders,
-              SUM(CASE WHEN status != 'cancelled' THEN total_minor ELSE 0 END) AS gross_minor
+              SUM(CASE WHEN status IN ('confirmed','completed') THEN total_minor ELSE 0 END) AS gross_minor
        FROM orders
        WHERE date(created_at) >= date('now', ?)
        GROUP BY date(created_at)
