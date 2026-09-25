@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { TenantStore } from "../src/worker/tenant-store-planning";
+import { migrateTenantSchema } from "../src/worker/tenant-store-versioned";
 
 type Stub = DurableObjectStub<TenantStore>;
 
@@ -57,6 +58,32 @@ describe("tenant schema v2", () => {
     await runInDurableObject(stub, async (_instance, state) => {
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
       expect(versions.map(row => row.id)).toEqual([1, 2]);
+      const policyTable = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray();
+      expect(policyTable).toHaveLength(1);
+    });
+  });
+
+  it("upgrades a v1 database in place without losing v1 business data", async () => {
+    const stub = tenant();
+    await setup(stub);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const productCountBefore = state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM products").toArray()[0].count;
+      expect(productCountBefore).toBeGreaterThan(0);
+
+      state.storage.transactionSync(() => {
+        state.storage.sql.exec("DROP TABLE inventory_policies");
+        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id = 2");
+      });
+      const v1Versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
+      expect(v1Versions.map(row => row.id)).toEqual([1]);
+
+      expect(migrateTenantSchema(state.storage)).toBe(2);
+
+      const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
+      expect(versions.map(row => row.id)).toEqual([1, 2]);
+      const productCountAfter = state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM products").toArray()[0].count;
+      expect(productCountAfter).toBe(productCountBefore);
       const policyTable = state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray();
       expect(policyTable).toHaveLength(1);
     });
