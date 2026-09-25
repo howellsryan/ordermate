@@ -201,30 +201,37 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
 
   const receive = useMutation({
     mutationFn: async () => {
+      const receivedLines = targets
+        .map(target => ({ lineId: target.lineId, quantity: counts[target.lineId] || 0 }))
+        .filter(line => line.quantity > 0);
       await tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/receive`, {
         method: "POST",
-        body: JSON.stringify({ lines: targets.map(target => ({ lineId: target.lineId, quantity: counts[target.lineId] || 0 })).filter(line => line.quantity > 0) }),
+        body: JSON.stringify({ lines: receivedLines }),
       });
       let completionError: string | undefined;
+      let discrepancyId: string | null = null;
       if (appliedProposalKey) {
         try {
-          await controlApi("/delivery-documents/proposal/complete", {
+          const completion = await controlApi<{ ok: true; discrepancyId?: string | null }>("/delivery-documents/proposal/complete", {
             method: "POST",
             headers: { "x-ordermate-tenant": tenant.id },
-            body: JSON.stringify({ key: appliedProposalKey, purchaseOrderId }),
+            body: JSON.stringify({ key: appliedProposalKey, purchaseOrderId, receivedLines }),
           });
+          discrepancyId = completion.discrepancyId || null;
         } catch (cause) {
           completionError = cause instanceof Error ? cause.message : "Delivery proposal status could not be updated";
         }
       }
-      return { completionError };
+      return { completionError, discrepancyId };
     },
     onSuccess: async result => {
       setCounts({});
       setAppliedProposalKey(null);
       setFeedback(result.completionError
-        ? { tone: "warning", message: `Stock was received successfully, but the delivery-note proposal could not be marked accepted: ${result.completionError}. Do not receive these units again.` }
-        : { tone: "success", message: "Scanned delivery received and written to stock history." });
+        ? { tone: "warning", message: `Stock was received successfully, but the delivery-note proposal/discrepancy record could not be completed: ${result.completionError}. Do not receive these units again.` }
+        : result.discrepancyId
+          ? { tone: "warning", message: "Stock was received successfully. OrderMate opened a delivery discrepancy for the reviewed document/physical differences so purchasing can resolve it separately." }
+          : { tone: "success", message: "Scanned delivery received and written to stock history." });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId] }),
@@ -233,6 +240,7 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] }),
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "delivery-proposals", purchaseOrderId] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "delivery-discrepancies"] }),
       ]);
       inputRef.current?.focus();
     },
