@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Archive, FileUp, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import CatalogueImportModal from "../CatalogueImportModal";
 import ProductEditModal from "../ProductEditModal";
 import { money, tenantApi } from "../api";
 import type { Product, ProductModifier } from "../model";
@@ -14,6 +15,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const [productOpen, setProductOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [statusProduct, setStatusProduct] = useState<Product | null>(null);
   const canWrite = ["owner", "admin", "manager"].includes(tenant.role);
@@ -22,7 +24,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ["tenant", tenant.id] });
 
   return <>
-    <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={canWrite ? <><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></> : undefined} />
+    <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={canWrite ? <><button className="secondary" onClick={() => setImportOpen(true)}><FileUp size={17} /> Import CSV</button><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></> : undefined} />
     <div className="panel table-panel">
       <DataState loading={products.isLoading} error={products.error} empty={!products.data?.length} emptyText="Add your first product, then receive or adjust stock against its variants.">
         <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th><th /></tr></thead><tbody>
@@ -32,6 +34,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
     </div>
     {editProduct && canWrite && <ProductEditModal tenant={tenant} product={editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); refresh(); }} />}
     {statusProduct && canWrite && <ProductStatusModal tenant={tenant} product={statusProduct} onClose={() => setStatusProduct(null)} onSaved={() => { setStatusProduct(null); refresh(); }} />}
+    {importOpen && canWrite && <CatalogueImportModal tenant={tenant} onClose={() => setImportOpen(false)} onCommitted={refresh} />}
     {productOpen && canWrite && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
     {modifierOpen && canWrite && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
   </>;
