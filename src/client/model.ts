@@ -174,6 +174,7 @@ export type Order = {
   id: string;
   number: string;
   customer_name?: string | null;
+  location_id: string;
   location_name: string;
   status: string;
   fulfilment_status: string;
@@ -209,7 +210,6 @@ export type OrderLine = {
 };
 
 export type OrderDetail = Order & {
-  location_id: string;
   customer_id?: string | null;
   lines: OrderLine[];
 };
