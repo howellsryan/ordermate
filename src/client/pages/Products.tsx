@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import ProductEditModal from "../ProductEditModal";
 import { money, tenantApi } from "../api";
 import type { Product, ProductModifier } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "../ui";
@@ -13,23 +14,22 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const [productOpen, setProductOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const canWrite = ["owner", "admin", "manager"].includes(tenant.role);
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const modifiers = useQuery({ queryKey: ["tenant", tenant.id, "modifiers"], queryFn: () => tenantApi<ProductModifier[]>(tenant.id, "/modifiers") });
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "products"] });
-    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "modifiers"] });
-  };
+  const refresh = () => qc.invalidateQueries({ queryKey: ["tenant", tenant.id] });
 
   return <>
     <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={canWrite ? <><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></> : undefined} />
     <div className="panel table-panel">
       <DataState loading={products.isLoading} error={products.error} empty={!products.data?.length} emptyText="Add your first product, then receive or adjust stock against its variants.">
-        <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th></tr></thead><tbody>
-          {products.data?.map(product => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td></tr>)}
+        <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th><th /></tr></thead><tbody>
+          {products.data?.map(product => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td><td className="row-actions">{canWrite && <button className="table-action" onClick={() => setEditProduct(product)}><Pencil size={14} /> Edit</button>}</td></tr>)}
         </tbody></table>
       </DataState>
     </div>
+    {editProduct && canWrite && <ProductEditModal tenant={tenant} product={editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); refresh(); }} />}
     {productOpen && canWrite && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
     {modifierOpen && canWrite && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
   </>;
