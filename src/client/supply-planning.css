@@ -21,7 +21,7 @@
   .replenishment-panel { margin-bottom: 14px; }
   .replenishment-panel .empty-state { min-height: 130px; }
   .replenishment-list { display: flex; flex-direction: column; gap: 8px; }
-  .replenishment-row { display: grid; grid-template-columns: minmax(190px, 1.1fr) minmax(360px, 1.7fr) minmax(210px, .8fr); gap: 16px; align-items: center; padding: 14px; border: 1px solid #e1e2da; border-radius: 13px; background: #fffefa; }
+  .replenishment-row { display: grid; grid-template-columns: minmax(190px, 1.05fr) minmax(430px, 1.9fr) minmax(210px, .8fr); gap: 16px; align-items: center; padding: 14px; border: 1px solid #e1e2da; border-radius: 13px; background: #fffefa; }
   .replenishment-row.replenishment-critical { border-color: #ead0cb; background: #fffaf9; }
   .replenishment-item { min-width: 0; display: flex; align-items: center; gap: 10px; }
   .replenishment-item > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -30,7 +30,7 @@
   .replenishment-icon { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: #f1e7d3; color: #78632d; }
   .replenishment-critical .replenishment-icon { background: #f3dfdc; color: #905148; }
 
-  .replenishment-facts { display: grid; grid-template-columns: repeat(6, minmax(54px, 1fr)); gap: 6px; }
+  .replenishment-facts { display: grid; grid-template-columns: repeat(7, minmax(52px, 1fr)); gap: 6px; }
   .replenishment-facts > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 9px; background: #f5f4ef; }
   .replenishment-facts small { overflow: hidden; text-overflow: ellipsis; color: #858c86; font-size: 8px; white-space: nowrap; }
   .replenishment-facts strong { font-size: 12px; }
@@ -56,8 +56,8 @@
   .inventory-untracked { background: rgba(247, 246, 241, .55); }
   .inventory-untracked td { color: #8c938e; }
 
-  @media (max-width: 1180px) {
-    .replenishment-row { grid-template-columns: minmax(220px, 1fr) minmax(0, 1.7fr); }
+  @media (max-width: 1240px) {
+    .replenishment-row { grid-template-columns: minmax(220px, 1fr) minmax(0, 1.8fr); }
     .replenishment-action { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: end; }
   }
 
