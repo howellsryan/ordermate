@@ -55,8 +55,8 @@ export default {
       return secureApiResponse(response);
     }
 
-    if (url.pathname === "/api/documents") {
-      url.pathname = "/";
+    if (url.pathname === "/api/documents" || url.pathname.startsWith("/api/documents/")) {
+      url.pathname = url.pathname.replace(/^\/api\/documents/, "") || "/";
       const response = await documentsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(response);
     }
