@@ -45,6 +45,10 @@ describe("tenant route permission classification", () => {
     expect(permissionForRequest("/orders/123/fulfil", "POST")).toEqual({ resource: "orders", action: "update" });
     expect(permissionForRequest("/purchase-orders/123/receive", "POST")).toEqual({ resource: "purchasing", action: "update" });
     expect(permissionForRequest("/purchase-orders/123/cancel", "POST")).toEqual({ resource: "purchasing", action: "update" });
+    expect(permissionForRequest("/purchase-orders/123/expected-delivery", "PATCH")).toEqual({ resource: "purchasing", action: "update" });
+    expect(can("inventory", "purchasing", "update")).toBe(true);
+    expect(can("fulfilment", "purchasing", "update")).toBe(false);
+    expect(can("viewer", "purchasing", "update")).toBe(false);
   });
 
   it("classifies supplier mappings and replenishment as purchasing operations", () => {
