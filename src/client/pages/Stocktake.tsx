@@ -67,6 +67,7 @@ export default function Stocktake({ tenant }: { tenant: OrganizationSummary }) {
   const changedLines = reviewedLines.filter(line => Number.isFinite(line.variance) && line.variance !== 0).length;
 
   const scan = (rawBarcode: string) => {
+    if (commit.isPending || commit.error) return;
     const barcode = rawBarcode.trim();
     if (!barcode) return;
     const matches = locationRows.filter(row => (row.barcode || "").trim() === barcode);
@@ -118,31 +119,35 @@ export default function Stocktake({ tenant }: { tenant: OrganizationSummary }) {
     setSnapshots({});
     setCompleted(null);
     setFeedback(null);
+    setScanValue("");
+    commit.reset();
     await inventory.refetch();
     scanInput.current?.focus();
   };
+
+  const locked = commit.isPending || !!commit.error;
 
   return <>
     <PageHeader eyebrow="Inventory control" title="Cycle count" description="Count only the SKUs you physically check. Blank rows are untouched; zero is an explicit reviewed count. OrderMate compares your count with the stock position you started from before applying any variance." />
 
     <section className="panel stocktake-controls">
       <div className="stocktake-fields">
-        <Field label="Stock location"><select value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}</select></Field>
-        <Field label="Count reason" hint="Optional; written onto any variance movements."><input value={reason} onChange={event => setReason(event.target.value)} maxLength={500} placeholder="Aisle A weekly count" /></Field>
+        <Field label="Stock location"><select disabled={locked} value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}</select></Field>
+        <Field label="Count reason" hint="Optional; written onto any variance movements."><input disabled={locked} value={reason} onChange={event => setReason(event.target.value)} maxLength={500} placeholder="Aisle A weekly count" /></Field>
       </div>
       <div className="stocktake-rule"><ClipboardCheck size={18} /><div><strong>Partial count, by design</strong><span>Only rows with a counted quantity are submitted. OrderMate never assumes an uncounted item is zero.</span></div></div>
     </section>
 
     {locationId && <section className="panel stocktake-scan">
       <form onSubmit={event => { event.preventDefault(); scan(scanValue); }}>
-        <div className="barcode-input-wrap"><ScanBarcode size={22} /><label><span>Scan physical units</span><input ref={scanInput} value={scanValue} onChange={event => setScanValue(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Scan or enter barcode…" /></label><button className="secondary" disabled={!scanValue.trim()}>Add scan</button></div>
+        <div className="barcode-input-wrap"><ScanBarcode size={22} /><label><span>Scan physical units</span><input disabled={locked} ref={scanInput} value={scanValue} onChange={event => setScanValue(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Scan or enter barcode…" /></label><button className="secondary" disabled={locked || !scanValue.trim()}>Add scan</button></div>
       </form>
-      <div className="stocktake-scan-tools"><CameraBarcodeScanner onScan={scan} label="Scan with camera" /><span>Each successful scan adds one physical unit to that SKU's counted quantity.</span></div>
+      <div className="stocktake-scan-tools"><CameraBarcodeScanner disabled={locked} onScan={scan} label="Scan with camera" /><span>Each successful scan adds one physical unit to that SKU's counted quantity.</span></div>
       <div className={`scan-feedback ${feedback?.tone || "idle"}`} aria-live="polite">{feedback ? <>{feedback.tone === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}<span>{feedback.message}</span></> : <><ScanBarcode size={15} /><span>Scanner ready. You can also type a counted quantity directly in the table.</span></>}</div>
     </section>}
 
     <section className="panel stocktake-list">
-      <div className="stocktake-list-head"><div><p className="eyebrow">Count sheet</p><h3>{locations.data?.find(location => location.id === locationId)?.name || "Choose a location"}</h3></div><label className="stocktake-search"><Search size={15} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search product, SKU or barcode" /></label></div>
+      <div className="stocktake-list-head"><div><p className="eyebrow">Count sheet</p><h3>{locations.data?.find(location => location.id === locationId)?.name || "Choose a location"}</h3></div><label className="stocktake-search"><Search size={15} /><input disabled={locked} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search product, SKU or barcode" /></label></div>
       <DataState loading={inventory.isLoading || locations.isLoading} error={inventory.error || locations.error} empty={!!locationId && !visibleRows.length} emptyText="No inventory SKUs match this location/search.">
         <div className="stocktake-table-wrap"><table className="stocktake-table"><thead><tr><th>Item</th><th>System</th><th>Reserved</th><th>Counted</th><th>Variance</th><th /></tr></thead><tbody>{visibleRows.map(row => {
           const countedValue = counts[row.variant_id];
@@ -154,9 +159,9 @@ export default function Stocktake({ tenant }: { tenant: OrganizationSummary }) {
             <td><strong>{row.product_name} · {row.variant_name}</strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : " · no barcode"}</small>{row.tracked === 0 && <small>Never stocked here — counting it will establish the location/SKU position.</small>}</td>
             <td><strong>{snapshot.onHand}</strong><small>on hand</small></td>
             <td><strong>{snapshot.reserved}</strong><small>{snapshot.reserved ? "must remain covered" : "none"}</small></td>
-            <td><input aria-label={`Counted on hand for ${row.product_name} ${row.variant_name}`} type="number" min="0" max="1000000" step="1" value={countedValue ?? ""} placeholder="—" onChange={event => setCount(row, event.target.value)} /></td>
+            <td><input disabled={locked} aria-label={`Counted on hand for ${row.product_name} ${row.variant_name}`} type="number" min="0" max="1000000" step="1" value={countedValue ?? ""} placeholder="—" onChange={event => setCount(row, event.target.value)} /></td>
             <td><span className={`stocktake-variance ${variance == null ? "neutral" : variance > 0 ? "positive" : variance < 0 ? "negative" : "neutral"}`}>{variance == null ? "—" : `${variance > 0 ? "+" : ""}${variance}`}</span>{belowReserved && <small className="stocktake-blocker">Below reserved</small>}</td>
-            <td>{countedValue !== undefined && <button className="icon-button" type="button" title="Remove from this count" aria-label={`Remove ${row.product_name} from count`} onClick={() => setCount(row, "")}><X size={14} /></button>}</td>
+            <td>{countedValue !== undefined && <button disabled={locked} className="icon-button" type="button" title="Remove from this count" aria-label={`Remove ${row.product_name} from count`} onClick={() => setCount(row, "")}><X size={14} /></button>}</td>
           </tr>;
         })}</tbody></table></div>
       </DataState>
@@ -165,6 +170,6 @@ export default function Stocktake({ tenant }: { tenant: OrganizationSummary }) {
     {commit.error && <div className="stocktake-error"><ErrorText error={commit.error} /><button className="secondary" onClick={restart}><RotateCcw size={14} /> Reload location & restart reviewed count</button></div>}
     {completed && <div className="panel stocktake-complete"><CheckCircle2 size={22} /><div><strong>Cycle count committed</strong><span>{completed.countedLines} SKU{completed.countedLines === 1 ? "" : "s"} reviewed · {completed.changedLines} variance{completed.changedLines === 1 ? "" : "s"} changed stock · net variance {completed.totalVariance > 0 ? "+" : ""}{completed.totalVariance} units</span><small className="mono">Reference {completed.stocktakeId}</small></div></div>}
 
-    <div className="panel stocktake-commit"><div><span><small>Counted SKUs</small><strong>{reviewedLines.length}</strong></span><span><small>Changed SKUs</small><strong>{changedLines}</strong></span><span><small>Net variance</small><strong>{totalVariance > 0 ? "+" : ""}{totalVariance}</strong></span></div><div><small>{invalidLines.length ? `${invalidLines.length} counted row${invalidLines.length === 1 ? " is" : "s are"} invalid or below reserved stock.` : "A final server check rejects stale stock positions before anything is written."}</small><button className="primary" disabled={commit.isPending || !locationId || !reviewedLines.length || invalidLines.length > 0} onClick={() => commit.mutate()}><ClipboardCheck size={16} /> Commit reviewed count</button></div></div>
+    <div className="panel stocktake-commit"><div><span><small>Counted SKUs</small><strong>{reviewedLines.length}</strong></span><span><small>Changed SKUs</small><strong>{changedLines}</strong></span><span><small>Net variance</small><strong>{totalVariance > 0 ? "+" : ""}{totalVariance}</strong></span></div><div><small>{commit.isPending ? "Committing this reviewed count. Editing is temporarily locked." : commit.error ? "The reviewed snapshot is no longer trusted. Reload the location before trying again." : invalidLines.length ? `${invalidLines.length} counted row${invalidLines.length === 1 ? " is" : "s are"} invalid or below reserved stock.` : "A final server check rejects stale stock positions before anything is written."}</small><button className="primary" disabled={locked || !locationId || !reviewedLines.length || invalidLines.length > 0} onClick={() => commit.mutate()}><ClipboardCheck size={16} /> {commit.isPending ? "Committing count…" : "Commit reviewed count"}</button></div></div>
   </>;
 }
