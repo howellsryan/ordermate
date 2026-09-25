@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 2;
+const CURRENT_TENANT_SCHEMA_VERSION = 3;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -32,6 +32,7 @@ const V1_REQUIRED_TABLES = [
 
 type MigrationRow = { version: number };
 type TableRow = { name: string };
+type TableInfoRow = { name: string };
 type SqlStorage = DurableObjectState["storage"];
 
 function assertV1Baseline(storage: SqlStorage) {
@@ -45,6 +46,10 @@ function assertV1Baseline(storage: SqlStorage) {
   if (missing.length) {
     throw new Error(`Tenant v1 schema bootstrap is incomplete; missing: ${missing.join(", ")}`);
   }
+}
+
+function tableHasColumn(storage: SqlStorage, table: string, column: string) {
+  return storage.sql.exec<TableInfoRow>(`PRAGMA table_info(${table})`).toArray().some(row => row.name === column);
 }
 
 function recordMigration(storage: SqlStorage, id: number) {
@@ -96,6 +101,17 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 2);
     });
     current = 2;
+  }
+
+  if (current < 3) {
+    storage.transactionSync(() => {
+      if (!tableHasColumn(storage, "purchase_orders", "expected_delivery_date")) {
+        sql.exec("ALTER TABLE purchase_orders ADD COLUMN expected_delivery_date TEXT");
+      }
+      sql.exec("CREATE INDEX IF NOT EXISTS purchase_orders_expected_delivery_idx ON purchase_orders(expected_delivery_date)");
+      recordMigration(storage, 3);
+    });
+    current = 3;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
