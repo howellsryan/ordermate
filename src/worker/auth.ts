@@ -77,6 +77,7 @@ const roles = {
     inventory: ["read", "update"],
     orders: ["read", "update"],
     customers: ["read"],
+    reports: ["read"],
   }),
   viewer: ac.newRole({
     ...memberAc.statements,
