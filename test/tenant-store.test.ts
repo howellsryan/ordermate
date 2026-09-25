@@ -25,7 +25,7 @@ async function request<T>(stub: Stub, path: string, method = "GET", body?: unkno
   return { response, data };
 }
 
-async function createLocation(stub: Stub, code = "MAIN") {
+async function createLocation(stub: Stub, code = `L${crypto.randomUUID().slice(0, 5)}`) {
   const { response, data } = await request<{ id: string }>(stub, "/locations", "POST", {
     name: "Main warehouse",
     code,
@@ -35,13 +35,14 @@ async function createLocation(stub: Stub, code = "MAIN") {
 }
 
 async function createVariant(stub: Stub, sku = `SKU-${crypto.randomUUID().slice(0, 8)}`) {
+  const barcode = `50${Math.floor(Math.random() * 1_000_000_000).toString().padStart(9, "0")}`;
   const created = await request<{ id: string }>(stub, "/products", "POST", {
     name: "Test product",
     category: "Test",
     variants: [{
       name: "Default",
       sku,
-      barcode: `50${Math.floor(Math.random() * 1_000_000_000).toString().padStart(9, "0")}`,
+      barcode,
       priceMinor: 1999,
       costMinor: 800,
       taxRateBps: 2000,
@@ -50,8 +51,9 @@ async function createVariant(stub: Stub, sku = `SKU-${crypto.randomUUID().slice(
   });
   expect(created.response.status).toBe(201);
 
-  const listed = await request<Array<{ variants: Array<{ id: string; sku: string }> }>>(stub, "/products");
-  return listed.data.flatMap(product => product.variants).find(variant => variant.sku === sku)!.id;
+  const listed = await request<Array<{ variants: Array<{ id: string; sku: string; barcode: string }> }>>(stub, "/products");
+  const variant = listed.data.flatMap(product => product.variants).find(item => item.sku === sku)!;
+  return { id: variant.id, barcode };
 }
 
 async function adjust(stub: Stub, variantId: string, locationId: string, quantityDelta: number) {
@@ -83,12 +85,12 @@ describe("inventory consistency", () => {
   it("reserves available stock, prevents overselling and releases a cancelled order", async () => {
     const stub = tenant();
     const locationId = await createLocation(stub);
-    const variantId = await createVariant(stub);
-    await adjust(stub, variantId, locationId, 10);
+    const variant = await createVariant(stub);
+    await adjust(stub, variant.id, locationId, 10);
 
     const firstOrder = await request<{ id: string }>(stub, "/orders", "POST", {
       locationId,
-      lines: [{ variantId, quantity: 3 }],
+      lines: [{ variantId: variant.id, quantity: 3 }],
     });
     expect(firstOrder.response.status).toBe(201);
 
@@ -96,68 +98,133 @@ describe("inventory consistency", () => {
     expect(confirmed.response.ok).toBe(true);
 
     let inventory = await request<Array<{ variant_id: string; reserved: number; available: number }>>(stub, "/inventory");
-    const firstLevel = inventory.data.find(row => row.variant_id === variantId)!;
+    const firstLevel = inventory.data.find(row => row.variant_id === variant.id)!;
     expect(firstLevel.reserved).toBe(3);
     expect(firstLevel.available).toBe(7);
 
     const secondOrder = await request<{ id: string }>(stub, "/orders", "POST", {
       locationId,
-      lines: [{ variantId, quantity: 8 }],
+      lines: [{ variantId: variant.id, quantity: 8 }],
     });
     const rejected = await request(stub, `/orders/${secondOrder.data.id}/confirm`, "POST", {});
-    expect(rejected.response.ok).toBe(false);
+    expect(rejected.response.status).toBe(409);
 
     const cancelled = await request(stub, `/orders/${firstOrder.data.id}/cancel`, "POST", {});
     expect(cancelled.response.ok).toBe(true);
 
     inventory = await request<Array<{ variant_id: string; reserved: number; available: number }>>(stub, "/inventory");
-    const releasedLevel = inventory.data.find(row => row.variant_id === variantId)!;
+    const releasedLevel = inventory.data.find(row => row.variant_id === variant.id)!;
     expect(releasedLevel.reserved).toBe(0);
     expect(releasedLevel.available).toBe(10);
+  });
+
+  it("supports partial fulfilment without losing the remaining reservation", async () => {
+    const stub = tenant();
+    const locationId = await createLocation(stub);
+    const variant = await createVariant(stub);
+    await adjust(stub, variant.id, locationId, 10);
+
+    const order = await request<{ id: string; number: string }>(stub, "/orders", "POST", {
+      locationId,
+      lines: [{ variantId: variant.id, quantity: 5 }],
+    });
+    expect(order.data.number).toBe("ORD-2026-000001");
+    await request(stub, `/orders/${order.data.id}/confirm`, "POST", {});
+
+    const detail = await request<{ lines: Array<{ id: string }> }>(stub, `/orders/${order.data.id}`);
+    const lineId = detail.data.lines[0].id;
+
+    const partial = await request(stub, `/orders/${order.data.id}/fulfil`, "POST", {
+      lines: [{ lineId, quantity: 2 }],
+    });
+    expect(partial.response.ok).toBe(true);
+
+    const afterPartial = await request<{ status: string; fulfilment_status: string; lines: Array<{ quantity_fulfilled: number }> }>(stub, `/orders/${order.data.id}`);
+    expect(afterPartial.data.status).toBe("confirmed");
+    expect(afterPartial.data.fulfilment_status).toBe("partially_fulfilled");
+    expect(afterPartial.data.lines[0].quantity_fulfilled).toBe(2);
+
+    let inventory = await request<Array<{ variant_id: string; on_hand: number; reserved: number; available: number }>>(stub, "/inventory");
+    let level = inventory.data.find(row => row.variant_id === variant.id)!;
+    expect(level.on_hand).toBe(8);
+    expect(level.reserved).toBe(3);
+    expect(level.available).toBe(5);
+
+    const remainder = await request(stub, `/orders/${order.data.id}/fulfil`, "POST", {});
+    expect(remainder.response.ok).toBe(true);
+
+    const complete = await request<{ status: string; fulfilment_status: string; lines: Array<{ quantity_fulfilled: number }> }>(stub, `/orders/${order.data.id}`);
+    expect(complete.data.status).toBe("completed");
+    expect(complete.data.fulfilment_status).toBe("fulfilled");
+    expect(complete.data.lines[0].quantity_fulfilled).toBe(5);
+
+    inventory = await request<Array<{ variant_id: string; on_hand: number; reserved: number }>>(stub, "/inventory");
+    level = inventory.data.find(row => row.variant_id === variant.id)! as typeof level;
+    expect(level.on_hand).toBe(5);
+    expect(level.reserved).toBe(0);
   });
 
   it("receives purchase-order stock through the immutable movement ledger", async () => {
     const stub = tenant();
     const locationId = await createLocation(stub);
-    const variantId = await createVariant(stub);
+    const variant = await createVariant(stub);
 
     const supplier = await request<{ id: string }>(stub, "/suppliers", "POST", { name: "Test supplier" });
     expect(supplier.response.status).toBe(201);
 
-    const purchaseOrder = await request<{ id: string }>(stub, "/purchase-orders", "POST", {
+    const purchaseOrder = await request<{ id: string; number: string }>(stub, "/purchase-orders", "POST", {
       supplierId: supplier.data.id,
       locationId,
-      lines: [{ variantId, quantity: 4, unitCostMinor: 700, taxRateBps: 2000 }],
+      lines: [{ variantId: variant.id, quantity: 4, unitCostMinor: 700, taxRateBps: 2000 }],
     });
     expect(purchaseOrder.response.status).toBe(201);
+    expect(purchaseOrder.data.number).toBe("PO-2026-000001");
 
     const submitted = await request(stub, `/purchase-orders/${purchaseOrder.data.id}/submit`, "POST", {});
     expect(submitted.response.ok).toBe(true);
 
-    const lineId = await runInDurableObject(stub, async (_instance, state) => {
-      return state.storage.sql.exec<{ id: string }>(
-        "SELECT id FROM purchase_order_lines WHERE purchase_order_id = ?",
-        purchaseOrder.data.id,
-      ).one().id;
+    const detail = await request<{ lines: Array<{ id: string }> }>(stub, `/purchase-orders/${purchaseOrder.data.id}`);
+    const lineId = detail.data.lines[0].id;
+
+    const partial = await request(stub, `/purchase-orders/${purchaseOrder.data.id}/receive`, "POST", {
+      lines: [{ lineId, quantity: 2 }],
     });
+    expect(partial.response.ok).toBe(true);
+
+    let inventory = await request<Array<{ variant_id: string; on_hand: number; incoming: number }>>(stub, "/inventory");
+    let level = inventory.data.find(row => row.variant_id === variant.id)!;
+    expect(level.on_hand).toBe(2);
+    expect(level.incoming).toBe(2);
 
     const received = await request(stub, `/purchase-orders/${purchaseOrder.data.id}/receive`, "POST", {
-      lines: [{ lineId, quantity: 4 }],
+      lines: [{ lineId, quantity: 2 }],
     });
     expect(received.response.ok).toBe(true);
 
-    const inventory = await request<Array<{ variant_id: string; on_hand: number; incoming: number }>>(stub, "/inventory");
-    const level = inventory.data.find(row => row.variant_id === variantId)!;
+    inventory = await request<Array<{ variant_id: string; on_hand: number; incoming: number }>>(stub, "/inventory");
+    level = inventory.data.find(row => row.variant_id === variant.id)!;
     expect(level.on_hand).toBe(4);
     expect(level.incoming).toBe(0);
 
     await runInDurableObject(stub, async (_instance, state) => {
-      const movement = state.storage.sql.exec<{ quantity_delta: number; movement_type: string }>(
-        "SELECT quantity_delta, movement_type FROM inventory_movements WHERE reference_id = ?",
+      const movements = state.storage.sql.exec<{ quantity_delta: number; movement_type: string }>(
+        "SELECT quantity_delta, movement_type FROM inventory_movements WHERE reference_id = ? ORDER BY created_at",
         purchaseOrder.data.id,
-      ).one();
-      expect(movement.quantity_delta).toBe(4);
-      expect(movement.movement_type).toBe("purchase_receipt");
+      ).toArray();
+      expect(movements).toHaveLength(2);
+      expect(movements.every(movement => movement.quantity_delta === 2 && movement.movement_type === "purchase_receipt")).toBe(true);
     });
+  });
+
+  it("finds a sellable variant by barcode", async () => {
+    const stub = tenant();
+    const locationId = await createLocation(stub);
+    const variant = await createVariant(stub, "SCAN-ME");
+    await adjust(stub, variant.id, locationId, 6);
+
+    const lookup = await request<{ sku: string; levels: Array<{ available: number }> }>(stub, `/inventory/barcode/${variant.barcode}`);
+    expect(lookup.response.ok).toBe(true);
+    expect(lookup.data.sku).toBe("SCAN-ME");
+    expect(lookup.data.levels[0].available).toBe(6);
   });
 });
