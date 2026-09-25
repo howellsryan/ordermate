@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Minus, PackageCheck, Plus, ScanBarcode, Truck } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
@@ -38,9 +38,10 @@ export default function Warehouse({ tenant }: { tenant: OrganizationSummary }) {
       {canFulfil && <button role="tab" aria-selected={mode === "pick"} className={mode === "pick" ? "active" : ""} onClick={() => setMode("pick")}><PackageCheck size={16} /> Pick & fulfil</button>}
       {canReceive && <button role="tab" aria-selected={mode === "receive"} className={mode === "receive" ? "active" : ""} onClick={() => setMode("receive")}><Truck size={16} /> Receive stock</button>}
     </div>
-    {products.error && <ErrorText error={products.error} />}
-    {mode === "pick" && canFulfil && <PickingWorkspace tenant={tenant} barcodeByVariant={barcodeByVariant} />}
-    {mode === "receive" && canReceive && <ReceivingWorkspace tenant={tenant} barcodeByVariant={barcodeByVariant} />}
+    {products.isLoading ? <div className="panel empty-state" role="status"><div className="loader" /><span>Loading barcode catalogue…</span></div> : products.error ? <ErrorText error={products.error} /> : <>
+      {mode === "pick" && canFulfil && <PickingWorkspace tenant={tenant} barcodeByVariant={barcodeByVariant} />}
+      {mode === "receive" && canReceive && <ReceivingWorkspace tenant={tenant} barcodeByVariant={barcodeByVariant} />}
+    </>}
   </>;
 }
 
@@ -251,7 +252,7 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
   </div>;
 }
 
-function BarcodeCapture({ inputRef, onScan, feedback, label }: { inputRef: React.RefObject<HTMLInputElement | null>; onScan: (barcode: string) => void; feedback: Feedback; label: string }) {
+function BarcodeCapture({ inputRef, onScan, feedback, label }: { inputRef: RefObject<HTMLInputElement | null>; onScan: (barcode: string) => void; feedback: Feedback; label: string }) {
   const [value, setValue] = useState("");
   return <form className="barcode-capture" onSubmit={event => { event.preventDefault(); const barcode = value.trim(); if (!barcode) return; onScan(barcode); setValue(""); }}>
     <div className="barcode-input-wrap"><ScanBarcode size={22} /><label><span>{label}</span><input ref={inputRef} value={value} onChange={event => setValue(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} inputMode="text" placeholder="Scan or enter barcode…" /></label><button className="secondary" disabled={!value.trim()}>Add scan</button></div>
@@ -263,6 +264,6 @@ function LineCounter({ value, max, onChange }: { value: number; max: number; onC
   return <div className="line-counter"><button type="button" className="icon-button" disabled={value <= 0} onClick={() => onChange(value - 1)} aria-label="Remove one scanned unit"><Minus size={14} /></button><span><strong>{value}</strong><small> / {max}</small></span><button type="button" className="icon-button" disabled={value >= max} onClick={() => onChange(value + 1)} aria-label="Add one unit manually"><Plus size={14} /></button></div>;
 }
 
-function WarehousePlaceholder({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+function WarehousePlaceholder({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return <div className="warehouse-placeholder"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div>;
 }
