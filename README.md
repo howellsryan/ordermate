@@ -2,6 +2,8 @@
 
 OrderMate is a Cloudflare-native multi-tenant SaaS for products, purchasing, orders and inventory.
 
+> Continuing this rebuild in a new session? Start with `docs/next-agent-handoff.md`.
+
 ## Architecture
 
 - React + Vite frontend served by Cloudflare Workers Static Assets.
