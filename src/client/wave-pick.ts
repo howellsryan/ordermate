@@ -20,6 +20,13 @@ export type WaveFulfilmentPlan = {
   unallocated: Record<string, number>;
 };
 
+export type WaveCommitResult = {
+  orderId: string;
+  orderNumber: string;
+  status: "fulfilled" | "failed" | "not_attempted";
+  error?: string;
+};
+
 export function buildWaveTargets(orders: OrderDetail[], barcodeByVariant: Map<string, string>): WavePickTarget[] {
   const targets = new Map<string, WavePickTarget>();
   for (const order of orders) {
@@ -82,4 +89,43 @@ export function aggregatePlanCounts(orders: WaveFulfilmentOrder[]) {
     for (const line of order.lines) counts[line.variantId] = (counts[line.variantId] || 0) + line.quantity;
   }
   return counts;
+}
+
+/**
+ * A wave is deliberately not atomic across orders. Fulfil each order through
+ * its canonical endpoint, but stop after the first failure: later allocations
+ * were planned against state that may now be stale and must be refreshed and
+ * re-scanned. Successful orders are never retried by this invocation.
+ */
+export async function commitWaveFulfilments(
+  orders: WaveFulfilmentOrder[],
+  fulfilOrder: (order: WaveFulfilmentOrder) => Promise<void>,
+): Promise<WaveCommitResult[]> {
+  const results: WaveCommitResult[] = [];
+
+  for (let index = 0; index < orders.length; index += 1) {
+    const order = orders[index];
+    try {
+      await fulfilOrder(order);
+      results.push({ orderId: order.orderId, orderNumber: order.orderNumber, status: "fulfilled" });
+    } catch (cause) {
+      results.push({
+        orderId: order.orderId,
+        orderNumber: order.orderNumber,
+        status: "failed",
+        error: cause instanceof Error ? cause.message : "Fulfilment failed",
+      });
+      for (const remaining of orders.slice(index + 1)) {
+        results.push({
+          orderId: remaining.orderId,
+          orderNumber: remaining.orderNumber,
+          status: "not_attempted",
+          error: "Not attempted after an earlier wave fulfilment failed",
+        });
+      }
+      break;
+    }
+  }
+
+  return results;
 }

@@ -7,10 +7,9 @@ import { tenantApi } from "./api";
 import type { Order, OrderDetail } from "./model";
 import { priorityLabel } from "./order-priority";
 import { applyWarehouseBarcodeScan, setWarehouseLineCount, type WarehouseScanCounts, type WarehouseScanTarget } from "./warehouse-scan";
-import { aggregatePlanCounts, buildWaveTargets, distributeWaveCounts } from "./wave-pick";
+import { aggregatePlanCounts, buildWaveTargets, commitWaveFulfilments, distributeWaveCounts, type WaveCommitResult } from "./wave-pick";
 import { ErrorText, Modal } from "./ui";
 
-type Result = { orderId: string; orderNumber: string; ok: boolean; error?: string };
 type Feedback = { tone: "success" | "warning" | "error"; message: string } | null;
 
 export default function WavePicking({ tenant, orders, barcodeByVariant }: {
@@ -34,10 +33,10 @@ export default function WavePicking({ tenant, orders, barcodeByVariant }: {
     setSelectedIds(current => [...current, order.id]);
   };
 
-  const finish = (results: Result[]) => {
-    const failed = new Set(results.filter(result => !result.ok).map(result => result.orderId));
-    setSelectedIds(current => current.filter(id => failed.has(id)));
-    if (!failed.size) {
+  const finish = (results: WaveCommitResult[]) => {
+    const remaining = new Set(results.filter(result => result.status !== "fulfilled").map(result => result.orderId));
+    setSelectedIds(current => current.filter(id => remaining.has(id)));
+    if (!remaining.size) {
       setReviewOpen(false);
       setExpanded(false);
     }
@@ -74,7 +73,7 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   orders: Order[];
   barcodeByVariant: Map<string, string>;
   onClose: () => void;
-  onCommitted: (results: Result[]) => void;
+  onCommitted: (results: WaveCommitResult[]) => void;
 }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -100,28 +99,20 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   const everySelectedOrderAffected = plan.orders.length === orders.length;
 
   const commit = useMutation({
-    mutationFn: async () => {
-      const results: Result[] = [];
-      for (const order of plan.orders) {
-        try {
-          await tenantApi(tenant.id, `/orders/${order.orderId}/fulfil`, {
-            method: "POST",
-            body: JSON.stringify({ lines: order.lines.map(line => ({ lineId: line.lineId, quantity: line.quantity })) }),
-          });
-          results.push({ orderId: order.orderId, orderNumber: order.orderNumber, ok: true });
-        } catch (cause) {
-          results.push({ orderId: order.orderId, orderNumber: order.orderNumber, ok: false, error: cause instanceof Error ? cause.message : "Fulfilment failed" });
-        }
-      }
-      return results;
-    },
+    mutationFn: () => commitWaveFulfilments(plan.orders, async order => {
+      await tenantApi(tenant.id, `/orders/${order.orderId}/fulfil`, {
+        method: "POST",
+        body: JSON.stringify({ lines: order.lines.map(line => ({ lineId: line.lineId, quantity: line.quantity })) }),
+      });
+    }),
     onSuccess: async results => {
-      const failed = results.filter(result => !result.ok);
-      const successful = results.filter(result => result.ok);
+      const failed = results.filter(result => result.status === "failed");
+      const notAttempted = results.filter(result => result.status === "not_attempted");
+      const successful = results.filter(result => result.status === "fulfilled");
       setCounts({});
       setBarcode("");
       setFeedback(failed.length
-        ? { tone: "warning", message: `${successful.length} order${successful.length === 1 ? "" : "s"} fulfilled; ${failed.length} failed. Successful orders have been removed from the wave. Refresh and re-scan only the failed orders.` }
+        ? { tone: "warning", message: `${successful.length} order${successful.length === 1 ? "" : "s"} fulfilled; ${failed.length} failed; ${notAttempted.length} not attempted. Successful orders have been removed from the wave. Refresh and re-scan the remaining orders before trying again.` }
         : { tone: "success", message: `${successful.length} order${successful.length === 1 ? "" : "s"} fulfilled through their canonical order transactions.` });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "orders"] }),
