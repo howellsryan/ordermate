@@ -16,6 +16,7 @@ import "./replenishment-policies.css";
 import "./maintenance.css";
 import "./warehouse.css";
 import "./delivery-notes.css";
+import "./delivery-discrepancies.css";
 import "./camera-scanner.css";
 import "./catalogue-import.css";
 import "./stocktake.css";
