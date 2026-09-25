@@ -24,6 +24,7 @@ import "./saved-views.css";
 import "./bulk-actions.css";
 import "./reports.css";
 import "./order-planning.css";
+import "./wave-picking.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
