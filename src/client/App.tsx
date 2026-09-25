@@ -15,12 +15,13 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
+  UserCog,
   Users,
   Warehouse,
 } from "lucide-react";
-import type { OrganizationSummary, SessionPayload } from "../shared/types";
+import type { SessionPayload } from "../shared/types";
 import { authClient } from "./auth-client";
-import { createOrganization, getSession } from "./api";
+import { controlApi, createOrganization, getSession } from "./api";
 import Overview from "./pages/Overview";
 import Products from "./pages/Products";
 import Inventory from "./pages/Inventory";
@@ -28,9 +29,10 @@ import Purchasing from "./pages/Purchasing";
 import Orders from "./pages/Orders";
 import { Customers, Suppliers } from "./pages/People";
 import Settings from "./pages/Settings";
+import Team from "./pages/Team";
 import { ErrorText, Field, Modal } from "./ui";
 
-type Page = "overview" | "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "settings";
+type Page = "overview" | "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
 
 const nav: NavItem[] = [
@@ -41,6 +43,7 @@ const nav: NavItem[] = [
   { id: "purchasing", label: "Purchase orders", icon: ClipboardList },
   { id: "suppliers", label: "Suppliers", icon: Truck },
   { id: "customers", label: "Customers", icon: Users },
+  { id: "team", label: "Team & roles", icon: UserCog },
   { id: "settings", label: "Settings & activity", icon: SettingsIcon },
 ];
 
@@ -51,8 +54,30 @@ export default function App() {
   const [page, setPage] = useState<Page>("overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [newBusinessOpen, setNewBusinessOpen] = useState(false);
+  const [inviteAttempted, setInviteAttempted] = useState(false);
+  const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite"), []);
   const session = sessionQuery.data;
   const activeTenant = useMemo(() => session?.organizations.find(org => org.id === activeTenantId) ?? session?.organizations[0], [session, activeTenantId]);
+
+  const acceptInvite = useMutation({
+    mutationFn: (token: string) => controlApi<{ ok: true; organizationId: string }>("/invites/accept", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+    onSuccess: async data => {
+      setActiveTenantId(data.organizationId);
+      localStorage.setItem("ordermate:tenant", data.organizationId);
+      window.history.replaceState({}, "", window.location.pathname);
+      await qc.invalidateQueries({ queryKey: ["session"] });
+    },
+  });
+
+  useEffect(() => {
+    if (session && inviteToken && !inviteAttempted) {
+      setInviteAttempted(true);
+      acceptInvite.mutate(inviteToken);
+    }
+  }, [session?.user.id, inviteToken, inviteAttempted]);
 
   useEffect(() => {
     if (activeTenant && activeTenant.id !== activeTenantId) setActiveTenantId(activeTenant.id);
@@ -63,7 +88,9 @@ export default function App() {
   }, [activeTenantId]);
 
   if (sessionQuery.isLoading) return <LoadingScreen />;
-  if (!session) return <SignIn />;
+  if (!session) return <SignIn inviteToken={inviteToken} />;
+  if (inviteToken && !acceptInvite.isSuccess) return <InviteGate pending={acceptInvite.isPending || !inviteAttempted} error={acceptInvite.error} />;
+  if (acceptInvite.isSuccess && !session.organizations.some(org => org.id === activeTenantId)) return <LoadingScreen />;
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
 
@@ -100,6 +127,7 @@ export default function App() {
         {page === "purchasing" && <Purchasing tenant={activeTenant} />}
         {page === "suppliers" && <Suppliers tenant={activeTenant} />}
         {page === "customers" && <Customers tenant={activeTenant} />}
+        {page === "team" && <Team tenant={activeTenant} />}
         {page === "settings" && <Settings tenant={activeTenant} />}
       </div>
     </main>
@@ -111,11 +139,17 @@ function LoadingScreen() {
   return <div className="splash"><div className="brand-mark large">OM</div><div className="loader" /></div>;
 }
 
-function SignIn() {
+function InviteGate({ pending, error }: { pending: boolean; error: unknown }) {
+  if (pending) return <div className="splash"><div className="brand-mark large">OM</div><div className="loader" /><small>Joining your OrderMate workspace…</small></div>;
+  return <div className="invite-gate"><div className="brand"><div className="brand-mark">OM</div><strong>OrderMate</strong></div><div className="invite-gate-card"><p className="eyebrow">Invite couldn't be accepted</p><h1>Check the Google account you used.</h1><ErrorText error={error} /><p>Invite links are email-bound and expire after seven days. Sign out if you need to use a different Google account.</p><div><button className="secondary" onClick={() => authClient.signOut().then(() => location.reload())}>Sign out</button><button className="primary" onClick={() => { window.history.replaceState({}, "", window.location.pathname); location.reload(); }}>Open OrderMate</button></div></div></div>;
+}
+
+function SignIn({ inviteToken }: { inviteToken: string | null }) {
   const [busy, setBusy] = useState(false);
+  const callbackURL = inviteToken ? `${window.location.origin}/?invite=${encodeURIComponent(inviteToken)}` : window.location.origin;
   return <div className="auth-page">
     <div className="auth-copy"><div className="brand"><div className="brand-mark">OM</div><strong>OrderMate</strong></div><p className="eyebrow">Inventory without the noise</p><h1>Know what you have.<br />Know what happens next.</h1><p className="lede">Orders, purchasing and multi-location inventory in one calm workspace — designed for the people actually running the operation.</p><div className="auth-points"><span><Warehouse size={18} /> Complete stock history</span><span><ClipboardList size={18} /> Purchase-to-receipt workflow</span><span><Sparkles size={18} /> Automation-ready operations</span></div></div>
-    <div className="auth-card"><div><p className="eyebrow">Welcome to OrderMate</p><h2>Start with your business</h2><p>Sign in securely with Google. No separate OrderMate password to store or reset.</p></div><button className="google-button" disabled={busy} onClick={async () => { setBusy(true); await authClient.signIn.social({ provider: "google", callbackURL: window.location.origin }); }}><GoogleGlyph />{busy ? "Opening Google…" : "Continue with Google"}</button><small>Workspace mutations are attributable to the signed-in member for audit and security.</small></div>
+    <div className="auth-card"><div><p className="eyebrow">{inviteToken ? "You've been invited" : "Welcome to OrderMate"}</p><h2>{inviteToken ? "Join your business workspace" : "Start with your business"}</h2><p>Sign in securely with Google. {inviteToken ? "Use the Google account the invitation was sent to." : "No separate OrderMate password to store or reset."}</p></div><button className="google-button" disabled={busy} onClick={async () => { setBusy(true); await authClient.signIn.social({ provider: "google", callbackURL }); }}><GoogleGlyph />{busy ? "Opening Google…" : "Continue with Google"}</button><small>Workspace mutations are attributable to the signed-in member for audit and security.</small></div>
   </div>;
 }
 
