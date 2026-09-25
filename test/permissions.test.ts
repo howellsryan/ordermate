@@ -24,6 +24,18 @@ describe("tenant route permission classification", () => {
     expect(permissionForRequest("/purchase-orders/123/cancel", "POST")).toEqual({ resource: "purchasing", action: "update" });
   });
 
+  it("classifies supplier mappings and replenishment as purchasing operations", () => {
+    expect(permissionForRequest("/supplier-variants", "GET")).toEqual({ resource: "purchasing", action: "read" });
+    expect(permissionForRequest("/supplier-variants", "POST")).toEqual({ resource: "purchasing", action: "update" });
+    expect(permissionForRequest("/supplier-variants/supplier/variant", "DELETE")).toEqual({ resource: "purchasing", action: "delete" });
+    expect(permissionForRequest("/replenishment", "GET")).toEqual({ resource: "purchasing", action: "read" });
+
+    expect(can("inventory", "purchasing", "update")).toBe(true);
+    expect(can("viewer", "purchasing", "read")).toBe(true);
+    expect(can("viewer", "purchasing", "update")).toBe(false);
+    expect(can("fulfilment", "purchasing", "read")).toBe(false);
+  });
+
   it("allows every role to read dashboard and audit reporting without granting commercial settings", () => {
     for (const role of ["owner", "admin", "manager", "inventory", "fulfilment", "viewer"] as const) {
       expect(can(role, "reports", "read")).toBe(true);
