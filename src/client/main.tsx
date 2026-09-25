@@ -10,6 +10,7 @@ import "./record-details.css";
 import "./inventory-history.css";
 import "./product-edit.css";
 import "./confirmations.css";
+import "./supply-planning.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
