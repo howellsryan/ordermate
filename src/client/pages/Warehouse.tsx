@@ -4,8 +4,9 @@ import { AlertTriangle, CheckCircle2, Minus, PackageCheck, Plus, ScanBarcode, Tr
 import type { OrganizationSummary } from "../../shared/types";
 import CameraBarcodeScanner from "../CameraBarcodeScanner";
 import DeliveryNoteAssist from "../DeliveryNoteAssist";
-import { controlApi, date, tenantApi } from "../api";
+import { calendarDate, controlApi, date, tenantApi } from "../api";
 import type { Order, OrderDetail, Product, PurchaseOrder, PurchaseOrderDetail } from "../model";
+import { compareOrderUrgency, isRequiredByOverdue, priorityLabel } from "../order-priority";
 import { applyWarehouseBarcodeScan, setWarehouseLineCount, type WarehouseScanCounts, type WarehouseScanTarget } from "../warehouse-scan";
 import { DataState, ErrorText, PageHeader, Status } from "../ui";
 
@@ -50,7 +51,9 @@ export default function Warehouse({ tenant }: { tenant: OrganizationSummary }) {
 function PickingWorkspace({ tenant, barcodeByVariant }: { tenant: OrganizationSummary; barcodeByVariant: Map<string, string> }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const orders = useQuery({ queryKey: ["tenant", tenant.id, "orders"], queryFn: () => tenantApi<Order[]>(tenant.id, "/orders") });
-  const openOrders = (orders.data || []).filter(order => order.status === "confirmed" && order.fulfilment_status !== "fulfilled");
+  const openOrders = (orders.data || [])
+    .filter(order => order.status === "confirmed" && order.fulfilment_status !== "fulfilled")
+    .sort(compareOrderUrgency);
 
   useEffect(() => {
     if (selectedId && !openOrders.some(order => order.id === selectedId)) setSelectedId(null);
@@ -60,10 +63,13 @@ function PickingWorkspace({ tenant, barcodeByVariant }: { tenant: OrganizationSu
     <section className="panel warehouse-queue">
       <div className="panel-heading"><div><p className="eyebrow">Pick queue</p><h3>Orders awaiting fulfilment</h3></div><span className="queue-count">{openOrders.length}</span></div>
       <DataState loading={orders.isLoading} error={orders.error} empty={!openOrders.length} emptyText="Confirmed orders will appear here when stock is ready to pick.">
-        <div className="warehouse-documents">{openOrders.map(order => <button key={order.id} className={`warehouse-document ${selectedId === order.id ? "active" : ""}`} onClick={() => setSelectedId(order.id)}>
-          <span><strong>{order.number}</strong><small>{order.customer_name || "Guest"} · {order.location_name}</small></span>
-          <span><Status value={order.fulfilment_status} /><small>{date(order.created_at)}</small></span>
-        </button>)}</div>
+        <div className="warehouse-documents">{openOrders.map(order => {
+          const overdue = isRequiredByOverdue(order.required_by_date);
+          return <button key={order.id} className={`warehouse-document ${selectedId === order.id ? "active" : ""} ${overdue ? "overdue-order" : ""} ${order.priority === "urgent" ? "urgent-order" : ""}`} onClick={() => setSelectedId(order.id)}>
+            <span><strong>{order.number}</strong><small>{order.customer_name || "Guest"} · {order.location_name}</small></span>
+            <span><span className="warehouse-urgency"><Status value={order.fulfilment_status} /><b className={`order-priority order-priority-${order.priority}`}>{priorityLabel(order.priority)}</b>{overdue && <AlertTriangle size={13} />}</span><small>{order.required_by_date ? `Required ${calendarDate(order.required_by_date)}` : `Created ${date(order.created_at)}`}</small></span>
+          </button>;
+        })}</div>
       </DataState>
     </section>
     <section className="panel warehouse-session">
