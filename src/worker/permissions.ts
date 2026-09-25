@@ -1,29 +1,29 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "preferences" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", settings: "*", members: "*", preferences: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
-    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
   },
   fulfilment: {
     catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"], preferences: "*",
   },
   viewer: {
-    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], settings: ["read"], members: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], analytics: ["read"], settings: ["read"], members: ["read"], preferences: "*",
   },
 };
 
@@ -56,7 +56,8 @@ export function permissionForRequest(path: string, method: string): { resource: 
   }
   if (path.startsWith("/customers")) return { resource: "customers", action };
   if (path.startsWith("/settings")) return { resource: "settings", action };
-  if (path.startsWith("/reports") || path.startsWith("/audit") || path.startsWith("/dashboard") || path.startsWith("/barcode")) return { resource: "reports", action: "read" };
+  if (path.startsWith("/reports")) return { resource: "analytics", action: "read" };
+  if (path.startsWith("/audit") || path.startsWith("/dashboard") || path.startsWith("/barcode")) return { resource: "reports", action: "read" };
 
   return { resource: "unknown", action };
 }
