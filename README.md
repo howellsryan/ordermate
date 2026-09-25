@@ -23,19 +23,23 @@ OrderMate currently includes:
 - Google sign-in, multiple businesses per user, invitations and role-based access;
 - products, arbitrary option dimensions, variants, SKUs, barcodes and modifiers;
 - create-only CSV catalogue onboarding with dry-run validation, arbitrary `option:<name>` columns, supplier mapping and opening stock committed atomically;
+- non-destructive single and atomic bulk product archive/restore;
 - multi-location stock with on-hand, reserved, available and incoming quantities;
 - immutable inventory movements, transfers, adjustments and barcode lookup;
 - reviewed partial cycle counts with stale-stock protection, reservation safeguards and one atomic stocktake commit;
 - a dedicated Warehouse workspace for barcode-driven picking and PO receiving using hardware scanners, manual input or lazy-loaded mobile camera scanning;
 - suppliers, supplier-SKU mappings, purchase orders, expected delivery dates, overdue visibility, partial receiving and cancellation;
+- persistent delivery discrepancies with evidence and audited open/resolved handling;
 - deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
 - per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
 - reviewed supplier-SKU learning from purchase-document proposals without fuzzy or ambiguous mapping;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
 - global search, operational attention inbox, audit/activity, CSV exports and record detail views;
+- private cross-device saved views for Inventory and Purchasing;
+- deterministic Operations Reports for stock valuation/health, confirmed/completed order value, physical throughput and purchasing commitments;
 - tenant-scoped R2 purchasing documents and human-reviewed AI extraction for purchase documents and delivery notes;
-- non-destructive catalogue archive/restore and maintainable supplier/customer records; and
-- ordered tenant-schema migration tracking, currently schema v3.
+- maintainable supplier/customer records; and
+- ordered tenant-schema migration tracking, currently schema v5.
 
 ## Local setup
 
@@ -119,11 +123,36 @@ Cycle Count is a reviewed partial stocktake rather than a destructive full-locat
 - any stale stock/reservation change rejects the whole batch before mutation; and
 - successful variances share one stocktake reference and are committed atomically with an audit event.
 
+## Saved views and bulk catalogue actions
+
+Inventory and Purchasing filters can be saved per signed-in user inside the tenant datastore, so operational views follow the user across devices without becoming shared workspace state. Users in the same business cannot list or delete one another's views.
+
+Products supports atomic bulk archive/restore for up to 200 selected records. OrderMate verifies the entire selection before mutation; a missing product rejects the whole action. Product/variant retirement semantics and per-product audit events match the single-record workflow.
+
+## Operations Reports
+
+Reports are deterministic read models over canonical tenant records. The workspace supports 7/30/60/90-day windows and includes:
+
+- inventory at cost, availability/reservations/incoming and stock-health counts;
+- confirmed/completed gross order value rather than payment/revenue claims;
+- fulfilled, returned and received physical units;
+- outstanding pro-rated PO commitment and overdue PO count;
+- stock valuation by location; and
+- top fulfilled SKUs plus daily order/movement trends.
+
+Commercial Operations Reports use a separate `analytics:read` permission. Fulfilment users retain Activity/Audit access without receiving purchasing analytics.
+
 ## Purchase-order expected delivery
 
 Open purchase orders may carry an explicit expected delivery date. If none is supplied, submission derives one only when every PO line has a known lead-time mapping for that supplier, using the slowest mapped line. If coverage is incomplete, the date remains unset rather than being guessed.
 
 Overdue expected dates are surfaced operationally in purchasing and the attention inbox while the PO keeps its canonical lifecycle status (`ordered` or `partially_received`). Expected dates are also included in PO exports.
+
+## Delivery discrepancy control
+
+A reviewed delivery-note receipt creates a persistent discrepancy only when concrete evidence differs: wrong PO reference, unexpected/over-delivered lines, or a physical receipt quantity that differs from the reviewed document proposal. Normal matching partial shipments do not create noise.
+
+Discrepancies remain linked to the immutable R2 proposal/source evidence. Resolution requires an explicit outcome and note, is audited, and never rewrites inventory or the completed receipt.
 
 ## AI purchase-document extraction
 
@@ -165,7 +194,7 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, PO due-date rules, deterministic document matching and import atomicity are required regression areas.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, PO due-date/discrepancy rules, saved-view privacy, report reconciliation, deterministic document matching and import/bulk atomicity are required regression areas.
 
 ## Production configuration
 
