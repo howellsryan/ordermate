@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   History,
+  Layers3,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -33,6 +34,7 @@ import Inventory from "./pages/Inventory";
 import Purchasing from "./pages/Purchasing";
 import Orders from "./pages/Orders";
 import WarehouseOps from "./pages/Warehouse";
+import WavePickingPage from "./pages/WavePickingPage";
 import Stocktake from "./pages/Stocktake";
 import Reports from "./pages/Reports";
 import { Customers, Suppliers } from "./pages/People";
@@ -41,13 +43,14 @@ import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import { ErrorText, Field, Modal } from "./ui";
 
-type Page = "overview" | "orders" | "warehouse" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "reports" | "activity" | "team" | "settings";
+type Page = "overview" | "orders" | "warehouse" | "wave-pick" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "reports" | "activity" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
 
 const nav: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "orders", label: "Orders", icon: ShoppingCart },
   { id: "warehouse", label: "Warehouse", icon: ScanBarcode },
+  { id: "wave-pick", label: "Wave picking", icon: Layers3 },
   { id: "stocktake", label: "Cycle count", icon: ClipboardCheck },
   { id: "products", label: "Products", icon: Boxes },
   { id: "inventory", label: "Inventory", icon: Warehouse },
@@ -62,6 +65,7 @@ const nav: NavItem[] = [
 
 function pageVisible(role: Role, page: Page) {
   if (role === "owner" || role === "admin") return true;
+  if (page === "wave-pick") return role === "manager" || role === "fulfilment";
   if (page === "warehouse") return role !== "viewer";
   if (page === "stocktake") return role === "manager" || role === "inventory";
   if (page === "reports") return role !== "fulfilment";
@@ -157,6 +161,7 @@ export default function App() {
         {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
         {page === "orders" && <Orders tenant={activeTenant} />}
         {page === "warehouse" && <WarehouseOps tenant={activeTenant} />}
+        {page === "wave-pick" && <WavePickingPage tenant={activeTenant} />}
         {page === "stocktake" && <Stocktake tenant={activeTenant} />}
         {page === "products" && <Products tenant={activeTenant} />}
         {page === "inventory" && <Inventory tenant={activeTenant} />}
