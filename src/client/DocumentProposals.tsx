@@ -57,13 +57,7 @@ type PurchaseProposal = {
   acceptedAt?: string;
 };
 
-type ReviewLine = {
-  index: number;
-  variantId: string;
-  quantity: string;
-  cost: string;
-  tax: string;
-};
+type ReviewLine = { index: number; variantId: string; quantity: string; cost: string; tax: string };
 
 export default function DocumentProposals({ tenant }: { tenant: OrganizationSummary }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -75,7 +69,7 @@ export default function DocumentProposals({ tenant }: { tenant: OrganizationSumm
 
   return <section className="proposal-section">
     <div className="proposal-heading"><div><p className="eyebrow">AI review queue</p><h4>Extracted purchase-order proposals</h4></div><WandSparkles size={18} /></div>
-    <DataState loading={query.isLoading} error={query.error} empty={!query.data?.proposals.length} emptyText="Upload a supplier PDF or image. OrderMate will convert and extract it in Cloudflare, then put the proposal here for human review.">
+    <DataState loading={query.isLoading} error={query.error} empty={!query.data?.proposals.length} emptyText="No extracted proposals yet. When an eligible source document is queued for extraction, its structured review proposal will appear here.">
       <div className="proposal-list">{query.data?.proposals.map(proposal => {
         const accepted = proposal.status === "accepted";
         return <button className="proposal-row" key={proposal.key} onClick={() => setOpenKey(proposal.key)}>
@@ -130,12 +124,7 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
           supplierId,
           locationId,
           notes: `Created from reviewed document proposal ${proposal.eventId}${proposal.extracted.supplierReference ? ` · supplier reference ${proposal.extracted.supplierReference}` : ""}`,
-          lines: reviewLines.map(line => ({
-            variantId: line.variantId,
-            quantity: Number(line.quantity),
-            unitCostMinor: pounds(line.cost),
-            taxRateBps: Math.round(Number(line.tax) * 100),
-          })),
+          lines: reviewLines.map(line => ({ variantId: line.variantId, quantity: Number(line.quantity), unitCostMinor: pounds(line.cost), taxRateBps: Math.round(Number(line.tax) * 100) })),
         }),
       });
 
@@ -160,9 +149,13 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
   const previewSource = async () => {
     const response = await fetch(`/api/documents/file?key=${encodeURIComponent(proposal.sourceKey)}`, { credentials: "include", headers: { "x-ordermate-tenant": tenant.id } });
     if (!response.ok) return;
-    const url = URL.createObjectURL(await response.blob());
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const anchor = window.document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
   };
 
   if (created) return <div className="proposal-created">
