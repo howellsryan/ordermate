@@ -18,6 +18,7 @@ import "./warehouse.css";
 import "./delivery-notes.css";
 import "./camera-scanner.css";
 import "./catalogue-import.css";
+import "./stocktake.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
