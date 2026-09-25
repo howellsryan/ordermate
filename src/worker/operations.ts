@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can } from "./permissions";
-import type { TenantStore } from "./tenant-store";
+import type { TenantStore } from "./tenant-store-runtime";
 
 type Env = AuthEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
@@ -42,6 +42,7 @@ type InventoryRow = {
   reserved: number;
   available: number;
   incoming: number;
+  tracked?: number;
 };
 
 type Order = {
@@ -179,7 +180,7 @@ operationsApp.get("/attention", async c => {
       tenantJson<InventoryRow[]>(context.stub, "/inventory", actor),
       tenantJson<Settings>(context.stub, "/settings", actor),
     ]);
-    for (const row of inventory.filter(row => row.available <= settings.low_stock_threshold).slice(0, 12)) {
+    for (const row of inventory.filter(row => row.tracked !== 0 && row.available <= settings.low_stock_threshold).slice(0, 12)) {
       items.push({
         id: `stock:${row.variant_id}:${row.location_id}`,
         severity: row.available <= 0 ? "critical" : "warning",
@@ -252,8 +253,8 @@ function exportRows(kind: ExportKind, data: unknown): { headers: string[]; rows:
     return { headers: ["product", "category", "status", "variant", "sku", "barcode", "options", "price_minor", "cost_minor", "tax_rate_bps"], rows };
   }
   if (kind === "inventory") {
-    const rows = (data as InventoryRow[]).map(row => [row.product_name, row.variant_name, row.sku, row.barcode, row.location_name, row.on_hand, row.reserved, row.available, row.incoming]);
-    return { headers: ["product", "variant", "sku", "barcode", "location", "on_hand", "reserved", "available", "incoming"], rows };
+    const rows = (data as InventoryRow[]).map(row => [row.product_name, row.variant_name, row.sku, row.barcode, row.location_name, row.on_hand, row.reserved, row.available, row.incoming, row.tracked ?? 1]);
+    return { headers: ["product", "variant", "sku", "barcode", "location", "on_hand", "reserved", "available", "incoming", "tracked"], rows };
   }
   if (kind === "orders") {
     const rows = (data as Order[]).map(row => [row.number, row.customer_name, row.location_name, row.status, row.fulfilment_status, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
