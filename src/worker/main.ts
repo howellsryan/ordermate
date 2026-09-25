@@ -2,6 +2,7 @@ import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import baseWorker from "./index";
 import { documentsApp } from "./documents";
+import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
 import { TenantStore } from "./tenant-store-runtime";
@@ -79,6 +80,13 @@ export default {
 
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
+
+    if (url.pathname === "/api/ops/movements") {
+      const publicPath = url.pathname;
+      url.pathname = "/";
+      const response = await movementHistoryApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
+    }
 
     if (url.pathname === "/api/ops" || url.pathname.startsWith("/api/ops/")) {
       const publicPath = url.pathname;
