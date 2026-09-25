@@ -46,9 +46,9 @@ export default function WavePicking({ tenant, orders, barcodeByVariant }: {
 
   return <section className="panel wave-builder">
     <div className="wave-builder-head">
-      <div className="wave-builder-icon"><Layers3 size={19} /></div>
+      <div className="wave-builder-icon"><Layers3 size={19} aria-hidden="true" /></div>
       <div><p className="eyebrow">Batch picking</p><h3>Wave pick compatible orders</h3><p>Group up to 10 orders from one stock location, scan aggregate quantities once, then fulfil each order through its normal reservation-safe endpoint.</p></div>
-      <button className="secondary" onClick={() => { setExpanded(value => !value); if (expanded) setSelectedIds([]); }}><Layers3 size={15} /> {expanded ? "Close wave" : "Build wave"}</button>
+      <button type="button" className="secondary" onClick={() => { setExpanded(value => !value); if (expanded) setSelectedIds([]); }}><Layers3 size={15} aria-hidden="true" /> {expanded ? "Close wave" : "Build wave"}</button>
     </div>
     {expanded && <div className="wave-builder-body">
       <div className="wave-selection-note"><span>{selected.length ? `${selected.length} selected${selected[0] ? ` · ${selected[0].location_name}` : ""}` : "Choose the first order to lock the wave location."}</span><small>Higher-priority orders receive aggregate picked units first. Different locations cannot be mixed.</small></div>
@@ -62,7 +62,7 @@ export default function WavePicking({ tenant, orders, barcodeByVariant }: {
           <b className={`order-priority order-priority-${order.priority}`}>{priorityLabel(order.priority)}</b>
         </label>;
       })}</div>
-      <div className="wave-builder-actions"><span>{selected.length < 2 ? "Select at least two orders from the same location." : `${selected.length} orders ready for aggregate picking.`}</span><button className="primary" disabled={selected.length < 2} onClick={() => setReviewOpen(true)}><PackageCheck size={15} /> Review wave</button></div>
+      <div className="wave-builder-actions"><span>{selected.length < 2 ? "Select at least two orders from the same location." : `${selected.length} orders ready for aggregate picking.`}</span><button type="button" className="primary" disabled={selected.length < 2} onClick={() => setReviewOpen(true)}><PackageCheck size={15} aria-hidden="true" /> Review wave</button></div>
     </div>}
     {reviewOpen && selected.length >= 2 && <WavePickModal tenant={tenant} orders={selected} barcodeByVariant={barcodeByVariant} onClose={() => setReviewOpen(false)} onCommitted={finish} />}
   </section>;
@@ -125,6 +125,7 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   });
 
   const scan = (value: string) => {
+    if (commit.isPending) return;
     const result = applyWarehouseBarcodeScan(scanTargets, counts, value);
     setCounts(result.counts);
     const target = targets.find(item => item.variantId === result.lineId);
@@ -140,31 +141,31 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   const unallocated = Object.values(plan.unallocated).reduce((sum, quantity) => sum + quantity, 0);
 
   return <Modal title={`Wave pick · ${orders.length} orders`} subtitle="Scan aggregate quantities once. Before commit, OrderMate expands the picked units back into exact order lines in the urgency order shown in Warehouse." onClose={onClose} wide>
-    {details.isLoading ? <div className="wave-loading"><div className="loader" /><span>Loading selected order reservations…</span></div> : details.error ? <ErrorText error={details.error} /> : !sameLocation ? <div className="wave-error"><AlertTriangle size={18} /><span>Selected orders no longer share one stock location. Close the wave and rebuild the selection.</span></div> : <div className="wave-session">
+    {details.isLoading ? <div className="wave-loading" role="status" aria-live="polite"><div className="loader" /><span>Loading selected order reservations…</span></div> : details.error ? <ErrorText error={details.error} /> : !sameLocation ? <div className="wave-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>Selected orders no longer share one stock location. Close the wave and rebuild the selection.</span></div> : <div className="wave-session">
       <div className="wave-summary">
         <span><small>Orders</small><strong>{orders.length}</strong></span><span><small>Unique SKUs</small><strong>{targets.length}</strong></span><span><small>Staged</small><strong>{staged}</strong></span><span><small>Orders affected</small><strong>{plan.orders.length}</strong></span>
       </div>
       <form className="wave-scan" onSubmit={event => { event.preventDefault(); if (barcode.trim()) scan(barcode.trim()); }}>
-        <ScanBarcode size={20} /><input ref={inputRef} value={barcode} onChange={event => setBarcode(event.target.value)} placeholder="Scan or enter barcode" autoComplete="off" autoCapitalize="off" spellCheck={false} /><button className="secondary" disabled={!barcode.trim()}>Add scan</button><CameraBarcodeScanner onScan={scan} label="Camera" />
+        <ScanBarcode size={20} aria-hidden="true" /><input ref={inputRef} name="wave-barcode" aria-label="Wave barcode" value={barcode} onChange={event => setBarcode(event.target.value)} placeholder="Scan or enter barcode…" autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={commit.isPending} /><button className="secondary" disabled={commit.isPending || !barcode.trim()}>Add scan</button><CameraBarcodeScanner onScan={scan} label="Camera" disabled={commit.isPending} />
       </form>
-      {feedback && <div className={`wave-feedback ${feedback.tone}`}>{feedback.tone === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}<span>{feedback.message}</span></div>}
+      {feedback && <div className={`wave-feedback ${feedback.tone}`} role="status" aria-live="polite">{feedback.tone === "success" ? <CheckCircle2 size={15} aria-hidden="true" /> : <AlertTriangle size={15} aria-hidden="true" />}<span>{feedback.message}</span></div>}
       <div className="wave-lines">{targets.map(target => {
         const value = counts[target.variantId] || 0;
         const scanTarget = scanTargets.find(item => item.variantId === target.variantId)!;
         return <div className={`wave-line ${value === target.remaining && target.remaining > 0 ? "complete" : ""}`} key={target.variantId}>
           <div><strong>{target.productName} · {target.variantName}</strong><small className="mono">{target.sku}{target.barcode ? ` · ${target.barcode}` : ""}</small></div>
           <span><small>Outstanding in wave</small><strong>{target.remaining}</strong></span>
-          <div className="line-counter"><button type="button" className="icon-button" disabled={value <= 0 || commit.isPending} onClick={() => setCounts(current => setWarehouseLineCount(current, scanTarget, value - 1))} aria-label="Remove one wave unit"><Minus size={14} /></button><span><strong>{value}</strong><small> / {target.remaining}</small></span><button type="button" className="icon-button" disabled={value >= target.remaining || commit.isPending} onClick={() => setCounts(current => setWarehouseLineCount(current, scanTarget, value + 1))} aria-label="Add one wave unit"><Plus size={14} /></button></div>
+          <div className="line-counter"><button type="button" className="icon-button" disabled={value <= 0 || commit.isPending} onClick={() => setCounts(current => setWarehouseLineCount(current, scanTarget, value - 1))} aria-label="Remove one wave unit"><Minus size={14} aria-hidden="true" /></button><span><strong>{value}</strong><small> / {target.remaining}</small></span><button type="button" className="icon-button" disabled={value >= target.remaining || commit.isPending} onClick={() => setCounts(current => setWarehouseLineCount(current, scanTarget, value + 1))} aria-label="Add one wave unit"><Plus size={14} aria-hidden="true" /></button></div>
         </div>;
       })}</div>
       <div className="wave-allocation">
         <div className="panel-heading"><div><p className="eyebrow">Commit preview</p><h3>Per-order allocation</h3></div><span>{allocated} unit{allocated === 1 ? "" : "s"}</span></div>
         {plan.orders.length ? plan.orders.map(order => <div className="wave-allocation-order" key={order.orderId}><span><strong>{order.orderNumber}</strong><small>{order.lines.length} line{order.lines.length === 1 ? "" : "s"}</small></span><b>{order.lines.reduce((sum, line) => sum + line.quantity, 0)} units</b></div>) : <p className="form-note">Scan or add quantities to see how the wave will be split across orders.</p>}
       </div>
-      {staged > 0 && !everySelectedOrderAffected && <div className="wave-error"><AlertTriangle size={16} /><span>Every selected order must have at least one staged unit before the wave can be committed. Remove untouched orders or scan an item for them.</span></div>}
-      {unallocated > 0 && <div className="wave-error"><AlertTriangle size={16} /><span>{unallocated} staged unit{unallocated === 1 ? "" : "s"} cannot be allocated to current outstanding lines. Refresh the wave before committing.</span></div>}
+      {staged > 0 && !everySelectedOrderAffected && <div className="wave-error" role="status"><AlertTriangle size={16} aria-hidden="true" /><span>Every selected order must have at least one staged unit before the wave can be committed. Remove untouched orders or scan an item for them.</span></div>}
+      {unallocated > 0 && <div className="wave-error" role="status"><AlertTriangle size={16} aria-hidden="true" /><span>{unallocated} staged unit{unallocated === 1 ? "" : "s"} cannot be allocated to current outstanding lines. Refresh the wave before committing.</span></div>}
       {commit.error && <ErrorText error={commit.error} />}
-      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose} disabled={commit.isPending}><X size={15} /> Close</button><button className="primary" disabled={commit.isPending || allocated === 0 || unallocated > 0 || !sameLocation || !everySelectedOrderAffected} onClick={() => commit.mutate()}><PackageCheck size={15} /> Fulfil staged wave</button></div>
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose} disabled={commit.isPending}><X size={15} aria-hidden="true" /> Close</button><button type="button" className="primary" disabled={commit.isPending || allocated === 0 || unallocated > 0 || !sameLocation || !everySelectedOrderAffected} onClick={() => commit.mutate()}><PackageCheck size={15} aria-hidden="true" /> Fulfil staged wave</button></div>
     </div>}
   </Modal>;
 }
