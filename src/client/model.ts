@@ -71,12 +71,28 @@ export type SupplierVariant = {
   lead_time_days?: number | null;
 };
 
+export type InventoryPolicy = {
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  location_id: string;
+  location_name: string;
+  reorder_point: number;
+  target_stock: number;
+  preferred_supplier_id?: string | null;
+  preferred_supplier_name?: string | null;
+  updated_at: string;
+  updated_by: string;
+};
+
 export type ReplenishmentSupplier = {
   supplierId: string;
   supplierName: string;
   supplierSku?: string | null;
   lastCostMinor?: number | null;
   leadTimeDays?: number | null;
+  preferred?: boolean;
 };
 
 export type ReplenishmentSuggestion = {
@@ -93,6 +109,9 @@ export type ReplenishmentSuggestion = {
   incoming: number;
   fulfilled_30d: number;
   threshold: number;
+  target_stock?: number;
+  policy_custom?: boolean;
+  preferred_supplier_id?: string | null;
   average_daily_demand: number;
   effective_lead_time_days: number;
   projected_at_lead_time: number;
@@ -103,6 +122,7 @@ export type ReplenishmentSuggestion = {
 export type ReplenishmentResponse = {
   generated_at: string;
   window_days: number;
+  default_threshold?: number;
   suggestions: ReplenishmentSuggestion[];
 };
 
@@ -203,7 +223,7 @@ export type SearchResult = {
   type: string;
   title: string;
   subtitle: string;
-  page: "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity";
+  page: "orders" | "warehouse" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity";
   badge?: string;
 };
 
