@@ -6,6 +6,7 @@ import "./styles.css";
 import "./operations.css";
 import "./operational-polish.css";
 import "./document-inbox.css";
+import "./record-details.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
