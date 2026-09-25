@@ -51,6 +51,10 @@
   .proposal-line-evidence strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
   .proposal-line-evidence small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
   .proposal-line-evidence > span { color: #886f37; font-size: 8px; line-height: 1.35; }
+  .proposal-learn { margin-top: 5px; display: flex; align-items: flex-start; gap: 6px; color: #56684b; font-size: 9px; line-height: 1.35; cursor: pointer; }
+  .proposal-learn input { width: 14px; min-height: 14px; height: 14px; flex: 0 0 auto; margin: 0; padding: 0; accent-color: #647b46; }
+  .proposal-learn span { min-width: 0; }
+  .proposal-learn.disabled { color: #8a6f54; cursor: not-allowed; }
 
   .proposal-created { min-height: 300px; display: grid; place-items: center; align-content: center; gap: 14px; text-align: center; }
   .proposal-created > div { max-width: 560px; }
