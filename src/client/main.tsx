@@ -6,6 +6,7 @@ import "./styles.css";
 import "./operations.css";
 import "./operational-polish.css";
 import "./document-inbox.css";
+import "./document-proposals.css";
 import "./record-details.css";
 import "./inventory-history.css";
 import "./product-edit.css";
