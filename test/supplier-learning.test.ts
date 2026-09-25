@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SupplierVariant } from "../src/client/model";
-import { supplierLearningDecision } from "../src/client/supplier-learning";
+import { reviewedSupplierSkuConflicts, supplierLearningDecision } from "../src/client/supplier-learning";
 
 function mapping(overrides: Partial<SupplierVariant> = {}): SupplierVariant {
   return {
@@ -47,5 +47,27 @@ describe("supplier SKU learning decisions", () => {
     expect(decision.defaultSelected).toBe(false);
     expect(decision.disabled).toBe(true);
     expect(decision.conflictingMapping?.variant_id).toBe("variant-2");
+  });
+
+  it("detects the same reviewed supplier SKU assigned to different variants", () => {
+    const conflicts = reviewedSupplierSkuConflicts([
+      { index: 0, supplierSku: "ACME-001", variantId: "variant-1" },
+      { index: 1, supplierSku: " acme-001 ", variantId: "variant-2" },
+      { index: 2, supplierSku: "ACME-002", variantId: "variant-2" },
+    ]);
+
+    expect(conflicts).toEqual(new Set(["ACME-001"]));
+    const decision = supplierLearningDecision([], "supplier-1", "variant-1", "ACME-001", conflicts.has("ACME-001"));
+    expect(decision.defaultSelected).toBe(false);
+    expect(decision.disabled).toBe(true);
+    expect(decision.label).toMatch(/reviewed lines assign this supplier SKU to more than one variant/i);
+  });
+
+  it("allows repeated lines for the same supplier SKU when they resolve to the same variant", () => {
+    const conflicts = reviewedSupplierSkuConflicts([
+      { index: 0, supplierSku: "ACME-001", variantId: "variant-1" },
+      { index: 1, supplierSku: "ACME-001", variantId: "variant-1" },
+    ]);
+    expect(conflicts.size).toBe(0);
   });
 });
