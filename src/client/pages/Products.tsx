@@ -13,6 +13,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const [productOpen, setProductOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
+  const canWrite = ["owner", "admin", "manager"].includes(tenant.role);
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const modifiers = useQuery({ queryKey: ["tenant", tenant.id, "modifiers"], queryFn: () => tenantApi<ProductModifier[]>(tenant.id, "/modifiers") });
   const refresh = () => {
@@ -21,7 +22,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   };
 
   return <>
-    <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={<><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></>} />
+    <PageHeader eyebrow="Catalogue" title="Products" description="Model arbitrary option dimensions, sellable variants, SKUs, barcodes and reusable add-ons without mixing catalogue data with inventory." actions={canWrite ? <><button className="secondary" onClick={() => setModifierOpen(true)}><SlidersHorizontal size={17} /> New modifier</button><button className="primary" onClick={() => setProductOpen(true)}><Plus size={17} /> Add product</button></> : undefined} />
     <div className="panel table-panel">
       <DataState loading={products.isLoading} error={products.error} empty={!products.data?.length} emptyText="Add your first product, then receive or adjust stock against its variants.">
         <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th></tr></thead><tbody>
@@ -29,8 +30,8 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
         </tbody></table>
       </DataState>
     </div>
-    {productOpen && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
-    {modifierOpen && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
+    {productOpen && canWrite && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
+    {modifierOpen && canWrite && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
   </>;
 }
 
