@@ -2,7 +2,9 @@ import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import baseWorker from "./index";
 import { processDocumentUploaded, type DocumentUploadedEvent } from "./document-extraction";
+import { processDeliveryNoteUploaded, type DeliveryNoteUploadedEvent } from "./delivery-note-extraction";
 import { documentsApp } from "./documents";
+import { deliveryDocumentsApp } from "./delivery-documents";
 import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
@@ -38,6 +40,7 @@ function isCustomApi(pathname: string) {
   return pathname.startsWith("/api/tenant")
     || pathname.startsWith("/api/ops")
     || pathname.startsWith("/api/documents")
+    || pathname.startsWith("/api/delivery-documents")
     || pathname.startsWith("/api/organizations")
     || pathname.startsWith("/api/invites");
 }
@@ -82,6 +85,19 @@ function isDocumentUploadedEvent(value: unknown): value is DocumentUploadedEvent
     && typeof event.createdAt === "string";
 }
 
+function isDeliveryNoteUploadedEvent(value: unknown): value is DeliveryNoteUploadedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Record<string, unknown>;
+  return event.type === "delivery_note.uploaded"
+    && typeof event.eventId === "string"
+    && typeof event.tenantId === "string"
+    && typeof event.key === "string"
+    && event.purpose === "delivery-source"
+    && typeof event.purchaseOrderId === "string"
+    && typeof event.uploadedBy === "string"
+    && typeof event.createdAt === "string";
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
@@ -100,6 +116,12 @@ export default {
       const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/ops/, "") || "/";
       const response = await operationsApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
+    }
+    if (url.pathname === "/api/delivery-documents" || url.pathname.startsWith("/api/delivery-documents/")) {
+      const publicPath = url.pathname;
+      url.pathname = url.pathname.replace(/^\/api\/delivery-documents/, "") || "/";
+      const response = await deliveryDocumentsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
     if (url.pathname === "/api/documents" || url.pathname.startsWith("/api/documents/")) {
@@ -121,6 +143,12 @@ export default {
             await processDocumentUploaded(message.body, env);
           } else {
             console.log("OrderMate event skipped: AI document extraction disabled", envelope.eventId || message.id);
+          }
+        } else if (isDeliveryNoteUploadedEvent(message.body)) {
+          if (env.AI_DOCUMENT_EXTRACTION_ENABLED === "true") {
+            await processDeliveryNoteUploaded(message.body, env);
+          } else {
+            console.log("OrderMate event skipped: AI delivery-note extraction disabled", envelope.eventId || message.id);
           }
         }
         console.log("OrderMate event processed", envelope.type || "unknown", envelope.eventId || message.id);
