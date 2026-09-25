@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import type { TenantStore } from "../src/worker/tenant-store";
+import type { TenantStore } from "../src/worker/tenant-store-runtime";
 
 type Stub = DurableObjectStub<TenantStore>;
 
@@ -226,5 +226,80 @@ describe("inventory consistency", () => {
     expect(lookup.response.ok).toBe(true);
     expect(lookup.data.sku).toBe("SCAN-ME");
     expect(lookup.data.levels[0].available).toBe(6);
+  });
+
+  it("distinguishes tracked stock from never-stocked location combinations", async () => {
+    const stub = tenant();
+    const primaryLocationId = await createLocation(stub, "MAIN");
+    const secondaryLocationId = await createLocation(stub, "SECOND");
+    const variant = await createVariant(stub, "TRACKED-SKU");
+    await adjust(stub, variant.id, primaryLocationId, 1);
+
+    const inventory = await request<Array<{ variant_id: string; location_id: string; available: number; tracked: number }>>(stub, "/inventory");
+    const primary = inventory.data.find(row => row.variant_id === variant.id && row.location_id === primaryLocationId)!;
+    const secondary = inventory.data.find(row => row.variant_id === variant.id && row.location_id === secondaryLocationId)!;
+
+    expect(primary.tracked).toBe(1);
+    expect(primary.available).toBe(1);
+    expect(secondary.tracked).toBe(0);
+    expect(secondary.available).toBe(0);
+  });
+
+  it("exposes the immutable stock ledger through the runtime history endpoint", async () => {
+    const stub = tenant();
+    const locationId = await createLocation(stub);
+    const variant = await createVariant(stub, "LEDGER-SKU");
+    await adjust(stub, variant.id, locationId, 4);
+
+    const history = await request<Array<{ variant_id: string; sku: string; quantity_delta: number; movement_type: string; actor_id: string }>>(stub, "/inventory/movements");
+    expect(history.response.ok).toBe(true);
+    expect(history.data[0]).toMatchObject({
+      variant_id: variant.id,
+      sku: "LEDGER-SKU",
+      quantity_delta: 4,
+      movement_type: "adjustment",
+      actor_id: "test-user",
+    });
+  });
+
+  it("maps supplier catalogue data and produces an explainable replenishment suggestion", async () => {
+    const stub = tenant();
+    const locationId = await createLocation(stub, "REPLEN");
+    const variant = await createVariant(stub, "REPLEN-SKU");
+    await adjust(stub, variant.id, locationId, 1);
+
+    const supplier = await request<{ id: string }>(stub, "/suppliers", "POST", { name: "Mapped supplier" });
+    expect(supplier.response.status).toBe(201);
+
+    const mapped = await request(stub, "/supplier-variants", "POST", {
+      supplierId: supplier.data.id,
+      variantId: variant.id,
+      supplierSku: "SUP-REPLEN-1",
+      lastCostMinor: 725,
+      leadTimeDays: 12,
+    });
+    expect(mapped.response.ok).toBe(true);
+
+    const mappings = await request<Array<{ supplier_id: string; variant_id: string; supplier_sku: string; last_cost_minor: number; lead_time_days: number }>>(stub, "/supplier-variants");
+    expect(mappings.data).toContainEqual(expect.objectContaining({
+      supplier_id: supplier.data.id,
+      variant_id: variant.id,
+      supplier_sku: "SUP-REPLEN-1",
+      last_cost_minor: 725,
+      lead_time_days: 12,
+    }));
+
+    const replenishment = await request<{ suggestions: Array<{ variant_id: string; location_id: string; recommended_quantity: number; projected_at_lead_time: number; effective_lead_time_days: number; suppliers: Array<{ supplierId: string; supplierSku: string; lastCostMinor: number; leadTimeDays: number }> }> }>(stub, "/replenishment");
+    const suggestion = replenishment.data.suggestions.find(item => item.variant_id === variant.id && item.location_id === locationId)!;
+    expect(suggestion).toBeTruthy();
+    expect(suggestion.recommended_quantity).toBe(9);
+    expect(suggestion.projected_at_lead_time).toBe(1);
+    expect(suggestion.effective_lead_time_days).toBe(12);
+    expect(suggestion.suppliers[0]).toMatchObject({
+      supplierId: supplier.data.id,
+      supplierSku: "SUP-REPLEN-1",
+      lastCostMinor: 725,
+      leadTimeDays: 12,
+    });
   });
 });
