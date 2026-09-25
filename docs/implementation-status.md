@@ -13,8 +13,8 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Role-aware UI for Owner, Admin, Manager, Inventory, Fulfilment and Viewer.
 - Cross-origin custom API mutations rejected at the public Worker boundary.
 - Unexpected custom API 5xx responses masked before leaving the Worker.
-- Ordered tenant schema migrations with v1 baseline verification through schema v5.
-- Schema v2 adds `inventory_policies`; v3 adds PO expected-delivery; v4 adds delivery discrepancies; v5 adds actor-private saved operational views.
+- Ordered tenant schema migrations with v1 baseline verification through schema v6.
+- Schema v2 adds `inventory_policies`; v3 adds PO expected-delivery; v4 adds delivery discrepancies; v5 adds actor-private saved operational views; v6 adds order `required_by_date` and `priority` planning metadata.
 
 ## Catalogue and onboarding
 
@@ -41,6 +41,8 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Dedicated Warehouse Pick & Fulfil and Receive Stock workflows.
 - USB/Bluetooth keyboard-wedge scanning, manual barcode entry and lazy-loaded ZXing mobile camera capture.
 - Wrong-item, ambiguous-barcode and over-scan protection before canonical fulfil/receive submission.
+- Warehouse pick queue is deterministic and urgency-aware: priority first (`urgent`, `high`, `normal`, `low`), then earliest required-by date, then oldest order.
+- Required-by overdue and urgent orders are visibly explained in the queue; queue ordering never mutates order or stock state.
 - First-class Cycle Count workspace for reviewed partial stocktakes.
 - Counted SKUs retain the reviewed on-hand/reserved snapshot; stale stock changes reject the whole batch before mutation.
 - Counts below active reservations are blocked; uncounted rows are untouched; explicit zero can establish a tracked zero position.
@@ -79,11 +81,17 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Cancellation and reservation release.
 - Returns with optional restock.
 - Read-only line-detail view including fulfilled/returned quantities.
+- Schema-v6 order planning metadata: `required_by_date` plus explicit `low` / `normal` / `high` / `urgent` priority.
+- Owner/Admin/Manager may edit planning metadata while an order is open; Fulfilment can execute order lifecycle operations but cannot change customer/operational commitments.
+- Required-by and priority edits are audited and reject invalid calendar dates or closed orders.
+- Order detail and order-list UI expose the planning state and overdue signal.
+- Global search, attention and CSV export carry priority/required-by data.
+- Overdue required-by confirmed orders become critical attention items; urgent non-overdue orders are explicitly highlighted without creating another lifecycle state.
 
 ## Operational UX
 
 - Global tenant-scoped search with Cmd/Ctrl+K.
-- Operational attention inbox for low/zero stock, fulfilment work, incoming/overdue purchase orders and unresolved delivery discrepancies.
+- Operational attention inbox for low/zero stock, urgency-aware fulfilment work, incoming/overdue purchase orders and unresolved delivery discrepancies.
 - First-class Activity & Data workspace.
 - Searchable/filterable audit history.
 - Permission-checked CSV exports for catalogue, inventory, orders, POs, customers, suppliers, delivery discrepancies and audit data.
@@ -96,6 +104,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Human-review UI for document proposals, delivery-note proposals, replenishment policy and CSV onboarding.
 - Mobile-capable cycle counting with barcode/camera input, live variance review and commit-state locking.
 - Expected-delivery editing and overdue highlighting in purchasing/detail UI.
+- Required-by/priority editing and urgency-aware Warehouse pick ordering for sales orders.
 
 ## Regression coverage added
 
@@ -117,13 +126,15 @@ Cloudflare runtime/unit tests cover or specify:
 - document and delivery-note deterministic matching;
 - persistent delivery-discrepancy idempotency, history, resolution and audit behavior;
 - human-reviewed supplier SKU learning decisions and server-side supplier-code uniqueness;
-- schema migration v1 -> v2 -> v3 -> v4 -> v5, including replay-safe later migrations;
+- schema migration v1 -> v2 -> v3 -> v4 -> v5 -> v6, including replay-safe later migrations;
 - saved-view validation, same-tenant user isolation and guessed-ID delete protection;
 - policy-driven replenishment and arrival-target semantics;
 - catalogue import dry-run validation, fingerprint changes, atomic commit, opening stock movements and stale-preview rejection;
 - cycle-count atomic variance commits, stale-snapshot rejection, reservation protection, tracked-zero establishment and audit history;
 - operations-report reconciliation across opening stock, partial PO receiving, outstanding commitment and partial fulfilment;
-- commercial analytics permission separation from broad audit reporting.
+- commercial analytics permission separation from broad audit reporting;
+- order planning default priority, valid/invalid date handling, audit metadata, closed-order protection and dedicated planning authorization;
+- deterministic Warehouse urgency sorting and UTC required-by overdue semantics.
 
 ## Verification remains intentionally deferred
 
