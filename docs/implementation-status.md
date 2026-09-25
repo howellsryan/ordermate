@@ -43,6 +43,11 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Wrong-item, ambiguous-barcode and over-scan protection before canonical fulfil/receive submission.
 - Warehouse pick queue is deterministic and urgency-aware: priority first (`urgent`, `high`, `normal`, `low`), then earliest required-by date, then oldest order.
 - Required-by overdue and urgent orders are visibly explained in the queue; queue ordering never mutates order or stock state.
+- First-class Wave Picking workspace for Owner/Admin/Manager/Fulfilment roles.
+- A wave may contain 2-10 confirmed orders from one stock location. Aggregate scanning is a client-side picker convenience only; it introduces no new inventory persistence or mutation endpoint.
+- Wave quantities are deterministically expanded back into exact order-line quantities in the existing urgency order and the review UI shows the per-order allocation before commit.
+- Every selected wave order must receive at least one staged unit before commit; over-allocation/unallocatable units block commit.
+- Wave commit calls the existing `/orders/:id/fulfil` endpoint once per affected order. Successful orders are never silently retried after another order fails; failed orders require a refreshed/re-scanned follow-up wave.
 - First-class Cycle Count workspace for reviewed partial stocktakes.
 - Counted SKUs retain the reviewed on-hand/reserved snapshot; stale stock changes reject the whole batch before mutation.
 - Counts below active reservations are blocked; uncounted rows are untouched; explicit zero can establish a tracked zero position.
@@ -105,6 +110,7 @@ This document records what is implemented on `rebuild/cloudflare-saas` before th
 - Mobile-capable cycle counting with barcode/camera input, live variance review and commit-state locking.
 - Expected-delivery editing and overdue highlighting in purchasing/detail UI.
 - Required-by/priority editing and urgency-aware Warehouse pick ordering for sales orders.
+- Dedicated responsive Wave Picking surface for aggregate scanning and explicit allocation review.
 
 ## Regression coverage added
 
@@ -134,11 +140,12 @@ Cloudflare runtime/unit tests cover or specify:
 - operations-report reconciliation across opening stock, partial PO receiving, outstanding commitment and partial fulfilment;
 - commercial analytics permission separation from broad audit reporting;
 - order planning default priority, valid/invalid date handling, audit metadata, closed-order protection and dedicated planning authorization;
-- deterministic Warehouse urgency sorting and UTC required-by overdue semantics.
+- deterministic Warehouse urgency sorting and UTC required-by overdue semantics;
+- wave-pick aggregate target construction and deterministic distribution back to exact order lines, including partial picks, already-fulfilled quantities and excess-count rejection.
 
 ## Verification remains intentionally deferred
 
-Per the current delivery session, verification will be performed after more implementation work. Do not call this branch merge-ready until the pinned dependency graph has been installed and the repository has passed:
+Per the current delivery session, verification will be performed by the next agent before any more substantial feature work. Do not call this branch merge-ready until the pinned dependency graph has been installed and the repository has passed:
 
 ```sh
 npm install
@@ -147,4 +154,4 @@ npm test
 npm run build
 ```
 
-The generated `package-lock.json` should then be committed before deployment.
+The generated `package-lock.json` should then be committed before deployment. Wave Picking also needs a manual/browser smoke pass covering same-location selection, barcode/manual counts, camera entry, allocation preview, complete success and one-order failure handling.
