@@ -25,15 +25,17 @@ OrderMate currently includes:
 - create-only CSV catalogue onboarding with dry-run validation, arbitrary `option:<name>` columns, supplier mapping and opening stock committed atomically;
 - multi-location stock with on-hand, reserved, available and incoming quantities;
 - immutable inventory movements, transfers, adjustments and barcode lookup;
+- reviewed partial cycle counts with stale-stock protection, reservation safeguards and one atomic stocktake commit;
 - a dedicated Warehouse workspace for barcode-driven picking and PO receiving using hardware scanners, manual input or lazy-loaded mobile camera scanning;
-- suppliers, supplier-SKU mappings, purchase orders, partial receiving and cancellation;
+- suppliers, supplier-SKU mappings, purchase orders, expected delivery dates, overdue visibility, partial receiving and cancellation;
 - deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
 - per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
+- reviewed supplier-SKU learning from purchase-document proposals without fuzzy or ambiguous mapping;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
 - global search, operational attention inbox, audit/activity, CSV exports and record detail views;
 - tenant-scoped R2 purchasing documents and human-reviewed AI extraction for purchase documents and delivery notes;
 - non-destructive catalogue archive/restore and maintainable supplier/customer records; and
-- ordered tenant-schema migration tracking, currently schema v2.
+- ordered tenant-schema migration tracking, currently schema v3.
 
 ## Local setup
 
@@ -106,6 +108,23 @@ The flow is intentionally safe:
 
 The browser parser is not trusted as validation. Commit revalidates against current tenant state, rejects stale previews and rolls back the entire import if any write fails. Opening stock creates normal immutable inventory movements rather than bypassing the stock ledger.
 
+## Inventory cycle counts
+
+Cycle Count is a reviewed partial stocktake rather than a destructive full-location overwrite.
+
+- blank means the SKU was not counted and will not be touched;
+- zero is a real reviewed physical count;
+- hardware scanners, manual barcode entry and the mobile camera scanner are supported;
+- OrderMate snapshots on-hand/reserved quantities as each SKU enters the count;
+- any stale stock/reservation change rejects the whole batch before mutation; and
+- successful variances share one stocktake reference and are committed atomically with an audit event.
+
+## Purchase-order expected delivery
+
+Open purchase orders may carry an explicit expected delivery date. If none is supplied, submission derives one only when every PO line has a known lead-time mapping for that supplier, using the slowest mapped line. If coverage is incomplete, the date remains unset rather than being guessed.
+
+Overdue expected dates are surfaced operationally in purchasing and the attention inbox while the PO keeps its canonical lifecycle status (`ordered` or `partially_received`). Expected dates are also included in PO exports.
+
 ## AI purchase-document extraction
 
 The workflow is deliberately proposal-based:
@@ -115,6 +134,8 @@ The workflow is deliberately proposal-based:
 AI never submits a PO, receives stock, adjusts inventory or fulfils an order.
 
 Exact matching is limited to known supplier identity, supplier SKU, barcode and OrderMate SKU. Ambiguous lines stay unmatched for human correction. Raw converted Markdown is not persisted; R2 stores the original source and the structured proposal.
+
+Reviewed proposal lines can explicitly remember a supplier SKU for the human-confirmed supplier/variant. Replacement mappings require opt-in and conflicting mappings are rejected; this improves later exact matching without letting the model silently learn identities.
 
 Delivery-note assistance follows the same trust boundary but is anchored to one existing PO and only stages reviewed quantities into the Warehouse receiving flow; the canonical PO receipt still performs the actual inventory mutation.
 
@@ -144,7 +165,7 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, barcode/warehouse invariants, deterministic document matching and import atomicity are required regression areas.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, stocktake/warehouse invariants, PO due-date rules, deterministic document matching and import atomicity are required regression areas.
 
 ## Production configuration
 
