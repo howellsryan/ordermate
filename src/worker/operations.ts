@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { DeliveryDiscrepancyRecord } from "../shared/delivery-discrepancy";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can } from "./permissions";
@@ -215,7 +216,10 @@ operationsApp.get("/attention", async c => {
   }
 
   if (can(context.membership.role, "purchasing", "read")) {
-    const purchaseOrders = await tenantJson<PurchaseOrder[]>(context.stub, "/purchase-orders", actor);
+    const [purchaseOrders, discrepancies] = await Promise.all([
+      tenantJson<PurchaseOrder[]>(context.stub, "/purchase-orders", actor),
+      tenantJson<DeliveryDiscrepancyRecord[]>(context.stub, "/delivery-discrepancies?status=open", actor),
+    ]);
     const today = new Date().toISOString().slice(0, 10);
     for (const po of purchaseOrders.filter(po => po.status === "partially_received" || po.status === "ordered").slice(0, 12)) {
       const overdue = !!po.expected_delivery_date && po.expected_delivery_date < today;
@@ -225,6 +229,16 @@ operationsApp.get("/attention", async c => {
         type: overdue ? "Overdue purchase order" : po.status === "partially_received" ? "Partial receipt" : "Incoming stock",
         title: po.number,
         detail: `${po.supplier_name} · ${po.location_name} · ${po.line_count} line${po.line_count === 1 ? "" : "s"}${po.expected_delivery_date ? ` · expected ${po.expected_delivery_date}` : " · expected date not set"}`,
+        page: "purchasing",
+      });
+    }
+    for (const discrepancy of discrepancies.slice(0, 10)) {
+      items.push({
+        id: `delivery-discrepancy:${discrepancy.id}`,
+        severity: "warning",
+        type: "Open delivery discrepancy",
+        title: discrepancy.purchase_order_number,
+        detail: `${discrepancy.supplier_name} · ${discrepancy.issue_count} issue${discrepancy.issue_count === 1 ? "" : "s"} · ${discrepancy.location_name}`,
         page: "purchasing",
       });
     }
@@ -240,6 +254,7 @@ const exportDefinitions = {
   inventory: { resource: "inventory", path: "/inventory" },
   orders: { resource: "orders", path: "/orders" },
   "purchase-orders": { resource: "purchasing", path: "/purchase-orders" },
+  "delivery-discrepancies": { resource: "purchasing", path: "/delivery-discrepancies" },
   customers: { resource: "customers", path: "/customers" },
   suppliers: { resource: "purchasing", path: "/suppliers" },
   audit: { resource: "reports", path: "/audit" },
@@ -273,6 +288,10 @@ function exportRows(kind: ExportKind, data: unknown): { headers: string[]; rows:
   if (kind === "purchase-orders") {
     const rows = (data as PurchaseOrder[]).map(row => [row.number, row.supplier_name, row.location_name, row.status, row.expected_delivery_date, row.ordered_at, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
     return { headers: ["purchase_order_number", "supplier", "location", "status", "expected_delivery_date", "ordered_at", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
+  }
+  if (kind === "delivery-discrepancies") {
+    const rows = (data as DeliveryDiscrepancyRecord[]).map(row => [row.purchase_order_number, row.supplier_name, row.location_name, row.status, row.issue_count, row.proposal_event_id, row.created_at, row.resolution_code, row.resolution_note, row.resolved_at, row.evidence_json]);
+    return { headers: ["purchase_order_number", "supplier", "location", "status", "issue_count", "proposal_event_id", "created_at", "resolution_code", "resolution_note", "resolved_at", "evidence_json"], rows };
   }
   if (kind === "audit") {
     const rows = (data as AuditEvent[]).map(row => [row.created_at, row.actor_id, row.actor_role, row.action, row.entity_type, row.entity_id, row.metadata_json]);
