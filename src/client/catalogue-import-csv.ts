@@ -27,6 +27,10 @@ export type ParsedCatalogueCsv = {
   headers: string[];
 };
 
+function normalizeOptionName(value: string) {
+  return value.trim().normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
 export function parseCatalogueCsv(text: string): ParsedCatalogueCsv {
   const result = Papa.parse<Record<string, string>>(text, {
     header: true,
@@ -56,8 +60,23 @@ export function parseCatalogueCsv(text: string): ParsedCatalogueCsv {
   }
 
   const optionHeaders = fields.filter(header => header.startsWith("option:"));
+  const normalizedOptionHeaders = new Map<string, string>();
   for (const header of optionHeaders) {
-    if (!header.slice("option:".length).trim()) errors.push({ code: "option_header_invalid", message: "Option columns must be named option:<name>, for example option:Size." });
+    const optionName = header.slice("option:".length).trim();
+    if (!optionName) {
+      errors.push({ code: "option_header_invalid", message: "Option columns must be named option:<name>, for example option:Size." });
+      continue;
+    }
+    const normalized = normalizeOptionName(optionName);
+    const existing = normalizedOptionHeaders.get(normalized);
+    if (existing) {
+      errors.push({
+        code: "option_header_duplicate",
+        message: `Option columns ${existing} and ${header} resolve to the same dimension name. Keep only one column for ${optionName}.`,
+      });
+    } else {
+      normalizedOptionHeaders.set(normalized, header);
+    }
   }
   if (result.data.length > MAX_ROWS) errors.push({ code: "too_many_rows", message: `A single catalogue import supports at most ${MAX_ROWS} data rows.` });
 
