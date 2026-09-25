@@ -40,7 +40,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
   if (path.startsWith("/inventory")) return { resource: "inventory", action: method === "POST" ? "update" : action };
   if (path.startsWith("/suppliers")) return { resource: "purchasing", action };
   if (path.startsWith("/purchase-orders")) {
-    const lifecycleAction = method === "POST" && /\/(submit|receive)$/.test(path) ? "update" : action;
+    const lifecycleAction = method === "POST" && /\/(submit|receive|cancel)$/.test(path) ? "update" : action;
     return { resource: "purchasing", action: lifecycleAction };
   }
   if (path.startsWith("/orders")) {
