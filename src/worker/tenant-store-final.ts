@@ -16,7 +16,7 @@ type SupplierVariantBody = {
 };
 
 function normalizeSupplierSku(value: string) {
-  return value.trim().normalize("NFKC").toLocaleUpperCase();
+  return value.trim().normalize("NFKC").toUpperCase();
 }
 
 /**
