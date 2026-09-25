@@ -63,5 +63,58 @@
         "dead_letter_queue": "ordermate-events-dead"
       }
     ]
+  },
+  "env": {
+    "staging": {
+      "name": "ordermate-staging",
+      "workers_dev": true,
+      "vars": {
+        "AI_DOCUMENT_EXTRACTION_ENABLED": "false"
+      },
+      "ai": {
+        "binding": "AI"
+      },
+      "d1_databases": [
+        {
+          "binding": "CONTROL_DB",
+          "database_name": "ordermate-staging-control",
+          "database_id": "dfd9cfd8-c33e-469d-9ce2-1fd6e6996c24",
+          "migrations_dir": "migrations/control"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "TENANT_STORES",
+            "class_name": "TenantStore"
+          }
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "DOCUMENTS",
+          "bucket_name": "ordermate-staging-documents",
+          "jurisdiction": "eu"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "EVENTS_QUEUE",
+            "queue": "ordermate-staging-events"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "ordermate-staging-events",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "retry_delay": 30,
+            "dead_letter_queue": "ordermate-staging-events-dead"
+          }
+        ]
+      }
+    }
   }
 }
