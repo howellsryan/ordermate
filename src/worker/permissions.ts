@@ -1,10 +1,9 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members";
+export type Resource = "catalogue" | "inventory" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
-
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
@@ -35,11 +34,22 @@ export function can(role: Role, resource: Resource, action: Action): boolean {
 
 export function permissionForRequest(path: string, method: string): { resource: Resource; action: Action } {
   const action: Action = method === "GET" || method === "HEAD" ? "read" : method === "DELETE" ? "delete" : method === "POST" ? "create" : "update";
+
   if (path.startsWith("/products") || path.startsWith("/categories")) return { resource: "catalogue", action };
-  if (path.startsWith("/inventory") || path.startsWith("/locations")) return { resource: "inventory", action: method === "POST" ? "update" : action };
-  if (path.startsWith("/suppliers") || path.startsWith("/purchase-orders")) return { resource: "purchasing", action };
-  if (path.startsWith("/orders")) return { resource: "orders", action: method === "POST" && path.match(/\/(confirm|fulfil|cancel|return)$/) ? "update" : action };
+  if (path.startsWith("/locations")) return { resource: "inventory", action };
+  if (path.startsWith("/inventory")) return { resource: "inventory", action: method === "POST" ? "update" : action };
+  if (path.startsWith("/suppliers")) return { resource: "purchasing", action };
+  if (path.startsWith("/purchase-orders")) {
+    const lifecycleAction = method === "POST" && /\/(submit|receive)$/.test(path) ? "update" : action;
+    return { resource: "purchasing", action: lifecycleAction };
+  }
+  if (path.startsWith("/orders")) {
+    const lifecycleAction = method === "POST" && /\/(confirm|fulfil|cancel|return)$/.test(path) ? "update" : action;
+    return { resource: "orders", action: lifecycleAction };
+  }
   if (path.startsWith("/customers")) return { resource: "customers", action };
   if (path.startsWith("/settings")) return { resource: "settings", action };
-  return { resource: "reports", action: "read" };
+  if (path.startsWith("/audit") || path.startsWith("/dashboard") || path.startsWith("/barcode")) return { resource: "reports", action: "read" };
+
+  return { resource: "unknown", action };
 }
