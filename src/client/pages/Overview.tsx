@@ -15,6 +15,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
     queryFn: () => tenantOpsApi<AttentionResponse>(tenant.id, "/attention"),
   });
   const data = query.data;
+  const attentionPage = (item: AttentionResponse["items"][number]): SearchResult["page"] => item.type === "Awaiting fulfilment" ? "warehouse" : item.page;
 
   return <>
     <PageHeader eyebrow="Today" title={tenant.name} description="The work that needs attention, without hunting for it." />
@@ -22,13 +23,13 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Open orders" value={data?.ordersOpen ?? "—"} helper="Draft + confirmed" tone="ink" />
       <Metric label="Awaiting fulfilment" value={data?.ordersAwaitingFulfilment ?? "—"} helper="Ready to pick in Warehouse" tone="amber" />
       <Metric label="Open purchase orders" value={data?.purchaseOrdersOpen ?? "—"} helper="Including partial receipts" tone="blue" />
-      <Metric label="Low stock" value={data?.lowStockVariants ?? "—"} helper="Variant/location pairs" tone="rose" />
+      <Metric label="Low stock" value={data?.lowStockVariants ?? "—"} helper="Active tracked positions" tone="rose" />
     </section>
 
     <section className="panel attention-panel">
       <div className="panel-heading"><div><p className="eyebrow">Needs attention</p><h3>Operational inbox</h3></div><AlertTriangle size={21} /></div>
       <DataState loading={attention.isLoading} error={attention.error} empty={!attention.data?.items.length} emptyText="Nothing needs attention right now.">
-        <div className="attention-list">{attention.data?.items.slice(0, 8).map(item => <button key={item.id} className={`attention-item attention-${item.severity}`} onClick={() => onNavigate(item.page)}><span className="attention-marker" /><span className="attention-copy"><small>{item.type}</small><strong>{item.title}</strong><span>{item.detail}</span></span><span className="attention-open">Open</span></button>)}</div>
+        <div className="attention-list">{attention.data?.items.slice(0, 8).map(item => <button key={item.id} className={`attention-item attention-${item.severity}`} onClick={() => onNavigate(attentionPage(item))}><span className="attention-marker" /><span className="attention-copy"><small>{item.type}</small><strong>{item.title}</strong><span>{item.detail}</span></span><span className="attention-open">Open</span></button>)}</div>
       </DataState>
     </section>
 
@@ -37,7 +38,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
         <div className="panel-heading"><div><p className="eyebrow">Inventory position</p><h2>{money(data?.inventoryValueMinor, data?.currency)}</h2></div><Warehouse size={24} /></div>
         <p>Current on-hand inventory valued at recorded variant cost.</p>
         <div className="soft-rule" />
-        <div className="automation-callout"><Sparkles size={18} /><div><strong>Automation with a human checkpoint</strong><span>Replenishment recommendations and supplier-document extraction now propose reviewable changes against the same audited inventory ledger; AI never commits stock itself.</span></div></div>
+        <div className="automation-callout"><Sparkles size={18} /><div><strong>Automation with a human checkpoint</strong><span>Replenishment rules, supplier-document extraction and delivery-note matching all produce reviewable operational suggestions; the audited order and inventory transactions remain the only source of business truth.</span></div></div>
       </div>
       <div className="panel">
         <div className="panel-heading"><div><p className="eyebrow">Operating model</p><h3>One source of stock truth</h3></div><Archive size={21} /></div>
