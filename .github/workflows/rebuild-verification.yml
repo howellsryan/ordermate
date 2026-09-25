@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - rebuild/cloudflare-saas
+  workflow_dispatch:
 
 permissions:
   contents: write
