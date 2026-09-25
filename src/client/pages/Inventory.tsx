@@ -7,6 +7,8 @@ import { tenantApi } from "../api";
 import type { InventoryRow, Location } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader } from "../ui";
 
+type InventorySettings = { low_stock_threshold: number };
+
 export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const [locationOpen, setLocationOpen] = useState(false);
@@ -17,16 +19,22 @@ export default function Inventory({ tenant }: { tenant: OrganizationSummary }) {
   const canUpdateStock = ["owner", "admin", "manager", "inventory", "fulfilment"].includes(tenant.role);
   const inventory = useQuery({ queryKey: ["tenant", tenant.id, "inventory"], queryFn: () => tenantApi<InventoryRow[]>(tenant.id, "/inventory") });
   const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
+  const settings = useQuery({ queryKey: ["tenant", tenant.id, "settings"], queryFn: () => tenantApi<InventorySettings>(tenant.id, "/settings") });
+  const threshold = settings.data?.low_stock_threshold ?? 5;
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory-movements"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
   };
 
   return <>
     <PageHeader eyebrow="Stock" title="Inventory" description="On hand, reserved, available and incoming stock stay separate. Every physical change leaves an auditable movement." actions={<><button className="secondary" onClick={() => setScanOpen(true)}><ScanLine size={17} /> Scan barcode</button>{canCreateLocation && <button className="secondary" onClick={() => setLocationOpen(true)}><Store size={17} /> Add location</button>}{canUpdateStock && <button className="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft size={17} /> Transfer</button>}{canUpdateStock && <button className="primary" onClick={() => setAdjustOpen(true)}><Plus size={17} /> Adjust stock</button>}</>} />
-    <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!inventory.data?.length} emptyText="Create a product and stock location to begin tracking inventory."><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{inventory.data?.map((row, index) => <tr key={`${row.variant_id}:${row.location_id}:${index}`}><td><strong>{row.product_name} <span className="muted">· {row.variant_name}</span></strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : ""}</small></td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.reserved}</td><td><strong className={row.available <= 5 ? "danger-text" : ""}>{row.available}</strong></td><td>{row.incoming}</td></tr>)}</tbody></table></DataState></div>
+    <div className="panel table-panel"><DataState loading={inventory.isLoading} error={inventory.error} empty={!inventory.data?.length} emptyText="Create a product and stock location to begin tracking inventory."><table><thead><tr><th>Item</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Incoming</th></tr></thead><tbody>{inventory.data?.map((row, index) => {
+      const tracked = row.tracked !== 0;
+      return <tr key={`${row.variant_id}:${row.location_id}:${index}`} className={tracked ? "" : "inventory-untracked"}><td><strong>{row.product_name} <span className="muted">· {row.variant_name}</span></strong><small className="mono">{row.sku}{row.barcode ? ` · ${row.barcode}` : ""}</small></td><td>{row.location_name}{!tracked && <small>Not stocked here yet</small>}</td><td>{tracked ? row.on_hand : <span className="muted">—</span>}</td><td>{tracked ? row.reserved : <span className="muted">—</span>}</td><td>{tracked ? <strong className={row.available <= threshold ? "danger-text" : ""}>{row.available}</strong> : <span className="muted">—</span>}</td><td>{tracked ? row.incoming : <span className="muted">—</span>}</td></tr>;
+    })}</tbody></table></DataState></div>
     <InventoryHistory tenant={tenant} />
     {locationOpen && canCreateLocation && <LocationModal tenant={tenant} onClose={() => setLocationOpen(false)} onCreated={() => { setLocationOpen(false); refresh(); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "locations"] }); }} />}
     {adjustOpen && canUpdateStock && <AdjustModal tenant={tenant} rows={inventory.data || []} onClose={() => setAdjustOpen(false)} onDone={() => { setAdjustOpen(false); refresh(); }} />}
@@ -48,11 +56,11 @@ function AdjustModal({ tenant, rows, onClose, onDone }: { tenant: OrganizationSu
   const [delta, setDelta] = useState("");
   const [reason, setReason] = useState("");
   const mutation = useMutation({ mutationFn: () => { const [variantId, locationId] = selection.split(":"); return tenantApi(tenant.id, "/inventory/adjust", { method: "POST", body: JSON.stringify({ variantId, locationId, quantityDelta: Number(delta), reason }) }); }, onSuccess: onDone });
-  return <Modal title="Adjust stock" subtitle="Adjustments are never silent. OrderMate records the item, location, reason and person responsible." onClose={onClose}><form onSubmit={event => { event.preventDefault(); mutation.mutate(); }} className="form-grid one"><Field label="Variant / location"><select required value={selection} onChange={event => setSelection(event.target.value)}>{unique.map(row => <option key={`${row.variant_id}:${row.location_id}`} value={`${row.variant_id}:${row.location_id}`}>{row.product_name} · {row.variant_name} — {row.location_name} ({row.available} available)</option>)}</select></Field><Field label="Quantity change" hint="Positive receives stock; negative records a reduction."><input required type="number" step="1" value={delta} onChange={event => setDelta(event.target.value)} placeholder="e.g. -3" /></Field><Field label="Reason"><input required value={reason} onChange={event => setReason(event.target.value)} placeholder="Cycle count correction, damage, found stock…" /></Field>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !selection}>Record adjustment</button></div></form></Modal>;
+  return <Modal title="Adjust stock" subtitle="Adjustments are never silent. OrderMate records the item, location, reason and person responsible." onClose={onClose}><form onSubmit={event => { event.preventDefault(); mutation.mutate(); }} className="form-grid one"><Field label="Variant / location"><select required value={selection} onChange={event => setSelection(event.target.value)}>{unique.map(row => <option key={`${row.variant_id}:${row.location_id}`} value={`${row.variant_id}:${row.location_id}`}>{row.product_name} · {row.variant_name} — {row.location_name} ({row.tracked === 0 ? "not stocked" : `${row.available} available`})</option>)}</select></Field><Field label="Quantity change" hint="Positive receives stock; negative records a reduction."><input required type="number" step="1" value={delta} onChange={event => setDelta(event.target.value)} placeholder="e.g. -3" /></Field><Field label="Reason"><input required value={reason} onChange={event => setReason(event.target.value)} placeholder="Cycle count correction, damage, found stock…" /></Field>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !selection}>Record adjustment</button></div></form></Modal>;
 }
 
 function TransferModal({ tenant, rows, locations, onClose, onDone }: { tenant: OrganizationSummary; rows: InventoryRow[]; locations: Location[]; onClose: () => void; onDone: () => void }) {
-  const sources = rows.filter(row => row.available > 0);
+  const sources = rows.filter(row => row.tracked !== 0 && row.available > 0);
   const [sourceKey, setSourceKey] = useState(sources[0] ? `${sources[0].variant_id}:${sources[0].location_id}` : "");
   const source = sources.find(row => `${row.variant_id}:${row.location_id}` === sourceKey);
   const destinations = locations.filter(location => location.id !== source?.location_id);
