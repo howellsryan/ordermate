@@ -20,6 +20,7 @@ type DocumentSummary = {
   status: string;
 };
 
+const PURPOSE = "purchase-source";
 export const documentsApp = new Hono<{ Bindings: Env }>();
 
 async function contextFor(request: Request, env: Env, action: "read" | "create") {
@@ -39,10 +40,6 @@ async function contextFor(request: Request, env: Env, action: "read" | "create")
   return { session, tenantId, membership } as const;
 }
 
-function purpose(value: FormDataEntryValue | string | null) {
-  return String(value || "purchase-source").replace(/[^a-z0-9_-]/gi, "-").slice(0, 40) || "purchase-source";
-}
-
 function documentSummary(object: R2Object): DocumentSummary {
   const metadata = object.customMetadata || {};
   return {
@@ -51,7 +48,7 @@ function documentSummary(object: R2Object): DocumentSummary {
     size: object.size,
     uploaded: object.uploaded.toISOString(),
     contentType: object.httpMetadata?.contentType || "application/octet-stream",
-    purpose: metadata.purpose || "document",
+    purpose: PURPOSE,
     status: metadata.status || "uploaded",
   };
 }
@@ -59,9 +56,8 @@ function documentSummary(object: R2Object): DocumentSummary {
 documentsApp.get("/", async c => {
   const context = await contextFor(c.req.raw, c.env, "read");
   if ("error" in context) return context.error;
-  const requestedPurpose = (c.req.query("purpose") || "purchase-source").replace(/[^a-z0-9_-]/gi, "-").slice(0, 40);
   const listed = await c.env.DOCUMENTS.list({
-    prefix: `${context.tenantId}/${requestedPurpose}/`,
+    prefix: `${context.tenantId}/${PURPOSE}/`,
     limit: 100,
     include: ["customMetadata", "httpMetadata"],
   });
@@ -73,7 +69,7 @@ documentsApp.get("/file", async c => {
   const context = await contextFor(c.req.raw, c.env, "read");
   if ("error" in context) return context.error;
   const key = c.req.query("key") || "";
-  const allowedPrefix = `${context.tenantId}/purchase-source/`;
+  const allowedPrefix = `${context.tenantId}/${PURPOSE}/`;
   if (!key.startsWith(allowedPrefix)) return c.json({ error: "Document not found" }, 404);
 
   const object = await c.env.DOCUMENTS.get(key);
@@ -96,9 +92,8 @@ documentsApp.post("/", async c => {
   const allowedType = file.type === "application/pdf" || file.type.startsWith("image/");
   if (!allowedType) return c.json({ error: "Only PDF and image source documents are supported" }, 415);
 
-  const docPurpose = purpose(form.get("purpose"));
   const eventId = crypto.randomUUID();
-  const key = `${context.tenantId}/${docPurpose}/${eventId}`;
+  const key = `${context.tenantId}/${PURPOSE}/${eventId}`;
   const createdAt = new Date().toISOString();
   await c.env.DOCUMENTS.put(key, file.stream(), {
     httpMetadata: { contentType: file.type || "application/octet-stream" },
@@ -106,7 +101,7 @@ documentsApp.post("/", async c => {
       tenantId: context.tenantId,
       uploadedBy: context.session.user.id,
       originalName: file.name.slice(0, 180),
-      purpose: docPurpose,
+      purpose: PURPOSE,
       status: "uploaded",
       createdAt,
     },
@@ -117,11 +112,11 @@ documentsApp.post("/", async c => {
     eventId,
     tenantId: context.tenantId,
     key,
-    purpose: docPurpose,
+    purpose: PURPOSE,
     uploadedBy: context.session.user.id,
     createdAt,
   });
 
   const object = await c.env.DOCUMENTS.head(key);
-  return c.json(object ? documentSummary(object) : { key, name: file.name, size: file.size, uploaded: createdAt, contentType: file.type, purpose: docPurpose, status: "uploaded" }, 201);
+  return c.json(object ? documentSummary(object) : { key, name: file.name, size: file.size, uploaded: createdAt, contentType: file.type, purpose: PURPOSE, status: "uploaded" }, 201);
 });
