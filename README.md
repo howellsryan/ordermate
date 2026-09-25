@@ -20,16 +20,20 @@ See `docs/architecture.md` and `docs/delivery-plan.md`.
 
 OrderMate currently includes:
 
-- Google sign-in, multiple businesses per user, invitations and role-based access.
+- Google sign-in, multiple businesses per user, invitations and role-based access;
 - products, arbitrary option dimensions, variants, SKUs, barcodes and modifiers;
+- create-only CSV catalogue onboarding with dry-run validation, arbitrary `option:<name>` columns, supplier mapping and opening stock committed atomically;
 - multi-location stock with on-hand, reserved, available and incoming quantities;
 - immutable inventory movements, transfers, adjustments and barcode lookup;
+- a dedicated Warehouse workspace for barcode-driven picking and PO receiving using hardware scanners, manual input or lazy-loaded mobile camera scanning;
 - suppliers, supplier-SKU mappings, purchase orders, partial receiving and cancellation;
 - deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
+- per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
 - global search, operational attention inbox, audit/activity, CSV exports and record detail views;
-- tenant-scoped R2 purchasing documents and a human-review AI extraction workflow;
-- non-destructive catalogue archive/restore and maintainable supplier/customer records.
+- tenant-scoped R2 purchasing documents and human-reviewed AI extraction for purchase documents and delivery notes;
+- non-destructive catalogue archive/restore and maintainable supplier/customer records; and
+- ordered tenant-schema migration tracking, currently schema v2.
 
 ## Local setup
 
@@ -90,6 +94,18 @@ OrderMate currently includes:
    npm run dev
    ```
 
+## Catalogue CSV onboarding
+
+Products -> **Import CSV** provides a reviewed onboarding path for new catalogues.
+
+The template supports product/variant commercial fields, arbitrary option columns such as `option:Size`, supplier mapping and optional opening stock at an existing location code.
+
+The flow is intentionally safe:
+
+`browser parse -> tenant dry-run -> explicit review -> fingerprint re-check -> one SQLite transaction`
+
+The browser parser is not trusted as validation. Commit revalidates against current tenant state, rejects stale previews and rolls back the entire import if any write fails. Opening stock creates normal immutable inventory movements rather than bypassing the stock ledger.
+
 ## AI purchase-document extraction
 
 The workflow is deliberately proposal-based:
@@ -99,6 +115,8 @@ The workflow is deliberately proposal-based:
 AI never submits a PO, receives stock, adjusts inventory or fulfils an order.
 
 Exact matching is limited to known supplier identity, supplier SKU, barcode and OrderMate SKU. Ambiguous lines stay unmatched for human correction. Raw converted Markdown is not persisted; R2 stores the original source and the structured proposal.
+
+Delivery-note assistance follows the same trust boundary but is anchored to one existing PO and only stages reviewed quantities into the Warehouse receiving flow; the canonical PO receipt still performs the actual inventory mutation.
 
 ### Residency gate
 
@@ -126,7 +144,7 @@ npm test
 npm run build
 ```
 
-The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, deterministic document matching and non-destructive record maintenance are required regression areas.
+The test suite runs the Worker and SQLite-backed Durable Objects using Cloudflare's Vitest integration. Tenant isolation, authorization, inventory consistency, schema upgrades, barcode/warehouse invariants, deterministic document matching and import atomicity are required regression areas.
 
 ## Production configuration
 
