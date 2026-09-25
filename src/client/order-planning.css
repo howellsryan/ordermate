@@ -46,6 +46,9 @@
     color: var(--ink);
     font-size: 11px;
   }
+  .order-plan-cell { min-width: 130px; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .order-plan-cell small { margin: 0; font-size: 9px; }
+  .order-row-overdue { background: #fffaf8; }
   .warehouse-urgency { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
   .warehouse-document.overdue-order { border-color: #e2b8b1; background: #fff9f7; }
   .warehouse-document.urgent-order { box-shadow: inset 3px 0 0 #b85b51; }
