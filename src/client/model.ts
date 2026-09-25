@@ -39,6 +39,8 @@ export type InventoryRow = {
   variant_name: string;
   sku: string;
   barcode?: string | null;
+  product_status?: string;
+  variant_active?: number;
   location_id: string;
   location_name: string;
   on_hand: number;
@@ -53,6 +55,7 @@ export type Supplier = {
   name: string;
   email?: string | null;
   phone?: string | null;
+  notes?: string | null;
 };
 
 export type SupplierVariant = {
@@ -108,6 +111,7 @@ export type Customer = {
   name: string;
   email?: string | null;
   phone?: string | null;
+  notes?: string | null;
 };
 
 export type PurchaseOrder = {
