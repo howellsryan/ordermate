@@ -73,6 +73,15 @@ Suppliers own purchase orders. PO lines snapshot supplier references, unit cost 
 
 Supplier-code learning is human-reviewed. When a purchase-document proposal contains a supplier SKU, the reviewer may explicitly choose to remember that code only after confirming the supplier and OrderMate variant. Existing different codes are not silently replaced. A supplier code already owned by another variant is rejected both in the review UX and by the canonical supplier-mapping endpoint, preserving deterministic future matching.
 
+### Purchase-order expected delivery
+Schema v3 adds nullable `purchase_orders.expected_delivery_date` plus an index for operational due-date queries.
+
+An operator may set or clear the expected date while a PO is draft, ordered or partially received. Manual changes are audited. Received/cancelled purchase orders are closed to expected-date edits.
+
+If no manual date is present when a draft PO is submitted, OrderMate derives one only when **every PO line** has a supplier-specific lead-time mapping. It uses the maximum mapped lead time so a multi-line PO is not declared overdue before its slowest known item is expected. If any line lacks lead-time coverage, expected delivery remains unset rather than presenting false precision.
+
+Expected delivery is an operational projection, not a lifecycle state. An open PO whose expected date is before the current UTC calendar date is surfaced as overdue in purchasing and attention views while its canonical status remains `ordered` or `partially_received`. Expected date and `ordered_at` are included in PO exports. A future tenant-timezone setting can deliberately move these date-only comparisons to business-local time; until then client/server comparisons use UTC consistently.
+
 ### Replenishment planning
 Replenishment is deterministic and human-approved. It uses available/reserved stock, incoming submitted POs, fulfilled demand over the last 30 days and supplier lead time.
 
@@ -125,21 +134,24 @@ All amounts are integer minor units. Each line stores net, tax and gross values 
 5. Static role permissions are checked server-side and unclassified tenant routes fail closed.
 6. Catalogue import preview/commit are explicitly classified as `catalogue:create`, not generic inventory updates.
 7. Cycle-count commit is explicitly classified as `stocktake:create`; fulfilment roles do not inherit it from generic inventory update permission.
-8. The Worker routes to the tenant's EU Durable Object and replaces all internal actor headers.
-9. The tenant object records actor ID/role on every mutation.
-10. R2 document/proposal keys are tenant-prefixed and document endpoints repeat membership/permission checks.
-11. Custom mutations reject cross-site requests before business handlers run.
-12. Queue logging is limited to event type/ID; source filenames, tenant IDs, user IDs and document contents are not logged.
+8. Purchase-order expected-delivery edits are purchasing updates and inherit purchasing RBAC; fulfilment/viewer cannot mutate them.
+9. The Worker routes to the tenant's EU Durable Object and replaces all internal actor headers.
+10. The tenant object records actor ID/role on every mutation.
+11. R2 document/proposal keys are tenant-prefixed and document endpoints repeat membership/permission checks.
+12. Custom mutations reject cross-site requests before business handlers run.
+13. Queue logging is limited to event type/ID; source filenames, tenant IDs, user IDs and document contents are not logged.
 
-Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching, warehouse scan invariants, cycle-count stale/atomicity guarantees, archive/restore invariants, migration upgrades and catalogue-import stale/atomicity guarantees.
+Tests must cover guessed IDs, changed tenant headers, cross-tenant document keys, unauthorized roles, repeated/idempotent messages, deterministic document matching, warehouse scan invariants, cycle-count stale/atomicity guarantees, PO due-date derivation/edit controls, archive/restore invariants, migration upgrades and catalogue-import stale/atomicity guarantees.
 
 ## Schema evolution
 
-Tenant storage is currently schema version **2**.
+Tenant storage is currently schema version **3**.
 
 The final exported `TenantStore` runs an ordered versioning layer under the Durable Object initialization barrier. `_sql_schema_migrations` stores monotonically increasing applied migration IDs. Existing pre-tracker v1 tenant objects and fresh v1 objects are safely marked migration `1` only after all 25 baseline v1 tables are verified. A tenant whose stored migration version is newer than the running application fails closed instead of being interpreted by older code.
 
-Migration `2` creates `inventory_policies` and its preferred-supplier index in-place. Fresh tenants and simulated v1 -> v2 upgrades are covered by regression tests, including preservation of existing catalogue data.
+Migration `2` creates `inventory_policies` and its preferred-supplier index in place.
+
+Migration `3` adds nullable `purchase_orders.expected_delivery_date` and `purchase_orders_expected_delivery_idx`. The migration checks whether the column already exists before running `ALTER TABLE`, so recovery is safe if DDL was applied but migration bookkeeping was interrupted. Tests cover fresh schema, v1 -> v2 -> v3 evolution and migration-3 replay with the DDL already present.
 
 Cloudflare Durable Objects do not support `PRAGMA user_version`, so OrderMate follows Cloudflare's documented explicit migration-table pattern rather than relying on that SQLite pragma.
 
