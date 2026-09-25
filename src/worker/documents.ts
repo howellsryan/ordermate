@@ -69,6 +69,22 @@ documentsApp.get("/", async c => {
   return c.json({ documents, truncated: listed.truncated, cursor: listed.truncated ? listed.cursor : undefined });
 });
 
+documentsApp.get("/file", async c => {
+  const context = await contextFor(c.req.raw, c.env, "read");
+  if ("error" in context) return context.error;
+  const key = c.req.query("key") || "";
+  const allowedPrefix = `${context.tenantId}/purchase-source/`;
+  if (!key.startsWith(allowedPrefix)) return c.json({ error: "Document not found" }, 404);
+
+  const object = await c.env.DOCUMENTS.get(key);
+  if (!object) return c.json({ error: "Document not found" }, 404);
+  const headers = new Headers({ "cache-control": "private, no-store" });
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-disposition", "inline");
+  return new Response(object.body, { headers });
+});
+
 documentsApp.post("/", async c => {
   const context = await contextFor(c.req.raw, c.env, "create");
   if ("error" in context) return context.error;
