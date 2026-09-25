@@ -1,19 +1,41 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PackageCheck, Plus, Trash2, XCircle } from "lucide-react";
+import { PackageCheck, Plus, Search, Trash2, XCircle } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import type { PurchasingSavedViewConfig } from "../../shared/saved-views";
 import DeliveryDiscrepancies from "../DeliveryDiscrepancies";
 import DocumentInbox from "../DocumentInbox";
 import Replenishment, { type PurchaseOrderSeed } from "../Replenishment";
 import { PurchaseOrderDetailModal } from "../RecordDetails";
+import SavedViews from "../SavedViews";
 import { calendarDate, date, isOverdueDate, money, tenantApi } from "../api";
 import type { Location, Product, PurchaseOrder, PurchaseOrderDetail, Supplier } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "../ui";
 
 type DraftLine = { id: string; variantId: string; quantity: string; cost: string; tax: string };
 
+const DEFAULT_VIEW: PurchasingSavedViewConfig = { query: "", supplierId: null, status: "all", due: "all" };
+
 function purchaseOrderOverdue(po: PurchaseOrder) {
   return ["ordered", "partially_received"].includes(po.status) && isOverdueDate(po.expected_delivery_date);
+}
+
+function utcDateOnly(offsetDays = 0) {
+  const value = new Date();
+  value.setUTCDate(value.getUTCDate() + offsetDays);
+  return value.toISOString().slice(0, 10);
+}
+
+function purchaseOrderMatchesDue(po: PurchaseOrder, due: PurchasingSavedViewConfig["due"]) {
+  if (due === "all") return true;
+  const open = ["ordered", "partially_received"].includes(po.status);
+  if (!open) return false;
+  if (due === "overdue") return purchaseOrderOverdue(po);
+  if (due === "no_date") return !po.expected_delivery_date;
+  if (!po.expected_delivery_date) return false;
+  const today = utcDateOnly();
+  const end = utcDateOnly(7);
+  return po.expected_delivery_date >= today && po.expected_delivery_date <= end;
 }
 
 export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) {
@@ -23,8 +45,20 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   const [poSeed, setPoSeed] = useState<PurchaseOrderSeed | null>(null);
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [view, setView] = useState<PurchasingSavedViewConfig>(DEFAULT_VIEW);
   const canWrite = tenant.role !== "viewer";
   const purchaseOrders = useQuery({ queryKey: ["tenant", tenant.id, "purchase-orders"], queryFn: () => tenantApi<PurchaseOrder[]>(tenant.id, "/purchase-orders") });
+  const suppliers = useQuery({ queryKey: ["tenant", tenant.id, "suppliers"], queryFn: () => tenantApi<Supplier[]>(tenant.id, "/suppliers") });
+  const filtered = useMemo(() => {
+    const needle = view.query.trim().toLocaleLowerCase();
+    return (purchaseOrders.data || []).filter(po => {
+      if (view.supplierId && po.supplier_id !== view.supplierId) return false;
+      if (view.status !== "all" && po.status !== view.status) return false;
+      if (!purchaseOrderMatchesDue(po, view.due)) return false;
+      if (needle && ![po.number, po.supplier_name, po.location_name, po.status].some(value => String(value || "").toLocaleLowerCase().includes(needle))) return false;
+      return true;
+    });
+  }, [purchaseOrders.data, view]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
@@ -37,12 +71,24 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   const openBlankPo = () => { setPoSeed(null); setCreateOpen(true); };
   const openSuggestedPo = (seed: PurchaseOrderSeed) => { setPoSeed(seed); setCreateOpen(true); };
 
+  useEffect(() => setView(DEFAULT_VIEW), [tenant.id]);
+
   return <>
     <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={openBlankPo}><Plus size={17} /> New purchase order</button> : undefined} />
     <Replenishment tenant={tenant} onCreatePurchaseOrder={openSuggestedPo} />
     <DocumentInbox tenant={tenant} />
     <DeliveryDiscrepancies tenant={tenant} />
-    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Expected</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => { const overdue = purchaseOrderOverdue(po); return <tr key={po.id} className={overdue ? "po-row-overdue" : ""}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td><span className={`po-due-cell ${overdue ? "overdue" : ""}`}><strong>{po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "—"}</strong><small>{overdue ? "Overdue" : po.status === "draft" && !po.expected_delivery_date ? "Set manually or on submit" : po.expected_delivery_date ? "Expected arrival" : "No lead-time estimate"}</small></span></td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>; })}</tbody></table></DataState></div>
+    <section className="panel view-toolbar">
+      <div className="view-filters">
+        <label className="filter-search"><Search size={15} /><input aria-label="Search purchase orders" value={view.query} onChange={event => setView(current => ({ ...current, query: event.target.value }))} placeholder="PO, supplier, destination or status…" /></label>
+        <select aria-label="Filter purchase orders by supplier" value={view.supplierId || ""} onChange={event => setView(current => ({ ...current, supplierId: event.target.value || null }))}><option value="">All suppliers</option>{suppliers.data?.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select>
+        <select aria-label="Filter purchase orders by status" value={view.status} onChange={event => setView(current => ({ ...current, status: event.target.value as PurchasingSavedViewConfig["status"] }))}><option value="all">All statuses</option><option value="draft">Draft</option><option value="ordered">Ordered</option><option value="partially_received">Partially received</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select>
+        <select aria-label="Filter purchase orders by expected delivery" value={view.due} onChange={event => setView(current => ({ ...current, due: event.target.value as PurchasingSavedViewConfig["due"] }))}><option value="all">All due dates</option><option value="overdue">Overdue</option><option value="due_7_days">Due in 7 days</option><option value="no_date">No expected date</option></select>
+        <button type="button" className="table-action quiet" disabled={JSON.stringify(view) === JSON.stringify(DEFAULT_VIEW)} onClick={() => setView(DEFAULT_VIEW)}>Clear</button>
+      </div>
+      <SavedViews tenant={tenant} page="purchasing" config={view} onApply={setView} />
+    </section>
+    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!filtered.length} emptyText={purchaseOrders.data?.length ? "No purchase orders match the current view." : "Create your first purchase order to start tracking incoming inventory."}><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Expected</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{filtered.map(po => { const overdue = purchaseOrderOverdue(po); return <tr key={po.id} className={overdue ? "po-row-overdue" : ""}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td><span className={`po-due-cell ${overdue ? "overdue" : ""}`}><strong>{po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "—"}</strong><small>{overdue ? "Overdue" : po.status === "draft" && !po.expected_delivery_date ? "Set manually or on submit" : po.expected_delivery_date ? "Expected arrival" : "No lead-time estimate"}</small></span></td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>; })}</tbody></table></DataState></div>
     {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
     {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} seed={poSeed || undefined} onClose={() => { setCreateOpen(false); setPoSeed(null); }} onCreated={() => { setCreateOpen(false); setPoSeed(null); refresh(); }} />}
     {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
