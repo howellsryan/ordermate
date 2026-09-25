@@ -1,6 +1,7 @@
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import baseWorker from "./index";
+import { documentsApp } from "./documents";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
 import { TenantStore } from "./tenant-store";
@@ -53,6 +54,13 @@ export default {
       const response = await operationsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(response);
     }
+
+    if (url.pathname === "/api/documents") {
+      url.pathname = "/";
+      const response = await documentsApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(response);
+    }
+
     return baseWorker.fetch(request, env, ctx);
   },
 
