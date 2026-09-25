@@ -13,6 +13,7 @@ import "./product-edit.css";
 import "./confirmations.css";
 import "./supply-planning.css";
 import "./maintenance.css";
+import "./warehouse.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
