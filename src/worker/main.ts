@@ -16,6 +16,8 @@ type Env = AuthEnv & {
 
 type Membership = { id: string; role: Role };
 
+type QueueEnvelope = { type?: string; eventId?: string };
+
 function secureApiResponse(response: Response) {
   const secured = new Response(response.body, response);
   secured.headers.set("Cache-Control", "no-store");
@@ -64,7 +66,16 @@ export default {
     return baseWorker.fetch(request, env, ctx);
   },
 
-  async queue(batch: MessageBatch, env: Env) {
-    return baseWorker.queue(batch, env);
+  async queue(batch: MessageBatch) {
+    for (const message of batch.messages) {
+      try {
+        const envelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
+        console.log("OrderMate event", envelope.type || "unknown", envelope.eventId || message.id);
+        message.ack();
+      } catch (cause) {
+        console.error("Queue event failed", cause instanceof Error ? cause.message : "unknown error");
+        message.retry();
+      }
+    }
   },
 };
