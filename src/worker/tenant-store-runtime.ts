@@ -84,6 +84,14 @@ const supplierVariantInput = z.object({
   leadTimeDays: z.number().int().min(0).max(3650).optional(),
 });
 
+const contactUpdateInput = z.object({
+  name: z.string().trim().min(1).max(200),
+  email: z.string().email().optional(),
+  phone: z.string().trim().max(80).optional(),
+  notes: z.string().max(4000).optional(),
+});
+
+const productStatusInput = z.object({ status: z.enum(["active", "archived"]) });
 const timestamp = () => new Date().toISOString();
 
 /**
@@ -157,8 +165,23 @@ export class TenantStore extends CoreTenantStore {
       return Response.json(this.replenishmentSuggestions());
     }
 
+    const productStatus = path.match(/^\/products\/([^/]+)\/status$/);
+    if (request.method === "PATCH" && productStatus) {
+      return this.updateProductStatus(decodeURIComponent(productStatus[1]), request);
+    }
+
     if (request.method === "PATCH" && /^\/products\/[^/]+$/.test(path)) {
       return this.updateProduct(decodeURIComponent(path.split("/")[2]), request);
+    }
+
+    const supplierUpdate = path.match(/^\/suppliers\/([^/]+)$/);
+    if (request.method === "PATCH" && supplierUpdate) {
+      return this.updateContact("supplier", decodeURIComponent(supplierUpdate[1]), request);
+    }
+
+    const customerUpdate = path.match(/^\/customers\/([^/]+)$/);
+    if (request.method === "PATCH" && customerUpdate) {
+      return this.updateContact("customer", decodeURIComponent(customerUpdate[1]), request);
     }
 
     const cancelPurchaseOrder = path.match(/^\/purchase-orders\/([^/]+)\/cancel$/);
@@ -197,7 +220,7 @@ export class TenantStore extends CoreTenantStore {
        CROSS JOIN locations l
        LEFT JOIN inventory_levels il ON il.variant_id = v.id AND il.location_id = l.id
        LEFT JOIN incoming inc ON inc.variant_id = v.id AND inc.location_id = l.id
-       WHERE v.active = 1 AND l.active = 1
+       WHERE l.active = 1 AND (v.active = 1 OR il.variant_id IS NOT NULL OR inc.quantity IS NOT NULL)
        ORDER BY p.name, v.name, l.name`,
     ).toArray();
   }
@@ -386,6 +409,41 @@ export class TenantStore extends CoreTenantStore {
     );
   }
 
+  private async updateProductStatus(productId: string, request: Request) {
+    let input: z.infer<typeof productStatusInput>;
+    try {
+      input = productStatusInput.parse(await request.json());
+    } catch (cause) {
+      if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message || "Invalid product status" }, { status: 400 });
+      throw cause;
+    }
+
+    const product = this.runtimeCtx.storage.sql.exec<{ id: string; status: string }>(
+      "SELECT id, status FROM products WHERE id = ?",
+      productId,
+    ).toArray()[0];
+    if (!product) return Response.json({ error: "Product not found" }, { status: 404 });
+    if (product.status === input.status) return Response.json({ ok: true, status: input.status });
+
+    const updatedAt = timestamp();
+    this.runtimeCtx.storage.transactionSync(() => {
+      this.runtimeCtx.storage.sql.exec(
+        "UPDATE products SET status = ?, updated_at = ? WHERE id = ?",
+        input.status,
+        updatedAt,
+        productId,
+      );
+      this.runtimeCtx.storage.sql.exec(
+        "UPDATE product_variants SET active = ?, updated_at = ? WHERE product_id = ?",
+        input.status === "active" ? 1 : 0,
+        updatedAt,
+        productId,
+      );
+      this.auditRuntime(request, input.status === "active" ? "product.restored" : "product.archived", "product", productId, { previousStatus: product.status });
+    });
+    return Response.json({ ok: true, status: input.status });
+  }
+
   private async updateProduct(productId: string, request: Request) {
     let input: z.infer<typeof productUpdateInput>;
     try {
@@ -467,6 +525,35 @@ export class TenantStore extends CoreTenantStore {
       return Response.json({ error: "Could not update product" }, { status: 500 });
     }
 
+    return Response.json({ ok: true });
+  }
+
+  private async updateContact(kind: "supplier" | "customer", recordId: string, request: Request) {
+    let input: z.infer<typeof contactUpdateInput>;
+    try {
+      input = contactUpdateInput.parse(await request.json());
+    } catch (cause) {
+      if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message || `Invalid ${kind} update` }, { status: 400 });
+      throw cause;
+    }
+
+    const table = kind === "supplier" ? "suppliers" : "customers";
+    const existing = this.runtimeCtx.storage.sql.exec<{ id: string }>(`SELECT id FROM ${table} WHERE id = ?`, recordId).toArray()[0];
+    if (!existing) return Response.json({ error: `${kind === "supplier" ? "Supplier" : "Customer"} not found` }, { status: 404 });
+
+    const updatedAt = timestamp();
+    this.runtimeCtx.storage.transactionSync(() => {
+      this.runtimeCtx.storage.sql.exec(
+        `UPDATE ${table} SET name = ?, email = ?, phone = ?, notes = ?, updated_at = ? WHERE id = ?`,
+        input.name,
+        input.email?.trim() || null,
+        input.phone?.trim() || null,
+        input.notes?.trim() || null,
+        updatedAt,
+        recordId,
+      );
+      this.auditRuntime(request, `${kind}.updated`, kind, recordId, { name: input.name });
+    });
     return Response.json({ ok: true });
   }
 
