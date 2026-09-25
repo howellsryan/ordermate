@@ -2,17 +2,44 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OrganizationSummary } from "../shared/types";
 import { calendarDate, date, isOverdueDate, money, tenantApi } from "./api";
-import type { OrderDetail, PurchaseOrderDetail } from "./model";
+import type { OrderDetail, OrderPriority, PurchaseOrderDetail } from "./model";
 import { ErrorText, Modal, Status } from "./ui";
 
 export function OrderDetailModal({ tenant, orderId, onClose }: { tenant: OrganizationSummary; orderId: string; onClose: () => void }) {
+  const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ["tenant", tenant.id, "order", orderId],
     queryFn: () => tenantApi<OrderDetail>(tenant.id, `/orders/${orderId}`),
   });
   const order = detail.data;
+  const canPlan = ["owner", "admin", "manager"].includes(tenant.role);
+  const canEditPlanning = !!order && canPlan && !["completed", "cancelled"].includes(order.status);
+  const [requiredByDate, setRequiredByDate] = useState("");
+  const [priority, setPriority] = useState<OrderPriority>("normal");
 
-  return <Modal title={order?.number || "Order details"} subtitle="The commercial snapshot captured by this order, including fulfilment and return progress." onClose={onClose} wide>
+  useEffect(() => {
+    setRequiredByDate(order?.required_by_date || "");
+    setPriority(order?.priority || "normal");
+  }, [order?.id, order?.required_by_date, order?.priority]);
+
+  const savePlanning = useMutation({
+    mutationFn: () => tenantApi<{ ok: true; requiredByDate: string | null; priority: OrderPriority }>(tenant.id, `/orders/${orderId}/planning`, {
+      method: "PATCH",
+      body: JSON.stringify({ requiredByDate: requiredByDate || null, priority }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "order", orderId] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "orders"] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] }),
+      ]);
+    },
+  });
+  const planningDirty = !!order && (requiredByDate !== (order.required_by_date || "") || priority !== (order.priority || "normal"));
+  const overdue = !!order && !["completed", "cancelled"].includes(order.status) && isOverdueDate(order.required_by_date);
+
+  return <Modal title={order?.number || "Order details"} subtitle="The commercial snapshot captured by this order, including fulfilment, return progress and operational priority." onClose={onClose} wide>
     {detail.isLoading ? <DetailLoading /> : detail.error ? <ErrorText error={detail.error} /> : order ? <div className="record-detail">
       <div className="record-summary">
         <Summary label="Customer" value={order.customer_name || "Guest"} />
@@ -20,7 +47,24 @@ export function OrderDetailModal({ tenant, orderId, onClose }: { tenant: Organiz
         <Summary label="Created" value={date(order.created_at)} />
         <Summary label="Total" value={money(order.total_minor, order.currency)} strong />
       </div>
-      <div className="record-status-row"><span>Order <Status value={order.status} /></span><span>Fulfilment <Status value={order.fulfilment_status} /></span></div>
+      <div className="record-status-row">
+        <span>Order <Status value={order.status} /></span>
+        <span>Fulfilment <Status value={order.fulfilment_status} /></span>
+        <span>Priority <b className={`order-priority order-priority-${order.priority || "normal"}`}>{order.priority || "normal"}</b></span>
+        {order.required_by_date && <span className={overdue ? "order-overdue-flag" : "order-required-flag"}>Required {calendarDate(order.required_by_date)}{overdue ? " · overdue" : ""}</span>}
+      </div>
+      {canEditPlanning && <div className="order-planning-editor">
+        <div><strong>Picking priority & required-by date</strong><small>Use the required-by date for a real customer/operational commitment. Priority controls warehouse queue order but never changes stock or order lifecycle automatically.</small></div>
+        <select aria-label="Order priority" value={priority} onChange={event => setPriority(event.target.value as OrderPriority)}>
+          <option value="low">Low priority</option>
+          <option value="normal">Normal priority</option>
+          <option value="high">High priority</option>
+          <option value="urgent">Urgent</option>
+        </select>
+        <input aria-label="Required-by date" type="date" value={requiredByDate} onChange={event => setRequiredByDate(event.target.value)} />
+        <button className="secondary" disabled={savePlanning.isPending || !planningDirty} onClick={() => savePlanning.mutate()}>{savePlanning.isPending ? "Saving…" : "Save planning"}</button>
+      </div>}
+      {savePlanning.error && <ErrorText error={savePlanning.error} />}
       <div className="detail-lines">
         <div className="detail-lines-head"><span>Item</span><span>Qty</span><span>Fulfilled</span><span>Returned</span><span>Unit</span></div>
         {order.lines.map(line => <div className="detail-line" key={line.id}>
