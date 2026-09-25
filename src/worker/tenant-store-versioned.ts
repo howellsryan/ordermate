@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 4;
+const CURRENT_TENANT_SCHEMA_VERSION = 5;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -140,6 +140,27 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 4);
     });
     current = 4;
+  }
+
+  if (current < 5) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS saved_views (
+          id TEXT PRIMARY KEY,
+          owner_actor_id TEXT NOT NULL,
+          page TEXT NOT NULL CHECK(page IN ('inventory','purchasing')),
+          name TEXT NOT NULL COLLATE NOCASE,
+          config_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(owner_actor_id, page, name)
+        );
+        CREATE INDEX IF NOT EXISTS saved_views_owner_page_idx
+          ON saved_views(owner_actor_id, page, updated_at DESC);
+      `);
+      recordMigration(storage, 5);
+    });
+    current = 5;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
