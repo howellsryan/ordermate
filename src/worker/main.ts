@@ -15,6 +15,7 @@ type Env = AuthEnv & {
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
   AI: Ai;
+  AI_DOCUMENT_EXTRACTION_ENABLED: string;
 };
 
 type Membership = { id: string; role: Role };
@@ -59,15 +60,11 @@ function maskUnexpectedApiError(pathname: string, response: Response) {
 async function enforceControlPlaneRead(request: Request, env: Env, url: URL) {
   const match = url.pathname.match(/^\/api\/organizations\/([^/]+)\/members$/);
   if (request.method !== "GET" || !match) return null;
-
   const auth = createAuth(env, request);
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
   const organizationId = decodeURIComponent(match[1]);
-  const membership = await env.CONTROL_DB.prepare(
-    "SELECT id, role FROM member WHERE userId = ? AND organizationId = ?",
-  ).bind(session.user.id, organizationId).first<Membership>();
+  const membership = await env.CONTROL_DB.prepare("SELECT id, role FROM member WHERE userId = ? AND organizationId = ?").bind(session.user.id, organizationId).first<Membership>();
   if (!membership) return Response.json({ error: "Forbidden" }, { status: 403 });
   if (!can(membership.role, "members", "read")) return Response.json({ error: "Insufficient permission" }, { status: 403 });
   return null;
@@ -88,10 +85,8 @@ function isDocumentUploadedEvent(value: unknown): value is DocumentUploadedEvent
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
-
     const crossOrigin = rejectCrossOriginMutation(request, url);
     if (crossOrigin) return crossOrigin;
-
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
 
@@ -101,21 +96,18 @@ export default {
       const response = await movementHistoryApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
-
     if (url.pathname === "/api/ops" || url.pathname.startsWith("/api/ops/")) {
       const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/ops/, "") || "/";
       const response = await operationsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
-
     if (url.pathname === "/api/documents" || url.pathname.startsWith("/api/documents/")) {
       const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/documents/, "") || "/";
       const response = await documentsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
-
     const response = await baseWorker.fetch(request, env, ctx);
     return url.pathname.startsWith("/api/") ? secureApiResponse(maskUnexpectedApiError(url.pathname, response)) : response;
   },
@@ -125,7 +117,11 @@ export default {
       const envelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
       try {
         if (isDocumentUploadedEvent(message.body)) {
-          await processDocumentUploaded(message.body, env);
+          if (env.AI_DOCUMENT_EXTRACTION_ENABLED === "true") {
+            await processDocumentUploaded(message.body, env);
+          } else {
+            console.log("OrderMate event skipped: AI document extraction disabled", envelope.eventId || message.id);
+          }
         }
         console.log("OrderMate event processed", envelope.type || "unknown", envelope.eventId || message.id);
         message.ack();
