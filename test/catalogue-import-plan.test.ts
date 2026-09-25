@@ -95,6 +95,16 @@ describe("catalogue import planning", () => {
     expect(plan.errors.map(issue => issue.code)).toEqual(expect.arrayContaining(["product_category_conflict", "product_description_conflict"]));
   });
 
+  it("treats blank versus populated product metadata as a conflict instead of silently taking the first row", async () => {
+    const plan = await buildReviewedCatalogueImportPlan([
+      row({ category: "", description: "" }),
+      row({ rowNumber: 3, sku: "TEE-M", barcode: "5010000000099", variantName: "Medium", openingStock: "0" }),
+    ], existing());
+
+    expect(plan.canCommit).toBe(false);
+    expect(plan.errors.map(issue => issue.code)).toEqual(expect.arrayContaining(["product_category_conflict", "product_description_conflict"]));
+  });
+
   it("uses existing exact category/supplier identities instead of planning duplicates", async () => {
     const plan = await buildReviewedCatalogueImportPlan([row()], existing({
       categories: [{ id: "cat-apparel", name: " apparel " }],
