@@ -20,7 +20,7 @@ const policies: Record<Role, RolePolicy> = {
     catalogue: ["read"], inventory: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"],
   },
   fulfilment: {
-    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"],
+    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"],
   },
   viewer: {
     catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], settings: ["read"], members: ["read"],
