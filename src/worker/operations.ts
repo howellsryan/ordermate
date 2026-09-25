@@ -26,6 +26,7 @@ type Product = {
     price_minor: number;
     cost_minor: number;
     tax_rate_bps: number;
+    active?: number;
     options?: Record<string, string>;
   }>;
 };
@@ -140,11 +141,12 @@ operationsApp.get("/search", async c => {
   const productMatches: SearchResult[] = [];
   for (const product of products) {
     const productMatch = [product.name, product.category_name].some(value => includes(value, query));
-    if (productMatch) productMatches.push({ id: product.id, type: "Product", title: product.name, subtitle: product.category_name || `${product.variants.length} variant${product.variants.length === 1 ? "" : "s"}`, page: "products" });
+    const state = product.status === "archived" ? "Archived · " : "";
+    if (productMatch) productMatches.push({ id: product.id, type: "Product", title: product.name, subtitle: `${state}${product.category_name || `${product.variants.length} variant${product.variants.length === 1 ? "" : "s"}`}`, page: "products" });
     for (const variant of product.variants) {
       const optionText = Object.values(variant.options || {}).join(" ");
       if ([product.name, variant.name, variant.sku, variant.barcode, optionText].some(value => includes(value, query))) {
-        productMatches.push({ id: variant.id, type: "Variant", title: `${product.name} · ${variant.name}`, subtitle: [variant.sku, variant.barcode].filter(Boolean).join(" · "), page: "products", badge: variant.sku });
+        productMatches.push({ id: variant.id, type: "Variant", title: `${product.name} · ${variant.name}`, subtitle: `${state}${[variant.sku, variant.barcode].filter(Boolean).join(" · ")}`, page: "products", badge: variant.sku });
       }
     }
   }
@@ -176,11 +178,15 @@ operationsApp.get("/attention", async c => {
   const items: AttentionItem[] = [];
 
   if (can(context.membership.role, "inventory", "read")) {
-    const [inventory, settings] = await Promise.all([
+    const [inventory, settings, products] = await Promise.all([
       tenantJson<InventoryRow[]>(context.stub, "/inventory", actor),
       tenantJson<Settings>(context.stub, "/settings", actor),
+      tenantJson<Product[]>(context.stub, "/products", actor),
     ]);
-    for (const row of inventory.filter(row => row.tracked !== 0 && row.available <= settings.low_stock_threshold).slice(0, 12)) {
+    const activeVariantIds = new Set(products
+      .filter(product => product.status === "active")
+      .flatMap(product => product.variants.filter(variant => variant.active !== 0).map(variant => variant.id)));
+    for (const row of inventory.filter(row => activeVariantIds.has(row.variant_id) && row.tracked !== 0 && row.available <= settings.low_stock_threshold).slice(0, 12)) {
       items.push({
         id: `stock:${row.variant_id}:${row.location_id}`,
         severity: row.available <= 0 ? "critical" : "warning",
