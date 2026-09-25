@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PackageCheck, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import { OrderDetailModal } from "../RecordDetails";
 import { date, money, tenantApi } from "../api";
 import type { Customer, InventoryRow, Location, Order, OrderDetail, Product } from "../model";
 import { DataState, ErrorText, Field, Modal, PageHeader, Status } from "../ui";
@@ -10,6 +11,7 @@ type DraftLine = { id: string; variantId: string; quantity: string; modifierIds:
 
 export default function Orders({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
+  const [viewId, setViewId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [fulfilId, setFulfilId] = useState<string | null>(null);
   const [returnId, setReturnId] = useState<string | null>(null);
@@ -21,13 +23,15 @@ export default function Orders({ tenant }: { tenant: OrganizationSummary }) {
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
     qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
+    if (viewId) qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "order", viewId] });
   };
   const transition = useMutation({ mutationFn: ({ orderId, action }: { orderId: string; action: "confirm" | "cancel" }) => tenantApi(tenant.id, `/orders/${orderId}/${action}`, { method: "POST", body: JSON.stringify({}) }), onSuccess: refresh });
 
   return <>
     <PageHeader eyebrow="Sales" title="Orders" description="Draft orders snapshot commercial values, confirmation reserves stock, fulfilment consumes it, and returns can put physical stock back." actions={canCreate ? <button className="primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> New order</button> : undefined} />
-    <div className="panel table-panel"><DataState loading={orders.isLoading} error={orders.error} empty={!orders.data?.length} emptyText="Create the first order to exercise reservation and fulfilment."><table><thead><tr><th>Order</th><th>Customer</th><th>Location</th><th>Total</th><th>Order</th><th>Fulfilment</th><th /></tr></thead><tbody>{orders.data?.map(order => <tr key={order.id}><td><strong>{order.number}</strong><small>{date(order.created_at)}</small></td><td>{order.customer_name || "Guest"}</td><td>{order.location_name}</td><td>{money(order.total_minor, order.currency)}</td><td><Status value={order.status} /></td><td><Status value={order.fulfilment_status} /></td><td className="row-actions">{canUpdateLifecycle && order.status === "draft" && <button className="table-action" disabled={transition.isPending} onClick={() => transition.mutate({ orderId: order.id, action: "confirm" })}>Confirm</button>}{canUpdateLifecycle && order.status === "confirmed" && <button className="table-action" onClick={() => setFulfilId(order.id)}><PackageCheck size={14} /> Fulfil</button>}{canUpdateLifecycle && ["draft", "confirmed"].includes(order.status) && <button className="table-action quiet" disabled={transition.isPending} onClick={() => transition.mutate({ orderId: order.id, action: "cancel" })}>Cancel</button>}{canUpdateLifecycle && ["fulfilled", "partially_fulfilled", "partially_returned"].includes(order.fulfilment_status) && <button className="table-action quiet" onClick={() => setReturnId(order.id)}><RotateCcw size={14} /> Return</button>}</td></tr>)}</tbody></table></DataState></div>
+    <div className="panel table-panel"><DataState loading={orders.isLoading} error={orders.error} empty={!orders.data?.length} emptyText="Create the first order to exercise reservation and fulfilment."><table><thead><tr><th>Order</th><th>Customer</th><th>Location</th><th>Total</th><th>Order</th><th>Fulfilment</th><th /></tr></thead><tbody>{orders.data?.map(order => <tr key={order.id}><td><button className="record-link" onClick={() => setViewId(order.id)}>{order.number}</button><small>{date(order.created_at)}</small></td><td>{order.customer_name || "Guest"}</td><td>{order.location_name}</td><td>{money(order.total_minor, order.currency)}</td><td><Status value={order.status} /></td><td><Status value={order.fulfilment_status} /></td><td className="row-actions">{canUpdateLifecycle && order.status === "draft" && <button className="table-action" disabled={transition.isPending} onClick={() => transition.mutate({ orderId: order.id, action: "confirm" })}>Confirm</button>}{canUpdateLifecycle && order.status === "confirmed" && <button className="table-action" onClick={() => setFulfilId(order.id)}><PackageCheck size={14} /> Fulfil</button>}{canUpdateLifecycle && ["draft", "confirmed"].includes(order.status) && <button className="table-action quiet" disabled={transition.isPending} onClick={() => transition.mutate({ orderId: order.id, action: "cancel" })}>Cancel</button>}{canUpdateLifecycle && ["fulfilled", "partially_fulfilled", "partially_returned"].includes(order.fulfilment_status) && <button className="table-action quiet" onClick={() => setReturnId(order.id)}><RotateCcw size={14} /> Return</button>}</td></tr>)}</tbody></table></DataState></div>
     {transition.error && <div className="floating-error"><ErrorText error={transition.error} /></div>}
+    {viewId && <OrderDetailModal tenant={tenant} orderId={viewId} onClose={() => setViewId(null)} />}
     {createOpen && canCreate && <OrderModal tenant={tenant} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); refresh(); }} />}
     {fulfilId && canUpdateLifecycle && <FulfilModal tenant={tenant} orderId={fulfilId} onClose={() => setFulfilId(null)} onDone={() => { setFulfilId(null); refresh(); }} />}
     {returnId && canUpdateLifecycle && <ReturnModal tenant={tenant} orderId={returnId} onClose={() => setReturnId(null)} onDone={() => { setReturnId(null); refresh(); }} />}
