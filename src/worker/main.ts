@@ -15,7 +15,6 @@ type Env = AuthEnv & {
 };
 
 type Membership = { id: string; role: Role };
-
 type QueueEnvelope = { type?: string; eventId?: string };
 
 function secureApiResponse(response: Response) {
@@ -25,6 +24,33 @@ function secureApiResponse(response: Response) {
   secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   secured.headers.set("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
   return secured;
+}
+
+function isUnsafeMethod(method: string) {
+  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
+function isCustomApi(pathname: string) {
+  return pathname.startsWith("/api/tenant")
+    || pathname.startsWith("/api/ops")
+    || pathname.startsWith("/api/documents")
+    || pathname.startsWith("/api/organizations")
+    || pathname.startsWith("/api/invites");
+}
+
+function rejectCrossOriginMutation(request: Request, url: URL) {
+  if (!isUnsafeMethod(request.method) || !isCustomApi(url.pathname)) return null;
+  const origin = request.headers.get("origin");
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site" || origin && origin !== url.origin) {
+    return secureApiResponse(Response.json({ error: "Cross-origin mutation rejected" }, { status: 403 }));
+  }
+  return null;
+}
+
+function maskUnexpectedApiError(pathname: string, response: Response) {
+  if (!pathname.startsWith("/api/") || pathname.startsWith("/api/auth/") || response.status < 500) return response;
+  return Response.json({ error: "Unexpected server error" }, { status: 500 });
 }
 
 async function enforceControlPlaneRead(request: Request, env: Env, url: URL) {
@@ -48,22 +74,28 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
 
+    const crossOrigin = rejectCrossOriginMutation(request, url);
+    if (crossOrigin) return crossOrigin;
+
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
 
     if (url.pathname === "/api/ops" || url.pathname.startsWith("/api/ops/")) {
+      const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/ops/, "") || "/";
       const response = await operationsApp.fetch(new Request(url, request), env, ctx);
-      return secureApiResponse(response);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
 
     if (url.pathname === "/api/documents" || url.pathname.startsWith("/api/documents/")) {
+      const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/documents/, "") || "/";
       const response = await documentsApp.fetch(new Request(url, request), env, ctx);
-      return secureApiResponse(response);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
 
-    return baseWorker.fetch(request, env, ctx);
+    const response = await baseWorker.fetch(request, env, ctx);
+    return url.pathname.startsWith("/api/") ? secureApiResponse(maskUnexpectedApiError(url.pathname, response)) : response;
   },
 
   async queue(batch: MessageBatch) {
