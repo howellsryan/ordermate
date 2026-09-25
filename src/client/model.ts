@@ -144,3 +144,26 @@ export type AuditEvent = {
   metadata_json?: string | null;
   created_at: string;
 };
+
+export type SearchResult = {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  page: "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity";
+  badge?: string;
+};
+
+export type AttentionItem = {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  type: string;
+  title: string;
+  detail: string;
+  page: SearchResult["page"];
+};
+
+export type AttentionResponse = {
+  total: number;
+  items: AttentionItem[];
+};
