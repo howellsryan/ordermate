@@ -8,7 +8,7 @@ import { deliveryDocumentsApp } from "./delivery-documents";
 import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { can } from "./permissions";
-import { TenantStore } from "./tenant-store-reports";
+import { TenantStore } from "./tenant-store-order-planning";
 
 export { TenantStore };
 
