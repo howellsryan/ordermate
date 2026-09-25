@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Archive, Pencil, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
 import ProductEditModal from "../ProductEditModal";
 import { money, tenantApi } from "../api";
@@ -15,6 +15,7 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
   const [productOpen, setProductOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [statusProduct, setStatusProduct] = useState<Product | null>(null);
   const canWrite = ["owner", "admin", "manager"].includes(tenant.role);
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const modifiers = useQuery({ queryKey: ["tenant", tenant.id, "modifiers"], queryFn: () => tenantApi<ProductModifier[]>(tenant.id, "/modifiers") });
@@ -25,14 +26,36 @@ export default function Products({ tenant }: { tenant: OrganizationSummary }) {
     <div className="panel table-panel">
       <DataState loading={products.isLoading} error={products.error} empty={!products.data?.length} emptyText="Add your first product, then receive or adjust stock against its variants.">
         <table><thead><tr><th>Product</th><th>Variants</th><th>SKUs</th><th>Price range</th><th>Add-ons</th><th>Status</th><th /></tr></thead><tbody>
-          {products.data?.map(product => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td><td className="row-actions">{canWrite && <button className="table-action" onClick={() => setEditProduct(product)}><Pencil size={14} /> Edit</button>}</td></tr>)}
+          {products.data?.map(product => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.category_name || "Uncategorised"}</small></td><td>{product.variants.length}</td><td className="mono">{product.variants.slice(0, 2).map(variant => variant.sku).join(", ")}{product.variants.length > 2 ? "…" : ""}</td><td>{priceRange(product)}</td><td>{product.modifiers.length ? product.modifiers.map(modifier => modifier.name).join(", ") : "—"}</td><td><Status value={product.status} /></td><td className="row-actions">{canWrite && <><button className="table-action" onClick={() => setEditProduct(product)}><Pencil size={14} /> Edit</button><button className="table-action quiet" onClick={() => setStatusProduct(product)}>{product.status === "active" ? <Archive size={14} /> : <RotateCcw size={14} />}{product.status === "active" ? "Archive" : "Restore"}</button></>}</td></tr>)}
         </tbody></table>
       </DataState>
     </div>
     {editProduct && canWrite && <ProductEditModal tenant={tenant} product={editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); refresh(); }} />}
+    {statusProduct && canWrite && <ProductStatusModal tenant={tenant} product={statusProduct} onClose={() => setStatusProduct(null)} onSaved={() => { setStatusProduct(null); refresh(); }} />}
     {productOpen && canWrite && <ProductModal tenant={tenant} modifiers={modifiers.data || []} onClose={() => setProductOpen(false)} onCreated={() => { setProductOpen(false); refresh(); }} />}
     {modifierOpen && canWrite && <ModifierModal tenant={tenant} onClose={() => setModifierOpen(false)} onCreated={() => { setModifierOpen(false); refresh(); }} />}
   </>;
+}
+
+function ProductStatusModal({ tenant, product, onClose, onSaved }: { tenant: OrganizationSummary; product: Product; onClose: () => void; onSaved: () => void }) {
+  const restoring = product.status === "archived";
+  const nextStatus = restoring ? "active" : "archived";
+  const mutation = useMutation({
+    mutationFn: () => tenantApi(tenant.id, `/products/${product.id}/status`, { method: "PATCH", body: JSON.stringify({ status: nextStatus }) }),
+    onSuccess: onSaved,
+  });
+
+  return <Modal title={`${restoring ? "Restore" : "Archive"} ${product.name}?`} subtitle={restoring ? "Restore the product and its existing variant identities to active commercial use." : "Retire the product from new commercial selection without deleting inventory or history."} onClose={onClose}>
+    <div className="confirm-stack">
+      <div className="confirm-facts">
+        <span><small>Historical records</small><strong>Never rewritten or deleted</strong></span>
+        <span><small>Tracked inventory</small><strong>{restoring ? "Remains visible and sellable again" : "Remains visible for stock control"}</strong></span>
+      </div>
+      <p>{restoring ? "The existing variants become selectable for new orders, purchase orders and supplier mappings again." : "The variants stop appearing in new order/PO selection and replenishment. Existing stock movements, fulfilments, returns and commercial snapshots remain intact."}</p>
+      {mutation.error && <ErrorText error={mutation.error} />}
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className={restoring ? "primary" : "danger-button"} disabled={mutation.isPending} onClick={() => mutation.mutate()}>{restoring ? <RotateCcw size={16} /> : <Archive size={16} />}{restoring ? "Restore product" : "Archive product"}</button></div>
+    </div>
+  </Modal>;
 }
 
 function ProductModal({ tenant, modifiers, onClose, onCreated }: { tenant: OrganizationSummary; modifiers: ProductModifier[]; onClose: () => void; onCreated: () => void }) {
