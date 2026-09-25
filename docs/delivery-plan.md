@@ -4,12 +4,13 @@
 Ship an excellent general-purpose order and inventory SaaS whose core operations are trustworthy, with automation layered on top as reviewable proposals rather than a second source of business truth.
 
 ## Current implementation status
-The rebuild branch now contains the complete operational backbone plus schema-v3 purchasing/planning controls and the first automation/onboarding advantages:
+The rebuild branch now contains the complete operational backbone plus schema-v4 purchasing/planning controls and the first automation/onboarding advantages:
 
 - Cloudflare-native multi-tenant platform, Google auth, memberships/RBAC and audit attribution.
 - Products, arbitrary variants/options, modifiers, SKU/barcode, suppliers/customers and safe catalogue retirement.
 - Multi-location inventory, immutable movements, adjustments/transfers, cycle counts and tracked-vs-never-stocked semantics.
 - Purchase orders, expected delivery dates, overdue visibility, partial receiving, cancellation and supplier/variant mappings.
+- Persistent delivery discrepancies with open/resolved lifecycle, source evidence and audited resolution.
 - Orders, reservation, partial/full fulfilment, cancellation and returns/restock.
 - Search, exception inbox, record details, activity/audit and CSV export.
 - Explainable replenishment recommendations plus per-SKU/location custom rules.
@@ -17,10 +18,10 @@ The rebuild branch now contains the complete operational backbone plus schema-v3
 - Human-reviewed supplier SKU learning from document proposals with canonical ambiguity protection.
 - Dedicated Warehouse workspace for barcode-driven Pick & Fulfil and Receive Stock.
 - Cross-browser mobile camera barcode capture using lazy-loaded ZXing.
-- Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction.
+- Delivery-note extraction anchored to an existing PO -> exception review -> staged Warehouse receipt quantities -> canonical audited receiving transaction -> persistent discrepancy only when actionable physical/document evidence differs.
 - Atomic create-only catalogue CSV onboarding with dry-run, stale-preview fingerprinting, supplier mappings and opening-stock ledger movements.
 - Reviewed partial cycle counts with stale-stock protection, reservation safeguards and atomic variance movements.
-- Explicit ordered Durable Object tenant-schema migrations, currently schema v3.
+- Explicit ordered Durable Object tenant-schema migrations, currently schema v4.
 
 The branch remains draft until dependency installation, typecheck, tests and production build are run as the final verification gate.
 
@@ -33,7 +34,7 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - EU D1 control plane and EU tenant Durable Objects.
 - EU R2 documents plus Queue/DLQ automation path.
 - Tenant audit framework.
-- Ordered tenant schema-version migration runner with tested v1 -> v2 -> v3 upgrades.
+- Ordered tenant schema-version migration runner with tested v1 -> v2 -> v3 -> v4 upgrades/replay.
 
 ## Phase 1 — catalogue and stock
 **Delivered, including onboarding, stocktake and warehouse barcode workflows.**
@@ -65,6 +66,10 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Expected delivery dates on purchase orders with manual override.
 - At submission, OrderMate derives an expected date only when every PO line has a lead-time mapping for that supplier, using the slowest mapped line; incomplete coverage deliberately leaves the date unset rather than inventing precision.
 - Overdue open POs are surfaced in the PO list, detail view, operational attention inbox, search context and exports without introducing a second lifecycle state.
+- Delivery-note discrepancies become tenant operational records only for concrete evidence: PO-reference mismatch, unexpected/over-delivered document lines, or physical received quantity differing from the reviewed delivery note.
+- Ordinary partial shipments that match the document do **not** create discrepancy noise.
+- Discrepancies are idempotent per proposal, remain linked to immutable R2 proposal/source evidence, appear in Purchasing and Attention, export to CSV and require an audited human resolution note.
+- Resolving a discrepancy never mutates inventory or rewrites the purchase order receipt.
 
 ## Phase 3 — order lifecycle
 **Delivered for v1.**
@@ -82,12 +87,13 @@ The branch remains draft until dependency installation, typecheck, tests and pro
 - Dense but calm dashboard.
 - Global tenant search and operational exception inbox.
 - Record detail views and audit/activity timeline.
-- CSV export.
+- CSV export, including purchase-order expected dates and delivery discrepancy history.
 - Responsive/keyboard-accessible dialogs and mobile warehouse workflows.
 - Role-aware surfaces.
 - Create-only CSV onboarding with browser parse, tenant dry-run, line-numbered issues and explicit reviewed commit.
 - Responsive cycle-count workflow with counted-item prioritisation, live variance review and locked commit state.
 - Purchase-order expected-arrival/overdue signals that remain separate from canonical PO status.
+- Delivery discrepancy open/resolved queue with source evidence, issue-level explanation and role-aware resolution.
 
 Remaining before production readiness:
 
@@ -103,16 +109,16 @@ The first high-value automation paths are implemented with the same rule: AI may
 ### Delivered
 1. **Supplier PO intake** — PDF/image -> Cloudflare conversion/extraction -> exact supplier/SKU/barcode/internal-SKU matching -> human review -> draft PO.
 2. **Reviewed supplier SKU learning** — a human-confirmed supplier+variant may remember the extracted supplier code for future exact matching; conflicting or replacement mappings remain explicit.
-3. **Delivery-note assistance** — source document tied to one open PO -> delivered quantity extraction -> exact selected-PO matching -> shortages/overages/unmatched evidence -> human review -> staged Warehouse counts -> normal PO receipt.
-4. **Replenishment** — available/reserved/incoming stock + 30-day fulfilment demand + supplier lead time + optional custom policy -> explainable suggestion -> reviewable draft PO.
-5. **Exception inbox** — stockouts/low stock, fulfilment work, incoming/partial POs and overdue expected deliveries.
+3. **Delivery-note assistance** — source document tied to one open PO -> delivered quantity extraction -> exact selected-PO matching -> human review -> staged Warehouse counts -> normal PO receipt.
+4. **Delivery discrepancy control** — after a reviewed receipt, concrete document/physical differences become a persistent open purchasing issue with immutable proposal/source evidence and audited resolution.
+5. **Replenishment** — available/reserved/incoming stock + 30-day fulfilment demand + supplier lead time + optional custom policy -> explainable suggestion -> reviewable draft PO.
+6. **Exception inbox** — stockouts/low stock, fulfilment work, incoming/partial POs, overdue expected deliveries and unresolved delivery discrepancies.
 
 ### Next candidates
-1. Formal delivery-note discrepancy history/closure if businesses need persistent shortage/overage workflows beyond proposal evidence.
-2. Saved operational views and bulk actions.
-3. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
-4. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
-5. Storefront and integration architecture once the internal operating core has passed production hardening.
+1. Saved operational views and bulk actions.
+2. Existing-catalogue bulk update/import as a separately explicit destructive workflow rather than weakening create-only onboarding.
+3. Forecasting/anomaly detection only after deterministic demand/reorder behaviour has enough trustworthy production history.
+4. Storefront and integration architecture once the internal operating core has passed production hardening.
 
 ## Out of scope for the initial MVP
 Customer storefront, payment processing, carrier integrations, lots/batches/serials/manufacturing, marketplace/e-commerce integrations and autonomous AI business mutations.
