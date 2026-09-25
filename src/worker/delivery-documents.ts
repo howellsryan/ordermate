@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
+import { buildDeliveryDiscrepancyEvidence, type ReceivedDeliveryLine } from "./delivery-discrepancy";
+import type { DeliveryProposal } from "./delivery-matching";
 import { can } from "./permissions";
-import type { TenantStore } from "./tenant-store-runtime";
+import type { TenantStore } from "./tenant-store-discrepancies";
 
 type Env = AuthEnv & {
   DOCUMENTS: R2Bucket;
@@ -15,6 +17,12 @@ type Membership = { id: string; role: Role };
 type PurchaseOrder = { id: string; number: string; status: string };
 type SourceSummary = { key: string; name: string; uploaded: string; contentType: string; status: string; purchaseOrderId: string };
 type ProposalSummary = { key: string; uploaded: string; status: string; purchaseOrderId: string; purchaseOrderNumber: string; supplierName: string; lineCount: number; matchedCount: number; warningCount: number; eventId: string };
+
+type CompleteProposalBody = {
+  key?: string;
+  purchaseOrderId?: string;
+  receivedLines?: Array<{ lineId?: unknown; quantity?: unknown }>;
+};
 
 const SOURCE_PURPOSE = "delivery-source";
 const PROPOSAL_PURPOSE = "delivery-proposal";
@@ -109,6 +117,21 @@ async function queueExtraction(env: Env, tenantId: string, key: string, eventId:
   return "queued" as const;
 }
 
+function parseReceivedLines(value: CompleteProposalBody["receivedLines"], proposal: DeliveryProposal): ReceivedDeliveryLine[] | null {
+  if (!Array.isArray(value)) return null;
+  const allowedLineIds = new Set(proposal.lines.map(line => line.lineId));
+  const seen = new Set<string>();
+  const result: ReceivedDeliveryLine[] = [];
+  for (const entry of value) {
+    const lineId = typeof entry?.lineId === "string" ? entry.lineId : "";
+    const quantity = typeof entry?.quantity === "number" ? entry.quantity : Number.NaN;
+    if (!lineId || !allowedLineIds.has(lineId) || seen.has(lineId) || !Number.isInteger(quantity) || quantity < 0 || quantity > 1_000_000) return null;
+    seen.add(lineId);
+    result.push({ lineId, quantity });
+  }
+  return result;
+}
+
 deliveryDocumentsApp.get("/sources", async c => {
   const context = await contextFor(c.req.raw, c.env, "read");
   if ("error" in context) return context.error;
@@ -173,22 +196,64 @@ deliveryDocumentsApp.post("/extract", async c => {
 deliveryDocumentsApp.post("/proposal/complete", async c => {
   const context = await contextFor(c.req.raw, c.env, "update");
   if ("error" in context) return context.error;
-  const body = await c.req.json<{ key?: string; purchaseOrderId?: string }>();
+  const body = await c.req.json<CompleteProposalBody>();
   const key = body.key || "";
   const purchaseOrderId = body.purchaseOrderId || "";
   const allowedPrefix = `${context.tenantId}/${PROPOSAL_PURPOSE}/`;
   if (!key.startsWith(allowedPrefix) || !key.endsWith(".json") || !purchaseOrderId) return c.json({ error: "Proposal and purchase order are required" }, 400);
   const object = await c.env.DOCUMENTS.get(key);
   if (!object || object.customMetadata?.purchaseOrderId !== purchaseOrderId) return c.json({ error: "Delivery proposal does not belong to this purchase order" }, 409);
+
+  if (object.customMetadata?.status === "accepted") {
+    return c.json({ ok: true, alreadyAccepted: true, discrepancyId: object.customMetadata?.discrepancyId || null });
+  }
+
   const purchaseOrder = await getPurchaseOrder(c.env, context.tenantId, purchaseOrderId, { id: context.session.user.id, role: context.membership.role });
   if (!purchaseOrder) return c.json({ error: "Purchase order could not be verified in this business" }, 409);
-  const proposal = await object.json<Record<string, unknown>>();
+  const proposal = await object.json<DeliveryProposal>();
+  const receivedLines = parseReceivedLines(body.receivedLines, proposal);
+  if (!receivedLines) return c.json({ error: "The received quantities used for this delivery proposal are required" }, 400);
+
+  const evidence = buildDeliveryDiscrepancyEvidence(key, proposal, receivedLines);
+  let discrepancyId: string | null = null;
+  if (evidence) {
+    const stub = c.env.TENANT_STORES.jurisdiction("eu").getByName(context.tenantId);
+    const discrepancyResponse = await stub.fetch(new Request("https://tenant.internal/internal/delivery-discrepancies", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-ordermate-actor-id": context.session.user.id,
+        "x-ordermate-actor-role": context.membership.role,
+      },
+      body: JSON.stringify({
+        proposalKey: evidence.proposalKey,
+        proposalEventId: evidence.proposalEventId,
+        purchaseOrderId: evidence.purchaseOrderId,
+        purchaseOrderNumber: evidence.purchaseOrderNumber,
+        documentReference: evidence.documentReference,
+        documentDate: evidence.documentDate,
+        issues: evidence.issues,
+      }),
+    }));
+    if (!discrepancyResponse.ok) {
+      const error = await discrepancyResponse.json<{ error?: string }>().catch(() => ({}));
+      return c.json({ error: error.error || "Delivery discrepancy could not be recorded" }, 409);
+    }
+    discrepancyId = (await discrepancyResponse.json<{ id: string }>()).id;
+  }
+
   const acceptedAt = new Date().toISOString();
-  await c.env.DOCUMENTS.put(key, JSON.stringify({ ...proposal, status: "accepted", acceptedAt }), {
+  const acceptedProposal = { ...proposal, status: "accepted", acceptedAt, discrepancyId };
+  await c.env.DOCUMENTS.put(key, JSON.stringify(acceptedProposal), {
     httpMetadata: { contentType: "application/json" },
-    customMetadata: { ...(object.customMetadata || {}), status: "accepted", acceptedAt },
+    customMetadata: {
+      ...(object.customMetadata || {}),
+      status: "accepted",
+      acceptedAt,
+      ...(discrepancyId ? { discrepancyId } : {}),
+    },
   });
-  return c.json({ ok: true });
+  return c.json({ ok: true, discrepancyId });
 });
 
 deliveryDocumentsApp.post("/", async c => {
