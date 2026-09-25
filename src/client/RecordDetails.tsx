@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OrganizationSummary } from "../shared/types";
-import { date, money, tenantApi } from "./api";
+import { calendarDate, date, isOverdueDate, money, tenantApi } from "./api";
 import type { OrderDetail, PurchaseOrderDetail } from "./model";
 import { ErrorText, Modal, Status } from "./ui";
 
@@ -33,21 +34,52 @@ export function OrderDetailModal({ tenant, orderId, onClose }: { tenant: Organiz
 }
 
 export function PurchaseOrderDetailModal({ tenant, purchaseOrderId, onClose }: { tenant: OrganizationSummary; purchaseOrderId: string; onClose: () => void }) {
+  const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId],
     queryFn: () => tenantApi<PurchaseOrderDetail>(tenant.id, `/purchase-orders/${purchaseOrderId}`),
   });
   const po = detail.data;
+  const canWrite = ["owner", "admin", "manager", "inventory"].includes(tenant.role);
+  const canEditDue = !!po && canWrite && !["received", "cancelled"].includes(po.status);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
+
+  useEffect(() => {
+    setExpectedDeliveryDate(po?.expected_delivery_date || "");
+  }, [po?.id, po?.expected_delivery_date]);
+
+  const saveExpected = useMutation({
+    mutationFn: () => tenantApi<{ ok: true; expectedDeliveryDate: string | null }>(tenant.id, `/purchase-orders/${purchaseOrderId}/expected-delivery`, {
+      method: "PATCH",
+      body: JSON.stringify({ expectedDeliveryDate: expectedDeliveryDate || null }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] }),
+        qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] }),
+      ]);
+    },
+  });
+
+  const overdue = !!po && ["ordered", "partially_received"].includes(po.status) && isOverdueDate(po.expected_delivery_date);
 
   return <Modal title={po?.number || "Purchase order details"} subtitle="Supplier commitments, snapshotted costs and receiving progress for this purchase order." onClose={onClose} wide>
     {detail.isLoading ? <DetailLoading /> : detail.error ? <ErrorText error={detail.error} /> : po ? <div className="record-detail">
-      <div className="record-summary">
+      <div className="record-summary po-summary">
         <Summary label="Supplier" value={po.supplier_name} />
         <Summary label="Destination" value={po.location_name} />
-        <Summary label="Created" value={date(po.created_at)} />
+        <Summary label="Expected" value={po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "Not set"} strong={overdue} />
         <Summary label="Total" value={money(po.total_minor, po.currency)} strong />
       </div>
-      <div className="record-status-row"><span>Status <Status value={po.status} /></span></div>
+      <div className="record-status-row"><span>Status <Status value={po.status} /></span>{overdue && <span className="po-overdue-flag">Expected {calendarDate(po.expected_delivery_date)} · overdue</span>}</div>
+      {canEditDue && <div className="po-due-editor">
+        <div><strong>Expected delivery</strong><small>{po.status === "draft" ? "Set a supplier-confirmed date now, or leave blank and OrderMate will derive it on submission when every line has a known supplier lead time." : "Update this when the supplier confirms a revised arrival date."}</small></div>
+        <input aria-label="Expected delivery date" type="date" value={expectedDeliveryDate} onChange={event => setExpectedDeliveryDate(event.target.value)} />
+        <button className="secondary" disabled={saveExpected.isPending || expectedDeliveryDate === (po.expected_delivery_date || "")} onClick={() => saveExpected.mutate()}>{saveExpected.isPending ? "Saving…" : expectedDeliveryDate ? "Save expected date" : "Clear expected date"}</button>
+      </div>}
+      {saveExpected.error && <ErrorText error={saveExpected.error} />}
       <div className="detail-lines">
         <div className="detail-lines-head po"><span>Item</span><span>Ordered</span><span>Received</span><span>Outstanding</span><span>Unit cost</span></div>
         {po.lines.map(line => <div className="detail-line po" key={line.id}>
