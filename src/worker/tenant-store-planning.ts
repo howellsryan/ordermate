@@ -334,11 +334,13 @@ export class TenantStore extends VersionedTenantStore {
       const leadTimeDemand = Math.ceil(averageDailyDemand * effectiveLeadTimeDays);
       const projectedAtLeadTime = row.available + row.incoming - leadTimeDemand;
       const reorderPoint = row.reorder_point ?? defaultThreshold;
+      // Target stock is the desired inventory position when the new supply is expected to arrive.
+      // Automatic rules retain approximately two weeks of post-arrival cover plus the reorder point.
       const targetStock = row.target_stock ?? Math.max(
         reorderPoint * 2,
-        Math.ceil(averageDailyDemand * (effectiveLeadTimeDays + 14)) + reorderPoint,
+        Math.ceil(averageDailyDemand * 14) + reorderPoint,
       );
-      const recommendedQuantity = Math.max(0, targetStock - (row.available + row.incoming));
+      const recommendedQuantity = Math.max(0, targetStock - projectedAtLeadTime);
       if (projectedAtLeadTime > reorderPoint || recommendedQuantity <= 0) return [];
 
       return [{
