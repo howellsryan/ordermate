@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PackageCheck, Plus, Trash2 } from "lucide-react";
+import { PackageCheck, Plus, Trash2, XCircle } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
 import DocumentInbox from "../DocumentInbox";
 import { PurchaseOrderDetailModal } from "../RecordDetails";
@@ -15,6 +15,7 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   const [viewId, setViewId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [cancelId, setCancelId] = useState<string | null>(null);
   const canWrite = tenant.role !== "viewer";
   const purchaseOrders = useQuery({ queryKey: ["tenant", tenant.id, "purchase-orders"], queryFn: () => tenantApi<PurchaseOrder[]>(tenant.id, "/purchase-orders") });
   const refresh = () => {
@@ -29,10 +30,11 @@ export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) 
   return <>
     <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> New purchase order</button> : undefined} />
     <DocumentInbox tenant={tenant} />
-    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}</td></tr>)}</tbody></table></DataState></div>
+    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!purchaseOrders.data?.length} emptyText="Create your first purchase order to start tracking incoming inventory."><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{purchaseOrders.data?.map(po => <tr key={po.id}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>)}</tbody></table></DataState></div>
     {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
     {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); refresh(); }} />}
     {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
+    {cancelId && canWrite && <CancelPurchaseOrderModal tenant={tenant} purchaseOrderId={cancelId} onClose={() => setCancelId(null)} onDone={() => { setCancelId(null); refresh(); }} />}
   </>;
 }
 
@@ -80,4 +82,12 @@ function ReceiveModal({ tenant, purchaseOrderId, onClose, onDone }: { tenant: Or
   });
 
   return <Modal title={detail.data ? `Receive ${detail.data.number}` : "Receive purchase order"} subtitle="Receive exactly what arrived. Outstanding quantities remain incoming until a later receipt." onClose={onClose} wide>{detail.isLoading ? <div className="empty-state"><div className="loader" /></div> : detail.error ? <ErrorText error={detail.error} /> : <form className="form-grid one" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><div className="receive-list">{detail.data?.lines.map(line => { const remaining = line.quantity_ordered - line.quantity_received; return <div className="receive-row" key={line.id}><div><strong>{line.description_snapshot}</strong><small className="mono">{line.sku_snapshot}</small></div><span>{line.quantity_received} received / {line.quantity_ordered} ordered</span><input aria-label={`Receive ${line.description_snapshot}`} type="number" min="0" max={remaining} step="1" disabled={remaining === 0} value={quantities[line.id] ?? String(remaining)} onChange={event => setQuantities(current => ({ ...current, [line.id]: event.target.value }))} /></div>; })}</div>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !detail.data?.lines.some(line => Number(quantities[line.id] ?? (line.quantity_ordered - line.quantity_received)) > 0)}>Receive selected stock</button></div></form>}</Modal>;
+}
+
+function CancelPurchaseOrderModal({ tenant, purchaseOrderId, onClose, onDone }: { tenant: OrganizationSummary; purchaseOrderId: string; onClose: () => void; onDone: () => void }) {
+  const detail = useQuery({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId], queryFn: () => tenantApi<PurchaseOrderDetail>(tenant.id, `/purchase-orders/${purchaseOrderId}`) });
+  const mutation = useMutation({ mutationFn: () => tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/cancel`, { method: "POST", body: JSON.stringify({}) }), onSuccess: onDone });
+  const received = detail.data?.lines.reduce((sum, line) => sum + line.quantity_received, 0) ?? 0;
+  const outstanding = detail.data?.lines.reduce((sum, line) => sum + (line.quantity_ordered - line.quantity_received), 0) ?? 0;
+  return <Modal title={detail.data ? `Cancel ${detail.data.number}?` : "Cancel purchase order?"} subtitle="Cancellation stops the remaining supplier commitment; it never rewrites stock that has physically been received." onClose={onClose}>{detail.isLoading ? <div className="detail-loading"><div className="loader" /></div> : detail.error ? <ErrorText error={detail.error} /> : <div className="confirm-stack"><div className="confirm-facts"><span><small>Already received</small><strong>{received} units stay on hand</strong></span><span><small>Outstanding</small><strong>{outstanding} units stop showing as incoming</strong></span></div><p>No inventory movement is created for cancellation because no physical stock moves.</p>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button className="secondary" onClick={onClose}>Keep purchase order</button><button className="danger-button" disabled={mutation.isPending} onClick={() => mutation.mutate()}><XCircle size={16} /> Cancel purchase order</button></div></div>}</Modal>;
 }
