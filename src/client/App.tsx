@@ -12,6 +12,7 @@ import {
   Menu,
   PackagePlus,
   Plus,
+  ScanBarcode,
   Settings as SettingsIcon,
   ShoppingCart,
   Sparkles,
@@ -29,18 +30,20 @@ import Products from "./pages/Products";
 import Inventory from "./pages/Inventory";
 import Purchasing from "./pages/Purchasing";
 import Orders from "./pages/Orders";
+import WarehouseOps from "./pages/Warehouse";
 import { Customers, Suppliers } from "./pages/People";
 import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import { ErrorText, Field, Modal } from "./ui";
 
-type Page = "overview" | "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity" | "team" | "settings";
+type Page = "overview" | "orders" | "warehouse" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
 
 const nav: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "orders", label: "Orders", icon: ShoppingCart },
+  { id: "warehouse", label: "Warehouse", icon: ScanBarcode },
   { id: "products", label: "Products", icon: Boxes },
   { id: "inventory", label: "Inventory", icon: Warehouse },
   { id: "purchasing", label: "Purchase orders", icon: ClipboardList },
@@ -53,6 +56,7 @@ const nav: NavItem[] = [
 
 function pageVisible(role: Role, page: Page) {
   if (role === "owner" || role === "admin") return true;
+  if (page === "warehouse") return role !== "viewer";
   if (page === "team" || page === "settings") return role === "manager" || role === "viewer";
   if (page === "purchasing" || page === "suppliers") return role !== "fulfilment";
   return true;
@@ -144,6 +148,7 @@ export default function App() {
       <div className="workspace">
         {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
         {page === "orders" && <Orders tenant={activeTenant} />}
+        {page === "warehouse" && <WarehouseOps tenant={activeTenant} />}
         {page === "products" && <Products tenant={activeTenant} />}
         {page === "inventory" && <Inventory tenant={activeTenant} />}
         {page === "purchasing" && <Purchasing tenant={activeTenant} />}
