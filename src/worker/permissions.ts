@@ -1,29 +1,29 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "customers" | "reports" | "settings" | "members" | "preferences" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", settings: "*", members: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: "*", settings: "*", members: "*", preferences: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], settings: ["read", "update"], members: ["read"],
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", customers: "*", reports: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
-    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"],
+    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"], preferences: "*",
   },
   fulfilment: {
-    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"],
+    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"], preferences: "*",
   },
   viewer: {
-    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], settings: ["read"], members: ["read"],
+    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], settings: ["read"], members: ["read"], preferences: "*",
   },
 };
 
@@ -35,6 +35,7 @@ export function can(role: Role, resource: Resource, action: Action): boolean {
 export function permissionForRequest(path: string, method: string): { resource: Resource; action: Action } {
   const action: Action = method === "GET" || method === "HEAD" ? "read" : method === "DELETE" ? "delete" : method === "POST" ? "create" : "update";
 
+  if (path.startsWith("/saved-views")) return { resource: "preferences", action };
   if (path.startsWith("/imports/catalogue")) return { resource: "catalogue", action: "create" };
   if (path.startsWith("/products") || path.startsWith("/categories")) return { resource: "catalogue", action };
   if (path.startsWith("/locations")) return { resource: "inventory", action };
