@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 5;
+const CURRENT_TENANT_SCHEMA_VERSION = 6;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -161,6 +161,20 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 5);
     });
     current = 5;
+  }
+
+  if (current < 6) {
+    storage.transactionSync(() => {
+      if (!tableHasColumn(storage, "orders", "required_by_date")) {
+        sql.exec("ALTER TABLE orders ADD COLUMN required_by_date TEXT");
+      }
+      if (!tableHasColumn(storage, "orders", "priority")) {
+        sql.exec("ALTER TABLE orders ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent'))");
+      }
+      sql.exec("CREATE INDEX IF NOT EXISTS orders_open_priority_due_idx ON orders(status, fulfilment_status, required_by_date, priority)");
+      recordMigration(storage, 6);
+    });
+    current = 6;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
