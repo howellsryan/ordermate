@@ -82,14 +82,10 @@ export function calendarDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "UTC" }).format(parsed);
 }
 
-export function todayLocalIsoDate() {
-  const current = new Date();
-  const year = current.getFullYear();
-  const month = String(current.getMonth() + 1).padStart(2, "0");
-  const day = String(current.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+export function todayUtcIsoDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function isOverdueDate(value: string | null | undefined) {
-  return !!value && value < todayLocalIsoDate();
+  return !!value && value < todayUtcIsoDate();
 }
