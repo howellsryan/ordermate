@@ -73,6 +73,10 @@ Canonical business mutations remain deterministic, transactional and auditable. 
 - exact document-aware scan validation and bounded counts.
 - delivery-note-assisted receiving remains a reviewed staging step before canonical receipt.
 - cycle counting available as a separate reviewed reconciliation workflow.
+- Wave Picking for 2-10 confirmed orders from one location.
+- wave scanning aggregates SKU quantities client-side, then deterministically expands them back into exact order lines for review.
+- every selected wave order must have staged work before commit; excess/unallocatable counts block commit.
+- wave commit reuses `/orders/:id/fulfil` per order and exposes partial failures rather than pretending a multi-order wave is atomic.
 
 ### Operations UX
 - global search.
@@ -103,48 +107,64 @@ Canonical business mutations remain deterministic, transactional and auditable. 
 
 Future schema changes must remain ordered, replay-safe and covered by fresh + previous-version upgrade tests.
 
-## Next delivery priorities
+## Immediate next milestone: verify and harden
 
-### 1. Batch/wave picking
-Goal: reduce repeated walking and scanning when several confirmed orders can be picked together.
+Feature expansion stops here for this delivery thread. The next agent should begin from `docs/next-agent-handoff.md` and make verification the first priority.
 
-Safety boundary:
-- grouping/aggregate pick counts are operational staging only;
-- each order remains the canonical unit of reservation and fulfilment;
-- a wave must never create a new inventory mutation path;
-- fulfilment submissions still go through existing `/orders/:id/fulfil` transactions;
-- partial failure must remain visible per order rather than pretending the whole wave is atomic when it is not.
+Required sequence:
 
-### 2. Onboarding/commercial hardening
-- stronger first-workspace empty states and guided setup.
-- clearer location/catalogue/supplier setup sequencing.
-- optional template/sample data path without contaminating real tenant records.
+1. install dependencies with `npm install` and commit the generated `package-lock.json`;
+2. run `npm run typecheck`;
+3. run `npm test`;
+4. run `npm run build`;
+5. fix failures without weakening tenant, authorization, inventory or migration invariants;
+6. perform a browser/manual smoke pass of critical flows, including Wave Picking success and partial-failure recovery;
+7. review Draft PR #3 holistically for security, tenant isolation, stock/order invariants and migration replay safety; and
+8. update the PR verification section with actual evidence before deciding whether it is ready for review.
 
-### 3. Production readiness gate
-- install pinned dependency graph and commit lockfile.
-- typecheck.
-- Cloudflare/Vitest runtime tests.
-- production build.
-- responsive/accessibility review.
-- security review for authorization, CSP/headers, secrets/logging and cross-tenant IDs.
-- migration replay verification.
-- Cloudflare bootstrap/deployment only after runtime verification is green.
+### Wave Picking smoke-pass emphasis
 
-## Deferred product areas
+Deliberately verify:
 
-Not part of the current operational MVP unless explicitly reprioritized:
+- same-location selection lock;
+- maximum 10-order selection;
+- hardware/manual/camera scan entry;
+- repeated SKU aggregation across multiple orders;
+- visible per-order allocation preview;
+- a complete successful wave;
+- a partial pick;
+- one-order failure after another order succeeds; and
+- that successful orders are removed and never offered for silent retry.
 
-- customer storefront;
-- payment processing;
-- carrier/shipping and marketplace integrations;
-- batches/lots/serials/expiry/manufacturing;
-- destructive existing-catalogue bulk-update imports;
-- autonomous AI business mutations;
-- production opt-in to Workers AI inference.
+## Production readiness after verification
+
+Once the full gate is green:
+
+- perform final responsive/accessibility checks using the adopted Agent-Template UI/UX skills;
+- confirm retention/export/deletion and backup/recovery launch requirements;
+- confirm the explicit compliance decision around Workers AI before enabling `AI_DOCUMENT_EXTRACTION_ENABLED`;
+- bootstrap/configure Cloudflare resources and Google OAuth redirects/secrets as documented in `README.md`;
+- run remote control-plane migrations; and
+- deploy only from a reviewed, verified commit.
+
+## Follow-up product roadmap
+
+After the rebuild is stable, prefer focused follow-up PRs instead of continuing to grow PR #3 indefinitely. Candidate areas:
+
+1. stronger onboarding and first-workspace guidance;
+2. richer exception/inbox workflows for blocked orders, supplier delays, unmatched imports and stock anomalies;
+3. stronger replenishment forecasting once sufficient real demand history exists;
+4. richer warehouse efficiency only when justified by operator feedback (bin routing, packing stages, labels, etc.);
+5. customer storefront and external sales-channel integrations;
+6. carrier/shipping integrations;
+7. payment processing if OrderMate's scope requires it; and
+8. additional reviewed automation/natural-language operational analysis where the model remains read-only or proposal-based.
+
+Do not add batches/lots/serial/manufacturing, autonomous AI mutations or destructive existing-catalogue bulk upserts without a fresh plan-gate because they materially change domain invariants.
 
 ## Verification status
 
-Implementation continues before the final verification pass. Do not describe the branch as merge-ready until these have actually passed:
+The branch is intentionally **not merge-ready yet**. The previous session did not run or claim these as passing:
 
 ```sh
 npm install
@@ -153,4 +173,4 @@ npm test
 npm run build
 ```
 
-The generated `package-lock.json` must be committed before production deployment.
+The generated `package-lock.json` must be committed before production deployment. See `docs/next-agent-handoff.md` for the exact continuation sequence.
