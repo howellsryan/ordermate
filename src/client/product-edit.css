@@ -1,0 +1,14 @@
+@layer components {
+  .edit-variant-list { display: flex; flex-direction: column; gap: 10px; }
+  .edit-variant-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fffefa; }
+  .edit-variant-title { min-height: 52px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--paper-2); }
+  .edit-variant-title > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .edit-variant-title strong { font-size: 11px; }
+  .edit-variant-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
+  .edit-variant-title > span { font-size: 11px; font-weight: 800; }
+  .edit-variant-fields { padding: 12px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+
+  @media (max-width: 760px) {
+    .edit-variant-fields { grid-template-columns: 1fr; }
+  }
+}
