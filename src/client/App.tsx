@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  BarChart3,
   Boxes,
   Building2,
   ChevronDown,
@@ -33,13 +34,14 @@ import Purchasing from "./pages/Purchasing";
 import Orders from "./pages/Orders";
 import WarehouseOps from "./pages/Warehouse";
 import Stocktake from "./pages/Stocktake";
+import Reports from "./pages/Reports";
 import { Customers, Suppliers } from "./pages/People";
 import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import { ErrorText, Field, Modal } from "./ui";
 
-type Page = "overview" | "orders" | "warehouse" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity" | "team" | "settings";
+type Page = "overview" | "orders" | "warehouse" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "reports" | "activity" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
 
 const nav: NavItem[] = [
@@ -52,6 +54,7 @@ const nav: NavItem[] = [
   { id: "purchasing", label: "Purchase orders", icon: ClipboardList },
   { id: "suppliers", label: "Suppliers", icon: Truck },
   { id: "customers", label: "Customers", icon: Users },
+  { id: "reports", label: "Reports", icon: BarChart3 },
   { id: "activity", label: "Activity & data", icon: History },
   { id: "team", label: "Team & roles", icon: UserCog },
   { id: "settings", label: "Settings", icon: SettingsIcon },
@@ -159,6 +162,7 @@ export default function App() {
         {page === "purchasing" && <Purchasing tenant={activeTenant} />}
         {page === "suppliers" && <Suppliers tenant={activeTenant} />}
         {page === "customers" && <Customers tenant={activeTenant} />}
+        {page === "reports" && <Reports tenant={activeTenant} />}
         {page === "activity" && <Activity tenant={activeTenant} />}
         {page === "team" && <Team tenant={activeTenant} />}
         {page === "settings" && <Settings tenant={activeTenant} />}
