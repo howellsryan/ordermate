@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Minus, PackageCheck, Plus, ScanBarcode, Truck } from "lucide-react";
 import type { OrganizationSummary } from "../../shared/types";
+import CameraBarcodeScanner from "../CameraBarcodeScanner";
 import DeliveryNoteAssist from "../DeliveryNoteAssist";
 import { controlApi, date, tenantApi } from "../api";
 import type { Order, OrderDetail, Product, PurchaseOrder, PurchaseOrderDetail } from "../model";
@@ -33,7 +34,7 @@ export default function Warehouse({ tenant }: { tenant: OrganizationSummary }) {
     <PageHeader
       eyebrow="Warehouse"
       title="Scan operations"
-      description="Use a USB/Bluetooth scanner or type a barcode and press Enter. Scans only prepare quantities; stock changes happen through the normal audited fulfilment and receiving transactions."
+      description="Use a USB/Bluetooth scanner, the device camera, or type a barcode and press Enter. Scans only prepare quantities; stock changes happen through the normal audited fulfilment and receiving transactions."
     />
     <div className="warehouse-mode" role="tablist" aria-label="Warehouse workflow">
       {canFulfil && <button role="tab" aria-selected={mode === "pick"} className={mode === "pick" ? "active" : ""} onClick={() => setMode("pick")}><PackageCheck size={16} /> Pick & fulfil</button>}
@@ -282,10 +283,13 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
 
 function BarcodeCapture({ inputRef, onScan, feedback, label }: { inputRef: RefObject<HTMLInputElement | null>; onScan: (barcode: string) => void; feedback: Feedback; label: string }) {
   const [value, setValue] = useState("");
-  return <form className="barcode-capture" onSubmit={event => { event.preventDefault(); const barcode = value.trim(); if (!barcode) return; onScan(barcode); setValue(""); }}>
-    <div className="barcode-input-wrap"><ScanBarcode size={22} /><label><span>{label}</span><input ref={inputRef} value={value} onChange={event => setValue(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} inputMode="text" placeholder="Scan or enter barcode…" /></label><button className="secondary" disabled={!value.trim()}>Add scan</button></div>
-    <div className={`scan-feedback ${feedback?.tone || "idle"}`} aria-live="polite">{feedback ? <>{feedback.tone === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}<span>{feedback.message}</span></> : <><ScanBarcode size={15} /><span>Scanner ready. Each successful scan adds one unit.</span></>}</div>
-  </form>;
+  return <div className="barcode-capture">
+    <form onSubmit={event => { event.preventDefault(); const barcode = value.trim(); if (!barcode) return; onScan(barcode); setValue(""); }}>
+      <div className="barcode-input-wrap"><ScanBarcode size={22} /><label><span>{label}</span><input ref={inputRef} value={value} onChange={event => setValue(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} inputMode="text" placeholder="Scan or enter barcode…" /></label><button className="secondary" disabled={!value.trim()}>Add scan</button></div>
+    </form>
+    <div className="barcode-capture-tools"><CameraBarcodeScanner onScan={onScan} label="Scan with camera" /></div>
+    <div className={`scan-feedback ${feedback?.tone || "idle"}`} aria-live="polite">{feedback ? <>{feedback.tone === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}<span>{feedback.message}</span></> : <><ScanBarcode size={15} /><span>Scanner ready. Each successful hardware, typed or camera scan adds one unit.</span></>}</div>
+  </div>;
 }
 
 function LineCounter({ value, max, onChange }: { value: number; max: number; onChange: (value: number) => void }) {
