@@ -1,38 +1,39 @@
-# OrderMate
+# Operating Layer
 
-OrderMate is operations software for growing small and medium-sized businesses (SMEs).
+Operating Layer is inventory, order, purchasing and warehouse operations software for growing product businesses.
 
-It connects inventory, customer orders, purchasing, suppliers, warehouse execution, cycle counts, wave picking, reporting and human-reviewed automation in one auditable workspace.
+It connects multi-location inventory, customer orders, purchasing, suppliers, warehouse execution, cycle counts, wave picking, replenishment, reporting and human-reviewed automation in one auditable workspace.
 
 ## Core capabilities
 
-- Multi-location inventory with on-hand, reserved, available and incoming stock.
+- Multi-location inventory management with on-hand, reserved, available and incoming stock.
 - Immutable stock movement history for adjustments, transfers, receipts, fulfilment, returns and stocktakes.
-- Customer orders with stock reservation, oversell prevention, fulfilment priority, required-by dates, partial fulfilment and returns.
-- Purchase orders with suppliers, expected delivery dates, partial receiving, cancellation and discrepancy handling.
+- Order management with stock reservation, oversell prevention, fulfilment priority, required-by dates, partial fulfilment and returns.
+- Purchase-order management with suppliers, expected delivery dates, partial receiving, cancellation and discrepancy handling.
 - Warehouse workflows for manual barcode entry, hardware scanners and mobile-camera scanning.
-- Wave Picking for 2–10 same-location orders with deterministic allocation back to exact order lines.
-- Cycle counts with stale-snapshot and reservation protection.
-- Deterministic replenishment suggestions using stock, incoming supply, demand and lead time.
-- Operations reports over canonical stock, order and purchasing records.
-- Reviewed document extraction and matching workflows. AI may propose information for human review but does not autonomously mutate canonical stock, fulfil orders or commit purchase orders.
+- Wave picking for 2–10 same-location orders with deterministic allocation back to exact order lines.
+- Cycle counting with stale-snapshot and reservation protection.
+- Deterministic inventory replenishment suggestions using stock, incoming supply, demand and supplier lead time.
+- Operations and inventory reports over canonical stock, order and purchasing records.
+- Reviewed document extraction and matching workflows. AI may propose information for human review but does not autonomously mutate canonical inventory, fulfil orders or commit purchase orders.
 - Role-based access for owners, administrators, managers, inventory, fulfilment and viewer users.
 - Tenant-isolated operational storage and audited mutation paths.
 
 ## Audience
 
-OrderMate is aimed at SMEs that have outgrown disconnected spreadsheets and manual operational reconciliation but do not want an unnecessarily heavy enterprise system.
+Operating Layer is aimed at SMEs and growing product businesses that have outgrown disconnected spreadsheets and manual inventory/order reconciliation but do not want an unnecessarily heavy enterprise ERP implementation.
 
 ## Product principle
 
-Automate repetitive operational work while keeping important business decisions explicit, reviewable and attributable to people.
+The system between order and outcome: keep inventory, orders, purchasing and warehouse work in one controlled operating loop, automate repetitive evidence work and keep important business decisions explicit, reviewable and attributable to people.
 
 ## Public product guide
 
-- [Platform overview](/#platform) — platform value and operational outcomes.
-- [Automation](/#automation) — automation and human-review model.
-- [Product previews](/#product) — screenshots and connected workflows.
-- [Trust and controls](/#trust) — security, isolation, audit and role controls.
+- [Platform overview](/#platform) — inventory and operations platform value.
+- [Product previews](/#product) — real product UI and connected workflows.
+- [Automation](/#automation) — reviewed automation and human-control model.
+- [Trust and controls](/#trust) — isolation, audit and role controls.
+- [Common questions](/#faq) — product and workflow FAQs.
 - [Agent resource catalog](/.well-known/ai-catalog.json) — machine-readable declaration of public agentic resources.
 
 Authentication uses Google sign-in from the public landing page.
