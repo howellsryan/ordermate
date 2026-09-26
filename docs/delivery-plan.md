@@ -1,8 +1,8 @@
-# OrderMate delivery plan
+# Operating Layer delivery plan
 
 ## Product direction
 
-OrderMate is being rebuilt as a Cloudflare-native operational SaaS for businesses that need catalogue, order, purchasing and inventory control. The product deliberately starts broad rather than assuming one retail vertical, but its core is designed for multi-location physical-stock operations.
+Operating Layer is being rebuilt as a Cloudflare-native operational SaaS for businesses that need catalogue, order, purchasing and inventory control. The product deliberately starts broad rather than assuming one retail vertical, but its core is designed for multi-location physical-stock operations.
 
 Canonical business mutations remain deterministic, transactional and auditable. AI is an evidence-extraction/proposal layer only.
 
@@ -157,7 +157,7 @@ After the rebuild is stable, prefer focused follow-up PRs instead of continuing 
 4. richer warehouse efficiency only when justified by operator feedback (bin routing, packing stages, labels, etc.);
 5. customer storefront and external sales-channel integrations;
 6. carrier/shipping integrations;
-7. payment processing if OrderMate's scope requires it; and
+7. payment processing if Operating Layer's scope requires it; and
 8. additional reviewed automation/natural-language operational analysis where the model remains read-only or proposal-based.
 
 Do not add batches/lots/serial/manufacturing, autonomous AI mutations or destructive existing-catalogue bulk upserts without a fresh plan-gate because they materially change domain invariants.
