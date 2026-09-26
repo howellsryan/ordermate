@@ -1,6 +1,6 @@
-# OrderMate staging
+# Operating Layer staging
 
-OrderMate staging is the disposable browser/device test environment for Draft PR #3. It is intentionally isolated from future production resources.
+Operating Layer staging is the disposable browser/device test environment for Draft PR #3. It is intentionally isolated from future production resources. The `ordermate-*` names below are compatibility infrastructure identifiers, not customer-facing brand names.
 
 ## Live environment
 
