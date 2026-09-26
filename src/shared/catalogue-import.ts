@@ -32,7 +32,7 @@ export type CatalogueImportExisting = {
     supplierName: string;
     variantId: string;
     sku: string;
-    supplierSku: string | null;
+    supplierSku?: string | null;
   }>;
   defaultTaxRateBps: number;
 };
