@@ -121,7 +121,8 @@ export function buildFlowPlan(
 
   for (const row of replenishment.suggestions) {
     if (row.risk !== "critical" && row.risk !== "warning") continue;
-    const preferred = row.suppliers.find(supplier => supplier.preferred) || row.suppliers[0];
+    const supplier = row.suppliers.find(item => item.preferred)
+      || (row.suppliers.length === 1 ? row.suppliers[0] : undefined);
     const classBoost = row.abc_class === "A" ? 12 : row.abc_class === "B" ? 6 : 0;
     const riskBoost = row.risk === "critical" ? 70 : 45;
     const days = row.days_of_cover === null ? "unknown cover" : `${row.days_of_cover} day${row.days_of_cover === 1 ? "" : "s"} cover`;
@@ -133,8 +134,8 @@ export function buildFlowPlan(
       severity: row.risk === "critical" ? "critical" : "warning",
       title: `${row.product_name} · ${row.variant_name} needs a buying decision`,
       detail: `${row.location_name} · ${days}${row.stockout_date ? ` · projected stockout ${row.stockout_date}` : ""}`,
-      nextAction: preferred
-        ? `Review ${buy} units from ${preferred.supplierName}`
+      nextAction: supplier
+        ? `Review ${buy} units from ${supplier.supplierName}`
         : `Review the recommended buy of ${buy} units and choose a supplier`,
       page: "purchasing",
       score: riskBoost + classBoost + severityScore[row.risk === "critical" ? "critical" : "warning"],
