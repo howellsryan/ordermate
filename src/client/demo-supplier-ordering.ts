@@ -3,6 +3,7 @@ import type { SupplierVariant } from "./model";
 import { demoTenantApi } from "./demo-stocktake";
 
 const DEMO_SUPPLIER_TERMS_KEY = "operating-layer:demo-supplier-ordering:v1";
+const DEMO_DATA_KEY = "operating-layer:demo-data:v1";
 
 type DemoSupplierTerms = {
   minimum_order_quantity: number | null;
@@ -10,6 +11,7 @@ type DemoSupplierTerms = {
 };
 
 type DemoSupplierTermState = Record<string, DemoSupplierTerms>;
+type PersistedSupplierTerms = { seedToken: string | null; terms: DemoSupplierTermState };
 
 const DEFAULT_TERMS: DemoSupplierTermState = {
   "sup-pack:var-tape": { minimum_order_quantity: 24, order_multiple: 12 },
@@ -31,23 +33,46 @@ function mappingKey(supplierId: string, variantId: string) {
   return `${supplierId}:${variantId}`;
 }
 
-function readTerms(): DemoSupplierTermState {
-  const raw = window.localStorage.getItem(DEMO_SUPPLIER_TERMS_KEY);
-  if (!raw) return structuredClone(DEFAULT_TERMS);
+function currentDemoSeedToken() {
+  const raw = window.localStorage.getItem(DEMO_DATA_KEY);
+  if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as DemoSupplierTermState;
-    return { ...structuredClone(DEFAULT_TERMS), ...parsed };
+    const parsed = JSON.parse(raw) as { audit?: Array<{ id?: string; action?: string; entity_id?: string }> };
+    return parsed.audit?.find(event => event.action === "order.confirmed" && event.entity_id === "ord-1")?.id || null;
   } catch {
-    return structuredClone(DEFAULT_TERMS);
+    return null;
   }
 }
 
+function freshTerms(): DemoSupplierTermState {
+  return structuredClone(DEFAULT_TERMS);
+}
+
+function readTerms(): DemoSupplierTermState {
+  const seedToken = currentDemoSeedToken();
+  const raw = window.localStorage.getItem(DEMO_SUPPLIER_TERMS_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as PersistedSupplierTerms;
+      if (parsed.seedToken === seedToken && parsed.terms && typeof parsed.terms === "object") {
+        return { ...freshTerms(), ...parsed.terms };
+      }
+    } catch {
+      // Replace malformed or stale demo ordering data with deterministic defaults.
+    }
+  }
+  const terms = freshTerms();
+  persistTerms(terms);
+  return terms;
+}
+
 function persistTerms(terms: DemoSupplierTermState) {
-  window.localStorage.setItem(DEMO_SUPPLIER_TERMS_KEY, JSON.stringify(terms));
+  const payload: PersistedSupplierTerms = { seedToken: currentDemoSeedToken(), terms };
+  window.localStorage.setItem(DEMO_SUPPLIER_TERMS_KEY, JSON.stringify(payload));
 }
 
 function parseBody(init?: RequestInit) {
-  if (typeof init?.body !== "string") return mappingInput.parse({});
+  if (typeof init?.body !== "string") throw new Error("Supplier mapping body is required");
   return mappingInput.parse(JSON.parse(init.body));
 }
 
