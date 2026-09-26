@@ -1,6 +1,6 @@
 # SME order & inventory workflow research — 26 September 2026
 
-This note records the product discovery behind the Flow Plan and supplier-ordering work. It intentionally separates observed competitor capabilities from Operating Layer product decisions. Vendor performance claims are treated as directional marketing evidence, not independent benchmarks.
+This note records the product discovery behind the Flow Plan, supplier-ordering and Smart Buy Batch work. It intentionally separates observed competitor capabilities from Operating Layer product decisions. Vendor performance claims are treated as directional marketing evidence, not independent benchmarks.
 
 ## Product question
 
@@ -66,7 +66,17 @@ Positive replenishment scenarios are rounded up to satisfy those terms. A zero r
 
 This removes a common manual spreadsheet step between “the forecast says buy 23” and “the supplier only sells cases of 12 with an MOQ of 24”.
 
-### 3. Landing-page positioning
+When several suppliers are mapped and none is preferred, Operating Layer deliberately does not choose one. The buyer must set a preferred supplier before supplier-specific terms or draft purchasing are prepared.
+
+### 3. Smart Buy Batches
+
+Due replenishment recommendations are grouped by **supplier + destination location**. One review action can now prepare a multi-line draft PO instead of forcing a buyer to create the same supplier purchase SKU-by-SKU.
+
+A line qualifies when it is critical or its order-by date has arrived, has a positive recommended quantity, and has a deterministic supplier choice (preferred supplier or the only mapped supplier). The batch carries supplier last cost where known and keeps an unknown estimated batch cost visibly unknown rather than calculating a misleading partial total.
+
+The resulting PO remains a normal reviewed draft. A person can change lines, quantity, tax and commercial values before creation; submission and receipt continue through the existing audited lifecycle.
+
+### 4. Landing-page positioning
 
 The public story now leads with operational outcomes rather than module inventory:
 
@@ -79,12 +89,6 @@ The public story now leads with operational outcomes rather than module inventor
 No fabricated ROI number is used. The page demonstrates workflows the product can actually execute or calculate today.
 
 ## Next workflow roadmap
-
-### P0 — Smart Buy Batches
-
-Group at-risk recommendations by preferred supplier and destination location. One review action should prepare a draft PO containing every due line for that supplier, already rounded for MOQ/order multiple and using last known cost. The user reviews/edits before the draft becomes an ordered PO.
-
-**Delay removed:** buyer copies multiple SKU recommendations into a PO one-by-one.
 
 ### P0 — Supplier Chase Loop
 
@@ -133,6 +137,7 @@ Instrument workflow outcomes before claiming time savings. Useful product metric
 - percentage of ordered POs that become overdue,
 - time from receiving discrepancy creation to resolution,
 - percentage of replenishment suggestions converted into draft/ordered POs,
+- number of due replenishment lines prepared through Smart Buy Batches vs individual PO entry,
 - number of manual line edits between recommended quantity and ordered quantity,
 - percentage of supplier mappings with lead time + MOQ/multiple completeness,
 - repeated audited action count by workflow (input to future automation recommendations).
@@ -145,6 +150,6 @@ Avoid claiming “stockouts prevented” or “hours saved” until there is a d
 2. **Exception-first UI:** normal work should flow quietly; risk should become obvious.
 3. **Prepared actions:** calculate and prefill as much as possible before asking for human input.
 4. **Canonical truth:** inventory changes only through stock movements/reservations and existing lifecycle transitions.
-5. **Explainability:** a user can see why something is prioritised or rounded.
+5. **Explainability:** a user can see why something is prioritised, rounded or grouped.
 6. **Auditability:** mutations and commercial-term changes record the actor.
 7. **No AI dependency for core operations:** deterministic workflows remain useful if optional AI is disabled.
