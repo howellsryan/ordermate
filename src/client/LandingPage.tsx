@@ -63,7 +63,50 @@ const outcomes = [
   "Make the operation less dependent on one person knowing where everything stands",
 ];
 
+const buyingAnswers = [
+  {
+    label: "CURRENT PRICE",
+    title: "£0 to use today",
+    copy: "Operating Layer is currently free. There is no subscription charge or billing step in the product today, so cost does not need to be part of the evaluation.",
+    tone: "positive",
+  },
+  {
+    label: "EVALUATION RISK",
+    title: "Try the workflow before moving real data",
+    copy: "Six resettable, no-account business demos let you test the operating model first. Nothing in a guest demo touches a live customer workspace.",
+    tone: "positive",
+  },
+  {
+    label: "MIGRATION",
+    title: "Bring a catalogue through a reviewed CSV import",
+    copy: "For product businesses, CSV onboarding can create products, variants, supplier mappings and opening stock. Files are dry-run first, reviewed, then committed atomically, with up to 2,000 rows per import.",
+    tone: "positive",
+  },
+  {
+    label: "IMPLEMENTATION",
+    title: "Start with only the operating areas you need",
+    copy: "Modules can be enabled around the business instead of forcing a full-system rollout. A team can start narrow and add more of the operating model later.",
+    tone: "positive",
+  },
+  {
+    label: "INTEGRATIONS — CURRENT LIMIT",
+    title: "No hidden promise of integrations that do not exist yet",
+    copy: "Operating Layer does not currently offer live production connectors for Shopify, Xero or QuickBooks. If day-one continuous sync with those systems is mandatory, it is not yet a full replacement for that part of your stack. CSV onboarding is not ongoing sync.",
+    tone: "limit",
+  },
+  {
+    label: "OPERATIONAL CONTROL",
+    title: "Adoption does not mean handing control to automation",
+    copy: "Roles, tenant isolation and audit trails sit underneath the workspace. Suggestions can prepare and prioritise work, while business-changing stock, fulfilment and purchasing actions still use explicit reviewed workflows.",
+    tone: "positive",
+  },
+];
+
 const faqs = [
+  {
+    question: "How much does Operating Layer cost?",
+    answer: "For now, Operating Layer is free to use. There is no subscription charge or billing setup in the product today. That describes the current offer rather than promising that pricing can never change in future.",
+  },
   {
     question: "What problem does Operating Layer solve?",
     answer: "Operating Layer is for growing SMEs whose operational work has become spread across spreadsheets, inboxes, stock tools and team knowledge. It joins the records behind customer work, stock, purchasing and suppliers so the team can see what needs attention and act earlier.",
@@ -75,6 +118,14 @@ const faqs = [
   {
     question: "Can I try it before creating an account?",
     answer: "Yes. The guest demos run locally in your browser and do not need an account. You can choose from ecommerce, retail, electrician, salon, cafe and dropship scenarios, then reset or switch business at any time. Prototype-only steps are labelled rather than presented as finished production functionality.",
+  },
+  {
+    question: "Can I bring my existing catalogue and stock data?",
+    answer: "Product businesses can import a CSV containing products, variants, supplier mappings and opening stock. The file is parsed in the browser, checked with a dry-run against the workspace, reviewed before confirmation and then committed atomically. Each import supports up to 2,000 data rows. Other business records may still need to be created in Operating Layer today.",
+  },
+  {
+    question: "Does it integrate with Shopify, Xero or QuickBooks?",
+    answer: "Not yet as live production connectors. If your operation requires continuous day-one sync with Shopify, Xero, QuickBooks or another external system, treat that as a current product gap rather than assuming CSV import replaces an integration.",
   },
   {
     question: "Will it tell us what needs attention?",
@@ -126,7 +177,7 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
       <nav className="landing-nav" aria-label="Landing page navigation">
         <a href="#platform">Is this you?</a>
         <a href="#product">See it work</a>
-        <a href="#automation">How it helps</a>
+        <a href="#switching">Before you switch</a>
         <a href="#trust">Trust</a>
       </nav>
       <button type="button" className="landing-nav-cta" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>
@@ -151,8 +202,8 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
             <a className="landing-secondary-cta" href="#platform">See if you have outgrown the patchwork <ArrowRight size={16} aria-hidden="true" /></a>
           </div>
           <div className="landing-proof-row" aria-label="Platform highlights">
+            <span><Check size={15} aria-hidden="true" /> Free to use today</span>
             <span><Check size={15} aria-hidden="true" /> No-account demos</span>
-            <span><Check size={15} aria-hidden="true" /> Use only the operational areas you need</span>
             <span><Check size={15} aria-hidden="true" /> Business-changing actions stay reviewed</span>
           </div>
         </div>
@@ -236,6 +287,19 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
         </div>
       </section>
 
+      <section className="landing-section adoption-section" id="switching" aria-labelledby="switching-title">
+        <div className="adoption-copy">
+          <p className="landing-kicker"><span aria-hidden="true" /> Before you move real work</p>
+          <h2 id="switching-title">The risk is not buying software. <em>It is disrupting a working business.</em></h2>
+          <p>A useful evaluation should answer the uncomfortable questions before you commit data or change a team process. Here is where Operating Layer stands today — including the gap that may make it the wrong fit for you right now.</p>
+        </div>
+        <div className="adoption-grid">
+          {buyingAnswers.map(item => <article className={`adoption-card adoption-card-${item.tone}`} key={item.title}>
+            <span>{item.label}</span><h3>{item.title}</h3><p>{item.copy}</p>
+          </article>)}
+        </div>
+      </section>
+
       <section className="landing-section trust-section" id="trust" aria-labelledby="trust-title">
         <div className="trust-copy"><p className="landing-kicker"><span aria-hidden="true" /> Built for a business you expect to keep</p><h2 id="trust-title">Simple for the team. <em>Serious underneath.</em></h2><p>The product keeps customer businesses separated, limits actions by role and records important operational changes so growth does not mean losing control of who changed what.</p></div>
         <div className="trust-grid"><article><ShieldCheck size={22} aria-hidden="true" /><strong>Your business stays separate</strong><p>Each customer’s operational data is kept in its own tenant datastore rather than mixed into one shared operational table.</p></article><article><Users size={22} aria-hidden="true" /><strong>People see what they need</strong><p>Roles keep owners, managers, inventory, fulfilment and read-only users aligned to the work they are responsible for.</p></article><article><ClipboardCheck size={22} aria-hidden="true" /><strong>Important changes leave a trail</strong><p>Inventory and order mutations follow controlled workflows with an audit record rather than hidden background shortcuts.</p></article><article><Warehouse size={22} aria-hidden="true" /><strong>EU data controls</strong><p>Core tenant data and documents use Cloudflare resources configured for EU jurisdiction where the platform supports it.</p></article></div>
@@ -246,7 +310,7 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
         <div className="seo-faq-grid">{faqs.map(item => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>
       </section>
 
-      <section className="landing-cta-section" id="get-started" aria-labelledby="cta-title"><div className="cta-orb" aria-hidden="true" /><p className="landing-kicker light"><span aria-hidden="true" /> No account needed to evaluate it</p><h2 id="cta-title">See how it handles <em>a business like yours.</em></h2><p>Choose the closest demo and follow a realistic workstream. If it removes problems you recognise, create a workspace and shape the operational areas around your business.</p><div className="landing-hero-actions"><button type="button" className="landing-primary-cta inverted" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>{inviteToken ? <GoogleGlyph /> : <PlayCircle size={18} aria-hidden="true" />}{busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Choose a business demo"}</button>{!inviteToken && <button type="button" className="landing-secondary-cta" disabled={busy} onClick={signIn}><GoogleGlyph />{busy ? "Opening Google…" : "Create a workspace with Google"}</button>}</div></section>
+      <section className="landing-cta-section" id="get-started" aria-labelledby="cta-title"><div className="cta-orb" aria-hidden="true" /><p className="landing-kicker light"><span aria-hidden="true" /> Free today · no account needed to evaluate</p><h2 id="cta-title">See how it handles <em>a business like yours.</em></h2><p>Choose the closest demo and follow a realistic workstream. If it removes problems you recognise, create a free workspace and shape the operational areas around your business.</p><div className="landing-hero-actions"><button type="button" className="landing-primary-cta inverted" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>{inviteToken ? <GoogleGlyph /> : <PlayCircle size={18} aria-hidden="true" />}{busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Choose a business demo"}</button>{!inviteToken && <button type="button" className="landing-secondary-cta" disabled={busy} onClick={signIn}><GoogleGlyph />{busy ? "Opening Google…" : "Create a free workspace"}</button>}</div></section>
     </main>
 
     <footer className="landing-footer"><BrandLockup inverse /><p>Operations software for growing SMEs that need customer work, stock and suppliers to stay joined up.</p><a href="#top">Back to top</a></footer>
