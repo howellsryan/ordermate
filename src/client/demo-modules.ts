@@ -9,7 +9,7 @@ import {
 
 const DEMO_MODULES_KEY = "operating-layer:demo-modules:v1";
 
-type DemoModuleConfig = Record<WorkspaceModuleKey, boolean>;
+export type DemoModuleConfig = Record<WorkspaceModuleKey, boolean>;
 
 function readConfig(): DemoModuleConfig {
   if (typeof window === "undefined") return defaultModuleConfiguration();
@@ -17,7 +17,8 @@ function readConfig(): DemoModuleConfig {
   if (!raw) return defaultModuleConfiguration();
   try {
     const parsed = JSON.parse(raw) as Partial<DemoModuleConfig>;
-    return Object.fromEntries(WORKSPACE_MODULE_KEYS.map(key => [key, typeof parsed[key] === "boolean" ? parsed[key] : defaultModuleConfiguration()[key]])) as DemoModuleConfig;
+    const defaults = defaultModuleConfiguration();
+    return Object.fromEntries(WORKSPACE_MODULE_KEYS.map(key => [key, typeof parsed[key] === "boolean" ? parsed[key] : defaults[key]])) as DemoModuleConfig;
   } catch {
     return defaultModuleConfiguration();
   }
@@ -29,6 +30,13 @@ function saveConfig(config: DemoModuleConfig) {
 
 export function resetDemoModules() {
   window.localStorage.removeItem(DEMO_MODULES_KEY);
+}
+
+export function setDemoModules(config: Partial<DemoModuleConfig>) {
+  const next = { ...defaultModuleConfiguration(), ...config };
+  const errors = validateModuleConfiguration(next);
+  if (errors.length) throw new Error(errors.join(" "));
+  saveConfig(next);
 }
 
 export function demoModules() {
