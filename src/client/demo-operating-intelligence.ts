@@ -71,8 +71,11 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
           .map(line => ({
             daysFromNow: daysFromToday(po.expected_delivery_date, leadTime),
             quantity: line.quantity_ordered - line.quantity_received,
-          })))
-        .sort((a, b) => a.daysFromNow - b.daysFromNow);
+          })));
+      const scheduledIncoming = incomingSchedule.reduce((sum, item) => sum + item.quantity, 0);
+      const residualIncoming = Math.max(0, row.incoming - scheduledIncoming);
+      if (residualIncoming > 0) incomingSchedule.push({ daysFromNow: leadTime, quantity: residualIncoming });
+      incomingSchedule.sort((a, b) => a.daysFromNow - b.daysFromNow);
 
       const recentDaily = fulfilled30 / 30;
       const threshold = policy?.reorder_point ?? settings.low_stock_threshold;
