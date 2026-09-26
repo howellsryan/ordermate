@@ -13,8 +13,8 @@ import { DataState, PageHeader } from "../ui";
 type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 type Contact = { id: string; lifecycle_stage: "prospect" | "customer" };
 type ServiceCase = { id: string; number: string; title: string; contact_name: string; status: string };
-type ServiceJob = { id: string; number: string; title: string; customer_name: string; status: string; next_visit_at?: string | null };
-type ServiceInvoice = { id: string; number: string; customer_name: string; status: string; total_minor: number; outstanding_minor: number; currency: string; due_date?: string | null };
+type ServiceJob = { id: string; case_id: string; number: string; title: string; customer_name?: string | null; status: string; next_visit_at?: string | null };
+type ServiceInvoice = { id: string; case_id: string; number: string; customer_name?: string | null; status: string; total_minor: number; outstanding_minor: number; currency: string; due_date?: string | null };
 type ServiceSummary = { contacts: Contact[]; cases: ServiceCase[]; jobs: ServiceJob[]; invoices: ServiceInvoice[] };
 type InboxItem = AttentionResponse["items"][number];
 
@@ -67,21 +67,24 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
   const customers = serviceData?.contacts.filter(contact => contact.lifecycle_stage === "customer").length ?? crm.data?.contacts.filter(contact => contact.lifecycle_stage === "customer").length ?? 0;
   const openCases = serviceData?.cases.filter(item => item.status === "open").length ?? 0;
   const activeJobs = serviceData?.jobs.filter(item => item.status === "scheduled" || item.status === "in_progress").length ?? 0;
-  const outstandingInvoices = serviceData?.invoices.filter(item => item.status === "issued" || item.status === "partially_paid") ?? [];
+  const outstandingInvoices = useMemo(() => serviceData?.invoices.filter(item => item.status === "issued" || item.status === "partially_paid") ?? [], [serviceData]);
   const outstandingMinor = outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.outstanding_minor || 0), 0);
   const serviceCurrency = outstandingInvoices[0]?.currency || serviceData?.invoices[0]?.currency || "GBP";
 
   const serviceInbox = useMemo<InboxItem[]>(() => {
     if (!serviceData) return [];
+    const customerByCase = new Map(serviceData.cases.map(serviceCase => [serviceCase.id, serviceCase.contact_name] as const));
     const items: InboxItem[] = [];
     for (const serviceCase of serviceData.cases.filter(item => item.status === "open").slice(0, 3)) {
       items.push({ id: `service-case:${serviceCase.id}`, severity: "info", type: "Service enquiry", title: `${serviceCase.number} · ${serviceCase.title}`, detail: serviceCase.contact_name, page: "service" });
     }
     for (const job of serviceData.jobs.filter(item => item.status === "scheduled" || item.status === "in_progress").slice(0, 3)) {
-      items.push({ id: `service-job:${job.id}`, severity: job.status === "in_progress" ? "warning" : "info", type: job.status === "in_progress" ? "Job in progress" : "Scheduled service", title: `${job.number} · ${job.title}`, detail: `${job.customer_name}${job.next_visit_at ? ` · ${new Date(job.next_visit_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}`, page: "service" });
+      const customer = job.customer_name || customerByCase.get(job.case_id) || "Customer";
+      items.push({ id: `service-job:${job.id}`, severity: job.status === "in_progress" ? "warning" : "info", type: job.status === "in_progress" ? "Job in progress" : "Scheduled service", title: `${job.number} · ${job.title}`, detail: `${customer}${job.next_visit_at ? ` · ${new Date(job.next_visit_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}`, page: "service" });
     }
     for (const invoice of outstandingInvoices.slice(0, 3)) {
-      items.push({ id: `service-invoice:${invoice.id}`, severity: "warning", type: "Invoice outstanding", title: invoice.number, detail: `${invoice.customer_name} · ${money(invoice.outstanding_minor, invoice.currency)} outstanding${invoice.due_date ? ` · due ${invoice.due_date}` : ""}`, page: "service" });
+      const customer = invoice.customer_name || customerByCase.get(invoice.case_id) || "Customer";
+      items.push({ id: `service-invoice:${invoice.id}`, severity: "warning", type: "Invoice outstanding", title: invoice.number, detail: `${customer} · ${money(invoice.outstanding_minor, invoice.currency)} outstanding${invoice.due_date ? ` · due ${invoice.due_date}` : ""}`, page: "service" });
     }
     return items;
   }, [serviceData, outstandingInvoices]);
