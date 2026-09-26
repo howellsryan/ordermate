@@ -27,20 +27,26 @@ export class FeatureRuntime {
   constructor(private readonly ctx: DurableObjectState) {}
 
   async handle(request: Request): Promise<Response | null> {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/$/, "") || "/";
-    const method = request.method;
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname.replace(/\/$/, "") || "/";
+      const method = request.method;
 
-    if (method === "GET" && path === "/features") return this.listFeatures();
-    const featureMatch = path.match(/^\/features\/([^/]+)$/);
-    if (method === "PATCH" && featureMatch) return this.updateFeature(decodeURIComponent(featureMatch[1]), request);
+      if (method === "GET" && path === "/features") return this.listFeatures();
+      const featureMatch = path.match(/^\/features\/([^/]+)$/);
+      if (method === "PATCH" && featureMatch) return this.updateFeature(decodeURIComponent(featureMatch[1]), request);
 
-    const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
-    if (requiredFeature && !this.featureEnabled(requiredFeature)) {
-      return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled for this workspace.`, 404);
+      const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
+      if (requiredFeature && !this.featureEnabled(requiredFeature)) {
+        return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled for this workspace.`, 404);
+      }
+
+      return null;
+    } catch (cause) {
+      if (cause instanceof z.ZodError) return responseError(cause.issues[0]?.message || "Invalid feature configuration", 400);
+      console.error("Feature runtime request failed", cause);
+      return responseError(cause instanceof Error ? cause.message : "Unexpected error", 500);
     }
-
-    return null;
   }
 
   private actor(request: Request): Actor {
