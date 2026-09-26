@@ -1,8 +1,9 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
-import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
+import type { AttentionResponse, InventoryRow, Product } from "./model";
 import { demoControlApi } from "./demo-acceptance";
 import { demoOpsApi } from "./demo-attention";
 import { demoCsv } from "./demo-export";
+import { demoOperatingIntelligence } from "./demo-operating-intelligence";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
 import { demoTenantApi } from "./demo-stocktake";
 
@@ -63,14 +64,11 @@ async function activeDemoVariantIds() {
 
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
-    const result = await demoTenantApi<unknown>(path, init);
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
-    if (method === "GET" && pathname === "/replenishment") {
-      const activeVariants = await activeDemoVariantIds();
-      const data = result as ReplenishmentResponse;
-      return { ...data, suggestions: data.suggestions.filter(item => activeVariants.has(item.variant_id)) } as T;
-    }
+    if (method === "GET" && pathname === "/replenishment") return await demoOperatingIntelligence() as T;
+
+    const result = await demoTenantApi<unknown>(path, init);
     if (method === "GET" && pathname === "/dashboard") {
       const activeVariants = await activeDemoVariantIds();
       const inventory = await demoTenantApi<InventoryRow[]>("/inventory");
@@ -94,7 +92,7 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
 
 export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
-    const result = await demoOpsApi<unknown>(path);
+    const result = await demoOpsApi<unknown>(path, init);
     const pathname = new URL(path, "https://demo.local").pathname;
     if (pathname === "/attention") {
       const activeVariants = await activeDemoVariantIds();

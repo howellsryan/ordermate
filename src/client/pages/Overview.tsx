@@ -4,6 +4,7 @@ import type { OrganizationSummary, DashboardSummary } from "../../shared/types";
 import { money, tenantApi, tenantOpsApi } from "../api";
 import { isDemoTenant } from "../demo-store";
 import type { AttentionResponse, SearchResult } from "../model";
+import OperationsAssistant from "../OperationsAssistant";
 import { DataState, PageHeader } from "../ui";
 
 export default function Overview({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
@@ -28,6 +29,8 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Low stock" value={data?.lowStockVariants ?? "—"} helper="Active tracked positions" tone="rose" />
     </section>
 
+    <OperationsAssistant tenant={tenant} onNavigate={onNavigate} />
+
     <section className="panel attention-panel">
       <div className="panel-heading"><div><p className="eyebrow">Needs attention</p><h3>Operational inbox</h3></div><AlertTriangle size={21} /></div>
       <DataState loading={attention.isLoading} error={attention.error} empty={!attention.data?.items.length} emptyText="Nothing needs attention right now.">
@@ -40,7 +43,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
         <div className="panel-heading"><div><p className="eyebrow">Inventory position</p><h2>{money(data?.inventoryValueMinor, data?.currency)}</h2></div><Warehouse size={24} /></div>
         <p>Current on-hand inventory valued at recorded variant cost.</p>
         <div className="soft-rule" />
-        <div className="automation-callout"><Sparkles size={18} /><div><strong>{demo ? "Explainable planning, locally" : "Automation with a human checkpoint"}</strong><span>{demo ? "Replenishment, order planning and purchasing suggestions use the sample operational records in this browser. File-based document extraction stays disabled in guest mode so demo data never leaves the browser." : "Replenishment rules, supplier-document extraction and delivery-note matching all produce reviewable operational suggestions; the audited order and inventory transactions remain the only source of business truth."}</span></div></div>
+        <div className="automation-callout"><Sparkles size={18} /><div><strong>{demo ? "Explainable planning, locally" : "Automation with a human checkpoint"}</strong><span>{demo ? "Forecasting, replenishment scenarios, the read-only copilot and purchasing suggestions use the sample operational records in this browser. File-based document extraction stays disabled in guest mode so demo data never leaves the browser." : "Forecasting, contextual scenarios, the read-only copilot, supplier-document extraction and delivery-note matching produce evidence-backed suggestions; audited order, purchasing and inventory transactions remain the only source of business truth."}</span></div></div>
       </div>
       <div className="panel">
         <div className="panel-heading"><div><p className="eyebrow">Operating model</p><h3>One source of stock truth</h3></div><Archive size={21} /></div>

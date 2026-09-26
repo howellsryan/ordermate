@@ -1,10 +1,26 @@
 import type { DeliveryDiscrepancyRecord } from "../shared/delivery-discrepancy";
 import type { AttentionResponse } from "./model";
+import { demoAssistant } from "./demo-assistant";
 import { demoOpsApi as acceptanceOpsApi, demoTenantApi } from "./demo-acceptance";
 
-export async function demoOpsApi<T>(path: string): Promise<T> {
-  const result = await acceptanceOpsApi<unknown>(path);
+export async function demoOpsApi<T>(path: string, init?: RequestInit): Promise<T> {
   const url = new URL(path, "https://demo.local");
+  const method = (init?.method || "GET").toUpperCase();
+  if (url.pathname === "/assistant" && method === "POST") {
+    let body: { question?: unknown } = {};
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body) as { question?: unknown };
+      } catch {
+        throw new Error("Ask a question between 1 and 500 characters");
+      }
+    }
+    const question = typeof body.question === "string" ? body.question.trim() : "";
+    if (!question || question.length > 500) throw new Error("Ask a question between 1 and 500 characters");
+    return await demoAssistant(question) as T;
+  }
+
+  const result = await acceptanceOpsApi<unknown>(path);
   if (url.pathname !== "/attention") return result as T;
 
   const data = result as AttentionResponse;

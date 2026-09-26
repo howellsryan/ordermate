@@ -1,5 +1,6 @@
 import "./operations.css";
 import "./operational-polish.css";
+import "./operations-assistant.css";
 import "./document-inbox.css";
 import "./document-proposals.css";
 import "./record-details.css";
