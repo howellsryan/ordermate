@@ -43,7 +43,7 @@ jobs:
         run: npm test
 
       - name: Validate guest demo workflows explicitly
-        run: npx vitest run src/client/demo-acceptance.test.ts src/client/demo-sme-flow.test.ts
+        run: npx vitest run test/demo-guest-acceptance.test.ts
 
       - name: Build production configuration
         run: npm run build
