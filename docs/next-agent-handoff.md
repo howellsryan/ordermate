@@ -1,85 +1,81 @@
-# OrderMate next-agent handoff
+# Operating Layer next-agent handoff
 
 ## Where to resume
 
 - Repository: `howellsryan/ordermate`
 - Branch: `rebuild/cloudflare-saas`
-- Draft PR: #3 — `Rebuild OrderMate as a Cloudflare-native multi-tenant SaaS`
+- Draft PR: #3 — `Rebuild as Operating Layer — Cloudflare-native operations SaaS`
 - Base: `main`
 - Keep the PR draft for now.
-- Live staging: `https://ordermate-staging.rlh.workers.dev`
+- Compatibility staging URL: `https://ordermate-staging.rlh.workers.dev`
 
-Resolve the latest branch/PR head before acting and treat the repository as authoritative. Read `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/delivery-plan.md`, `docs/implementation-status.md` and `docs/staging.md` before changes.
+Resolve the latest branch/PR head before acting and treat the repository as authoritative. Read `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/delivery-plan.md`, `docs/implementation-status.md`, `docs/brand.md`, `docs/seo.md` and `docs/staging.md` before changes.
 
-## Current verification state
+## Brand state
 
-Both verification layers are green:
+The customer-facing product is **Operating Layer**. The public acquisition surface, authenticated application shell, document-extraction product language, product-proof assets, favicon, machine-readable discovery content and core repository guidance have been rebranded.
+
+Brand proposition: **Inventory, orders & purchasing. One operating layer.**
+
+Brand promise: **The system between order and outcome.**
+
+Existing `ordermate-*` Cloudflare resource names, the compatibility staging hostname, repo/package slugs and `x-ordermate-*` internal request headers are migration-sensitive technical identifiers. Do not rename them as a cosmetic cleanup. See `docs/brand.md`.
+
+The browser tenant key migrates from legacy `ordermate:tenant` to `operating-layer:tenant` without losing the selected workspace.
+
+## SEO state
+
+The homepage has an SEO-first document shell, descriptive title/meta/social metadata, truthful Organization/WebApplication structured data, category-oriented crawlable content, FAQ content, descriptive product-image alt text and updated `llms.txt` / AI discovery identity.
+
+Staging is intentionally protected from search indexing at the Worker boundary. Do not invent a production domain. Domain/trademark/company-name clearance and the canonical production origin are explicit launch gates; see `docs/seo.md`.
+
+## Verification state
+
+Before the Operating Layer brand/SEO delta, the rebuild had passed:
 
 ```text
-Repository/GitHub gate
-npm install            PASS — lockfile unchanged
-npm run typecheck      PASS
-npm test               PASS — 29 files, 112/112 tests
-npm run build          PASS
-npm run build:staging  PASS
-
-Cloudflare staging gate
-npm run typecheck      PASS
-npm run test:cloudflare PASS — 29 files, 112/112 tests
-npm run build:staging  PASS
-D1 migrations          PASS
-staging deploy         PASS
+npm install             PASS — lockfile unchanged
+npm run typecheck       PASS
+npm test                PASS — 29 files, 112/112 tests
+npm run build            PASS
+npm run build:staging    PASS
 ```
 
-`.github/workflows/rebuild-verification.yml` is intentionally manual-only so normal commits do not consume GitHub Actions minutes. Cloudflare Builds independently watches `rebuild/cloudflare-saas`, verifies runtime/config pushes and deploys the isolated staging Worker. `docs/**` is excluded.
+Cloudflare staging had also previously passed typecheck, `test:cloudflare`, staging build, D1 migrations and deployment.
 
-Cloudflare's shared build hosts make several Durable Object integration tests take 5–9 seconds, so `test:cloudflare` has a 15-second per-test ceiling. Normal `npm test` retains Vitest's stricter default timeout. No assertion is removed or weakened.
+Those results **predate the latest branding/SEO runtime changes**. Do not claim the current head is freshly verified until the current branch is run through the standard gate again.
 
-## Staging environment
+`.github/workflows/rebuild-verification.yml` remains manual-only so normal commits do not consume GitHub Actions minutes. Cloudflare Builds may independently watch the branch, but resolve and inspect the actual latest build/deploy state before relying on it.
 
-Staging is provisioned and deployed separately from future production:
+## Compatibility staging environment
+
+Existing staging remains separated from future production:
 
 - Worker: `ordermate-staging`
 - URL: `https://ordermate-staging.rlh.workers.dev`
 - EU D1: `ordermate-staging-control` (`dfd9cfd8-c33e-469d-9ce2-1fd6e6996c24`)
 - staging-only `TenantStore` Durable Object namespace
-- explicit EU R2: `ordermate-staging-documents`
+- EU R2: `ordermate-staging-documents`
 - queue: `ordermate-staging-events`
 - DLQ: `ordermate-staging-events-dead`
 - AI extraction disabled
 - preview URLs disabled
 
-The staging D1 has `0001_auth.sql` and `0002_workspace_invites.sql` applied. Its Better Auth/workspace tables were queried directly after deployment.
+The `ordermate-*` names above are infrastructure compatibility identifiers, not public brand copy.
 
-Future staging deploys run only idempotent D1 migrations followed by `wrangler deploy --env staging`; R2 provisioning is a completed one-time operation.
+## OAuth prerequisite
 
-## Remaining OAuth prerequisite
+`BETTER_AUTH_SECRET` was configured with a generated staging secret. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` were placeholders at the last verified handoff.
 
-`BETTER_AUTH_SECRET` is a real generated staging secret. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` currently exist only as non-credential placeholders.
-
-Before interactive testing, configure a Google OAuth Web client with this exact callback:
+Before interactive testing, confirm the live secret state and configure a Google OAuth Web client with the current compatibility callback if still required:
 
 ```text
 https://ordermate-staging.rlh.workers.dev/api/auth/callback/google
 ```
 
-Then replace the two staging placeholder secrets. Never commit the values and do not add a staging auth bypass.
+Never commit the credentials and do not add a staging auth bypass.
 
-## What verification fixed
-
-The hardening pass properly resolved:
-
-- npm/Cloudflare toolchain compatibility and the committed lockfile;
-- Node 24 runtime requirement;
-- TypeScript contract/narrowing failures across client and Durable Object layers;
-- Vitest accidentally requiring a remote Workers AI binding instead of remaining local;
-- async Durable Object handler failures escaping the request error boundary;
-- missing real v1 -> v6 tenant migration preservation coverage;
-- Wave Picking continuing after a mid-wave fulfilment failure;
-- Wave Picking commit-in-flight/accessibility issues identified by the Agent-Template/Vercel review;
-- creation of a production-separated staging deployment for real browser/device testing.
-
-## Critical security/domain boundaries verified
+## Critical security/domain boundaries
 
 - Tenant ID is a selector only; D1 membership is checked before tenant Durable Object routing.
 - Worker overwrites internal actor headers.
@@ -106,33 +102,14 @@ The hardening pass properly resolved:
 - Wave is intentionally not globally atomic.
 - Processing stops on the first failed order. Earlier successes remain committed and are removed; later orders are not attempted. Remaining work must refresh/re-scan. Never auto-retry a previously successful order.
 
-## Remaining blocker before PR #3 is ready for review
+## Remaining gate before PR #3 is review-ready
 
-The infrastructure and automated gates are complete. The remaining gate is **real interactive browser/device evidence**.
+1. Run current-head `npm run typecheck`, `npm test`, `npm run build` and the staging build/deploy gate.
+2. Inspect the current public landing page for desktop/mobile layout, keyboard/focus accessibility, reduced motion, broken assets and metadata/structured-data correctness.
+3. Verify staging returns `X-Robots-Tag: noindex, nofollow, noarchive` and disallows crawlers.
+4. Replace placeholder Google OAuth credentials if still outstanding.
+5. Perform the real browser/device smoke pass: sign-in, tenant creation/switching, manual/hardware/camera scanning, Wave Picking success/failure recovery, single-order fulfilment, cycle count, PO receive and delivery-note review.
+6. Re-run Lighthouse or equivalent on the **current Operating Layer page**; do not reuse the pre-rebrand scores as current evidence.
+7. Record the evidence on PR #3, resolve findings, then decide whether to mark it ready for review.
 
-After replacing the placeholder Google OAuth credentials, test the live staging site at minimum:
-
-1. Google sign-in and business creation/tenant switching.
-2. Create location/product/barcode and stock needed for orders.
-3. Same-location Wave Picking lock and max 10 orders.
-4. Manual barcode entry.
-5. Real USB/Bluetooth keyboard-wedge scanner input.
-6. Mobile camera permission/start/decode/one-scan-close path.
-7. Repeated SKU across orders.
-8. Partial quantities and already-partially-fulfilled orders.
-9. Per-order allocation preview.
-10. Complete successful wave.
-11. Earlier order succeeds then a later order fails.
-12. Refresh confirms successful orders cannot be duplicate-fulfilled and remainder requires re-scan.
-13. Single-order fulfilment, cycle count, PO receive and delivery-note review.
-14. Responsive/focus/accessibility spot checks on phone and desktop.
-
-If smoke testing finds a defect, fix it and rerun the affected suite plus the full manual verification workflow when runtime code changes materially. Cloudflare staging should then auto-deploy the branch fix.
-
-## Review readiness
-
-PR #3 remains draft. There is no known high-severity regression in the reviewed security/tenancy/inventory/migration boundaries, and automated verification plus staging deployment are green.
-
-Do not add another broad subsystem yet. Complete OAuth + the real device/browser smoke pass, record evidence in PR #3, then decide whether to mark it ready for review.
-
-Later work may include exception workflows, onboarding improvements, richer replenishment forecasting, integrations/storefront, shipping and further reviewed automation. Lots/batches/serial/manufacturing, autonomous AI mutations and destructive catalogue bulk-upserts still require a fresh architecture/plan gate.
+Do not add another broad subsystem until this gate is closed. Do not rename provisioned compatibility infrastructure without a separate migration plan.
