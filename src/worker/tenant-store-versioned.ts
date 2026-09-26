@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 7;
+const CURRENT_TENANT_SCHEMA_VERSION = 8;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -188,6 +188,240 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 7);
     });
     current = 7;
+  }
+
+  if (current < 8) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS workspace_modules (
+          module_key TEXT PRIMARY KEY,
+          enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+          updated_at TEXT NOT NULL,
+          updated_by TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS crm_contacts (
+          id TEXT PRIMARY KEY,
+          lifecycle_stage TEXT NOT NULL DEFAULT 'prospect' CHECK(lifecycle_stage IN ('prospect','customer')),
+          name TEXT NOT NULL,
+          email TEXT,
+          mobile TEXT,
+          address_json TEXT,
+          notes TEXT,
+          source TEXT,
+          converted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS crm_contacts_stage_name_idx ON crm_contacts(lifecycle_stage, name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS crm_contacts_email_idx ON crm_contacts(email COLLATE NOCASE);
+
+        CREATE TABLE IF NOT EXISTS service_cases (
+          id TEXT PRIMARY KEY,
+          number TEXT NOT NULL UNIQUE,
+          contact_id TEXT NOT NULL REFERENCES crm_contacts(id),
+          title TEXT NOT NULL,
+          summary TEXT,
+          source TEXT,
+          site_address_json TEXT,
+          status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','won','closed','cancelled')),
+          closed_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_cases_contact_idx ON service_cases(contact_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS service_cases_status_idx ON service_cases(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS service_requests (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES service_cases(id) ON DELETE CASCADE,
+          number TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','qualified','converted','declined','cancelled')),
+          details TEXT NOT NULL,
+          requested_for TEXT,
+          qualified_at TEXT,
+          converted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_requests_case_idx ON service_requests(case_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS service_requests_status_idx ON service_requests(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS service_quotes (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES service_cases(id) ON DELETE CASCADE,
+          number TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','sent','accepted','rejected','expired','superseded','cancelled')),
+          currency TEXT NOT NULL,
+          notes TEXT,
+          subtotal_minor INTEGER NOT NULL DEFAULT 0 CHECK(subtotal_minor >= 0),
+          tax_minor INTEGER NOT NULL DEFAULT 0 CHECK(tax_minor >= 0),
+          total_minor INTEGER NOT NULL DEFAULT 0 CHECK(total_minor >= 0),
+          customer_name_snapshot TEXT,
+          customer_email_snapshot TEXT,
+          customer_mobile_snapshot TEXT,
+          customer_address_json_snapshot TEXT,
+          sent_at TEXT,
+          accepted_at TEXT,
+          expires_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_quotes_case_idx ON service_quotes(case_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS service_quotes_status_idx ON service_quotes(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS service_quote_lines (
+          id TEXT PRIMARY KEY,
+          quote_id TEXT NOT NULL REFERENCES service_quotes(id) ON DELETE CASCADE,
+          line_type TEXT NOT NULL CHECK(line_type IN ('service','material','other')),
+          variant_id TEXT REFERENCES product_variants(id) ON DELETE SET NULL,
+          description_snapshot TEXT NOT NULL,
+          quantity_milli INTEGER NOT NULL CHECK(quantity_milli > 0),
+          unit_price_minor INTEGER NOT NULL CHECK(unit_price_minor >= 0),
+          tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK(tax_rate_bps >= 0),
+          net_minor INTEGER NOT NULL CHECK(net_minor >= 0),
+          tax_minor INTEGER NOT NULL CHECK(tax_minor >= 0),
+          gross_minor INTEGER NOT NULL CHECK(gross_minor >= 0)
+        );
+        CREATE INDEX IF NOT EXISTS service_quote_lines_quote_idx ON service_quote_lines(quote_id);
+
+        CREATE TABLE IF NOT EXISTS service_jobs (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES service_cases(id) ON DELETE CASCADE,
+          quote_id TEXT REFERENCES service_quotes(id) ON DELETE SET NULL,
+          number TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','in_progress','completed','cancelled')),
+          title TEXT NOT NULL,
+          site_address_json TEXT,
+          notes TEXT,
+          started_at TEXT,
+          completed_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_jobs_case_idx ON service_jobs(case_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS service_jobs_status_idx ON service_jobs(status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS service_visits (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL REFERENCES service_jobs(id) ON DELETE CASCADE,
+          status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','travelling','on_site','completed','cancelled','no_show')),
+          scheduled_start TEXT NOT NULL,
+          scheduled_end TEXT,
+          assigned_actor_id TEXT,
+          notes TEXT,
+          started_at TEXT,
+          completed_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_visits_job_idx ON service_visits(job_id, scheduled_start);
+        CREATE INDEX IF NOT EXISTS service_visits_schedule_idx ON service_visits(status, scheduled_start);
+
+        CREATE TABLE IF NOT EXISTS service_material_usage (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL REFERENCES service_jobs(id),
+          visit_id TEXT REFERENCES service_visits(id) ON DELETE SET NULL,
+          variant_id TEXT NOT NULL REFERENCES product_variants(id),
+          location_id TEXT NOT NULL REFERENCES locations(id),
+          quantity INTEGER NOT NULL CHECK(quantity > 0),
+          sku_snapshot TEXT NOT NULL,
+          description_snapshot TEXT NOT NULL,
+          unit_cost_minor_snapshot INTEGER NOT NULL CHECK(unit_cost_minor_snapshot >= 0),
+          movement_id TEXT NOT NULL UNIQUE REFERENCES inventory_movements(id),
+          actor_id TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_material_usage_job_idx ON service_material_usage(job_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS service_invoices (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES service_cases(id),
+          job_id TEXT REFERENCES service_jobs(id) ON DELETE SET NULL,
+          number TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','issued','partially_paid','paid','void')),
+          currency TEXT NOT NULL,
+          supply_date TEXT,
+          issue_date TEXT,
+          due_date TEXT,
+          notes TEXT,
+          subtotal_minor INTEGER NOT NULL DEFAULT 0 CHECK(subtotal_minor >= 0),
+          tax_minor INTEGER NOT NULL DEFAULT 0 CHECK(tax_minor >= 0),
+          total_minor INTEGER NOT NULL DEFAULT 0 CHECK(total_minor >= 0),
+          business_name_snapshot TEXT,
+          business_address_json_snapshot TEXT,
+          business_contact_snapshot TEXT,
+          customer_name_snapshot TEXT,
+          customer_email_snapshot TEXT,
+          customer_mobile_snapshot TEXT,
+          customer_address_json_snapshot TEXT,
+          issued_at TEXT,
+          voided_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_invoices_case_idx ON service_invoices(case_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS service_invoices_status_due_idx ON service_invoices(status, due_date);
+
+        CREATE TABLE IF NOT EXISTS service_invoice_lines (
+          id TEXT PRIMARY KEY,
+          invoice_id TEXT NOT NULL REFERENCES service_invoices(id) ON DELETE CASCADE,
+          line_type TEXT NOT NULL CHECK(line_type IN ('service','material','other')),
+          description_snapshot TEXT NOT NULL,
+          quantity_milli INTEGER NOT NULL CHECK(quantity_milli > 0),
+          unit_price_minor INTEGER NOT NULL CHECK(unit_price_minor >= 0),
+          tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK(tax_rate_bps >= 0),
+          net_minor INTEGER NOT NULL CHECK(net_minor >= 0),
+          tax_minor INTEGER NOT NULL CHECK(tax_minor >= 0),
+          gross_minor INTEGER NOT NULL CHECK(gross_minor >= 0)
+        );
+        CREATE INDEX IF NOT EXISTS service_invoice_lines_invoice_idx ON service_invoice_lines(invoice_id);
+
+        CREATE TABLE IF NOT EXISTS service_payments (
+          id TEXT PRIMARY KEY,
+          invoice_id TEXT NOT NULL REFERENCES service_invoices(id),
+          amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+          method TEXT,
+          reference TEXT,
+          paid_at TEXT NOT NULL,
+          actor_id TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS service_payments_invoice_idx ON service_payments(invoice_id, paid_at DESC);
+      `);
+
+      if (!tableHasColumn(storage, "customers", "crm_contact_id")) {
+        sql.exec("ALTER TABLE customers ADD COLUMN crm_contact_id TEXT REFERENCES crm_contacts(id)");
+      }
+      sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS customers_crm_contact_idx ON customers(crm_contact_id) WHERE crm_contact_id IS NOT NULL");
+
+      const migrationTime = new Date().toISOString();
+      for (const moduleKey of ["crm", "orders", "inventory", "purchasing", "warehouse", "reports"]) {
+        sql.exec(
+          "INSERT INTO workspace_modules (module_key, enabled, updated_at, updated_by) VALUES (?, 1, ?, 'schema-v8') ON CONFLICT(module_key) DO NOTHING",
+          moduleKey,
+          migrationTime,
+        );
+      }
+      sql.exec(
+        "INSERT INTO workspace_modules (module_key, enabled, updated_at, updated_by) VALUES ('service', 0, ?, 'schema-v8') ON CONFLICT(module_key) DO NOTHING",
+        migrationTime,
+      );
+
+      sql.exec(`
+        INSERT OR IGNORE INTO crm_contacts (
+          id, lifecycle_stage, name, email, mobile, address_json, notes, source,
+          converted_at, created_at, updated_at
+        )
+        SELECT id, 'customer', name, email, phone, address_json, notes, 'legacy_customer',
+               created_at, created_at, updated_at
+        FROM customers
+      `);
+      sql.exec("UPDATE customers SET crm_contact_id = id WHERE crm_contact_id IS NULL AND EXISTS (SELECT 1 FROM crm_contacts c WHERE c.id = customers.id)");
+
+      recordMigration(storage, 8);
+    });
+    current = 8;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
