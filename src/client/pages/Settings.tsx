@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, LockKeyhole, Save } from "lucide-react";
+import { Boxes, Database, LockKeyhole, Save } from "lucide-react";
+import type { WorkspaceModuleKey } from "../../shared/modules";
 import type { OrganizationSummary } from "../../shared/types";
 import { tenantApi } from "../api";
 import { isDemoTenant } from "../demo-store";
@@ -14,15 +15,26 @@ type TenantSettings = {
   low_stock_threshold: number;
 };
 
+type ModuleState = {
+  key: WorkspaceModuleKey;
+  label: string;
+  description: string;
+  dependencies: WorkspaceModuleKey[];
+  enabled: boolean;
+};
+type ModulesResponse = { modules: ModuleState[] };
+
 export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const demo = isDemoTenant(tenant.id);
   const settings = useQuery({ queryKey: ["tenant", tenant.id, "settings"], queryFn: () => tenantApi<TenantSettings>(tenant.id, "/settings") });
+  const modules = useQuery({ queryKey: ["tenant", tenant.id, "modules"], queryFn: () => tenantApi<ModulesResponse>(tenant.id, "/modules") });
   const [currency, setCurrency] = useState("GBP");
   const [includeTax, setIncludeTax] = useState(true);
   const [tax, setTax] = useState("20");
   const [lowStock, setLowStock] = useState("5");
   const canEdit = ["owner", "admin", "manager"].includes(tenant.role);
+  const canConfigureModules = ["owner", "admin"].includes(tenant.role);
 
   useEffect(() => {
     if (!settings.data) return;
@@ -50,9 +62,35 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
     },
   });
 
+  const toggleModule = useMutation({
+    mutationFn: ({ key, enabled }: { key: WorkspaceModuleKey; enabled: boolean }) => tenantApi<ModulesResponse>(tenant.id, `/modules/${key}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+    onSuccess: data => {
+      qc.setQueryData(["tenant", tenant.id, "modules"], data);
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] });
+    },
+  });
+
   return <>
-    <PageHeader eyebrow="Workspace" title="Settings" description={demo ? "Change commercial defaults inside this browser-only guest workspace." : "Commercial defaults, stock thresholds and the infrastructure boundaries for this business."} />
+    <PageHeader eyebrow="Workspace" title="Settings" description={demo ? "Choose which operating modules this browser-only demo uses and change its commercial defaults." : "Choose only the operating modules this business needs, then configure its commercial defaults and data boundaries."} />
     <div className="settings-grid">
+      <section className="panel settings-card">
+        <div className="panel-heading"><div><p className="eyebrow">Optional modules</p><h3>Use only what the business needs</h3></div><Boxes size={21} /></div>
+        <p className="settings-note">Disabling a module removes its workflows from day-to-day navigation but preserves its records. Re-enable it later and the data is still there. Dependencies are checked before a module can be switched off.</p>
+        {modules.isLoading ? <div className="empty-state compact"><div className="loader" /></div> : modules.error ? <ErrorText error={modules.error} /> : <div className="module-grid">
+          {modules.data?.modules.map(module => <article className="module-card" key={module.key}>
+            <div><h4>{module.label}</h4><p>{module.description}</p>{module.dependencies.length > 0 && <small>Requires {module.dependencies.map(dependency => modules.data?.modules.find(item => item.key === dependency)?.label || dependency).join(", ")}</small>}</div>
+            <label className="module-switch" title={!canConfigureModules ? "Only owners and admins can change modules" : `${module.enabled ? "Disable" : "Enable"} ${module.label}`}>
+              <input type="checkbox" checked={module.enabled} disabled={!canConfigureModules || toggleModule.isPending} onChange={event => toggleModule.mutate({ key: module.key, enabled: event.target.checked })} />
+              <span aria-hidden="true" />
+            </label>
+          </article>)}
+        </div>}
+        {toggleModule.error && <ErrorText error={toggleModule.error} />}
+      </section>
+
       <section className="panel settings-card">
         <div className="panel-heading"><div><p className="eyebrow">Commercial defaults</p><h3>Tax & inventory</h3></div><Database size={21} /></div>
         {settings.isLoading ? <div className="empty-state compact"><div className="loader" /></div> : <form className="settings-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
@@ -64,11 +102,12 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
           {canEdit && <button className="primary" disabled={save.isPending}><Save size={16} /> Save defaults</button>}
         </form>}
       </section>
+
       <section className="panel settings-card">
         <div className="panel-heading"><div><p className="eyebrow">{demo ? "Guest demo storage" : "Data residency"}</p><h3>{demo ? "Browser only" : "Cloudflare-only runtime"}</h3></div><LockKeyhole size={21} /></div>
         {demo ? <>
           <div className="residency-list"><div><span>Identity</span><strong>No Google account</strong></div><div><span>Operational demo data</span><strong>Browser localStorage</strong></div><div><span>Documents & media</span><strong>Not uploaded</strong></div><div><span>Reset behaviour</span><strong>Seed data restored locally</strong></div></div>
-          <p className="settings-note">This guest workspace has no cloud tenant. Its sample catalogue, orders, purchasing, inventory, settings, team and activity remain in this browser. Reset demo restores the original local seed; Exit demo returns to the public site.</p>
+          <p className="settings-note">This guest workspace has no cloud tenant. Its sample CRM, service work, catalogue, orders, purchasing, inventory, settings, team and activity remain in this browser. Reset demo restores the original local seed; Exit demo returns to the public site.</p>
         </> : <>
           <div className="residency-list"><div><span>Identity & memberships</span><strong>EU D1</strong></div><div><span>Operational business data</span><strong>EU Durable Object</strong></div><div><span>Documents & media</span><strong>EU R2</strong></div><div><span>Application runtime</span><strong>Cloudflare Workers</strong></div></div>
           <p className="settings-note">The tenant selector from the browser is never an authorization boundary. Membership is verified before the Worker routes to the tenant's isolated data object.</p>
