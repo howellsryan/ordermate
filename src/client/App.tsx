@@ -29,6 +29,7 @@ import GlobalSearch from "./GlobalSearch";
 import LandingPage from "./LandingPage";
 import { ErrorText, Field, Modal } from "./ui";
 
+const WorkspaceStyles = lazy(() => import("./WorkspaceStyles"));
 const Overview = lazy(() => import("./pages/Overview"));
 const Products = lazy(() => import("./pages/Products"));
 const Inventory = lazy(() => import("./pages/Inventory"));
@@ -147,46 +148,49 @@ export default function App() {
     qc.removeQueries({ queryKey: ["tenant"] });
   };
 
-  return <div className="app-shell">
-    <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-      <div className="brand"><div className="brand-mark">OM</div><div><strong>OrderMate</strong><span>Operations, in order.</span></div></div>
-      <div className="tenant-stack">
-        <button type="button" className="tenant-switcher" aria-label="Current business">
-          <span className="tenant-avatar"><Building2 size={18} /></span>
-          <span><small>Business</small><strong>{activeTenant.name}</strong></span>
-          <ChevronDown size={16} />
-          <select aria-label="Switch business" value={activeTenant.id} onChange={event => switchTenant(event.target.value)}>{session.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
-        </button>
-        <button type="button" className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>
-      </div>
-      <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
-      <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{activeTenant.role}</small></span></div><button type="button" className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()}><LogOut size={18} /></button></div>
-    </aside>
-    {mobileNav && <button type="button" className="scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
+  return <Suspense fallback={<LoadingScreen />}>
+    <WorkspaceStyles />
+    <div className="app-shell">
+      <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
+        <div className="brand"><div className="brand-mark">OM</div><div><strong>OrderMate</strong><span>Operations, in order.</span></div></div>
+        <div className="tenant-stack">
+          <button type="button" className="tenant-switcher" aria-label="Current business">
+            <span className="tenant-avatar"><Building2 size={18} /></span>
+            <span><small>Business</small><strong>{activeTenant.name}</strong></span>
+            <ChevronDown size={16} />
+            <select aria-label="Switch business" value={activeTenant.id} onChange={event => switchTenant(event.target.value)}>{session.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
+          </button>
+          <button type="button" className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>
+        </div>
+        <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
+        <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{activeTenant.role}</small></span></div><button type="button" className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()}><LogOut size={18} /></button></div>
+      </aside>
+      {mobileNav && <button type="button" className="scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
 
-    <main className="main">
-      <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>Cloudflare EU</span><small>·</small><span className="role-pill">{activeTenant.role}</span></div></header>
-      <div className="workspace">
-        <Suspense fallback={<WorkspaceLoading />}>
-          {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
-          {page === "orders" && <Orders tenant={activeTenant} />}
-          {page === "warehouse" && <WarehouseOps tenant={activeTenant} />}
-          {page === "wave-pick" && <WavePickingPage tenant={activeTenant} />}
-          {page === "stocktake" && <Stocktake tenant={activeTenant} />}
-          {page === "products" && <Products tenant={activeTenant} />}
-          {page === "inventory" && <Inventory tenant={activeTenant} />}
-          {page === "purchasing" && <Purchasing tenant={activeTenant} />}
-          {page === "suppliers" && <Suppliers tenant={activeTenant} />}
-          {page === "customers" && <Customers tenant={activeTenant} />}
-          {page === "reports" && <Reports tenant={activeTenant} />}
-          {page === "activity" && <Activity tenant={activeTenant} />}
-          {page === "team" && <Team tenant={activeTenant} />}
-          {page === "settings" && <Settings tenant={activeTenant} />}
-        </Suspense>
-      </div>
-    </main>
-    {newBusinessOpen && <NewBusinessModal onClose={() => setNewBusinessOpen(false)} onCreated={() => { setNewBusinessOpen(false); qc.invalidateQueries({ queryKey: ["session"] }); }} />}
-  </div>;
+      <main className="main">
+        <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>Cloudflare EU</span><small>·</small><span className="role-pill">{activeTenant.role}</span></div></header>
+        <div className="workspace">
+          <Suspense fallback={<WorkspaceLoading />}>
+            {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
+            {page === "orders" && <Orders tenant={activeTenant} />}
+            {page === "warehouse" && <WarehouseOps tenant={activeTenant} />}
+            {page === "wave-pick" && <WavePickingPage tenant={activeTenant} />}
+            {page === "stocktake" && <Stocktake tenant={activeTenant} />}
+            {page === "products" && <Products tenant={activeTenant} />}
+            {page === "inventory" && <Inventory tenant={activeTenant} />}
+            {page === "purchasing" && <Purchasing tenant={activeTenant} />}
+            {page === "suppliers" && <Suppliers tenant={activeTenant} />}
+            {page === "customers" && <Customers tenant={activeTenant} />}
+            {page === "reports" && <Reports tenant={activeTenant} />}
+            {page === "activity" && <Activity tenant={activeTenant} />}
+            {page === "team" && <Team tenant={activeTenant} />}
+            {page === "settings" && <Settings tenant={activeTenant} />}
+          </Suspense>
+        </div>
+      </main>
+      {newBusinessOpen && <NewBusinessModal onClose={() => setNewBusinessOpen(false)} onCreated={() => { setNewBusinessOpen(false); qc.invalidateQueries({ queryKey: ["session"] }); }} />}
+    </div>
+  </Suspense>;
 }
 
 function LoadingScreen() {
