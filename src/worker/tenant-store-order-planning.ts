@@ -28,11 +28,22 @@ type OrderPlanningRow = {
 
 type SupplierTermRow = SupplierOrderingTerm;
 type SupplierMapping = Record<string, unknown> & { supplier_id: string; variant_id: string };
+type SupplierSkuConflictRow = {
+  variant_id: string;
+  supplier_sku: string | null;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+};
 
 function validCalendarDate(value: string | null) {
   if (value === null) return true;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function normalizeSupplierSku(value: string) {
+  return value.trim().normalize("NFKC").toUpperCase();
 }
 
 function now() {
@@ -90,6 +101,27 @@ export class TenantStore extends ReportsTenantStore {
     ).toArray();
   }
 
+  private supplierSkuConflict(supplierId: string, variantId: string, supplierSku?: string) {
+    const trimmed = supplierSku?.trim() || "";
+    if (!trimmed) return null;
+    const normalized = normalizeSupplierSku(trimmed);
+    return this.orderPlanningCtx.storage.sql.exec<SupplierSkuConflictRow>(
+      `SELECT sv.variant_id,
+              sv.supplier_sku,
+              p.name AS product_name,
+              v.name AS variant_name,
+              v.sku
+       FROM supplier_variants sv
+       JOIN product_variants v ON v.id = sv.variant_id
+       JOIN products p ON p.id = v.product_id
+       WHERE sv.supplier_id = ?
+         AND sv.variant_id != ?
+         AND sv.supplier_sku IS NOT NULL`,
+      supplierId,
+      variantId,
+    ).toArray().find(mapping => normalizeSupplierSku(mapping.supplier_sku || "") === normalized) || null;
+  }
+
   private async upsertSupplierMapping(request: Request) {
     const actorId = request.headers.get("x-ordermate-actor-id") || "";
     const actorRole = request.headers.get("x-ordermate-actor-role") || "";
@@ -114,6 +146,13 @@ export class TenantStore extends ReportsTenantStore {
       input.variantId,
     ).toArray()[0];
     if (!variant) return Response.json({ error: "Product variant not found" }, { status: 404 });
+
+    const conflict = this.supplierSkuConflict(input.supplierId, input.variantId, input.supplierSku);
+    if (conflict) {
+      return Response.json({
+        error: `Supplier SKU ${input.supplierSku?.trim()} is already mapped to ${conflict.product_name} · ${conflict.variant_name} (${conflict.sku})`,
+      }, { status: 409 });
+    }
 
     const hasMinimum = Object.prototype.hasOwnProperty.call(input, "minimumOrderQuantity");
     const hasMultiple = Object.prototype.hasOwnProperty.call(input, "orderMultiple");
