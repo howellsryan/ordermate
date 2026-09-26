@@ -71,6 +71,8 @@ export type SupplierVariant = {
   supplier_sku?: string | null;
   last_cost_minor?: number | null;
   lead_time_days?: number | null;
+  minimum_order_quantity?: number | null;
+  order_multiple?: number | null;
 };
 
 export type InventoryPolicy = {
