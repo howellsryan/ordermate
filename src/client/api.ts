@@ -1,9 +1,10 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
 import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
+import { demoControlApi } from "./demo-acceptance";
 import { demoOpsApi } from "./demo-attention";
-import { demoControlApi, demoTenantApi } from "./demo-acceptance";
 import { demoCsv } from "./demo-export";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
+import { demoTenantApi } from "./demo-stocktake";
 
 export async function errorFrom(response: Response) {
   const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
@@ -65,24 +66,6 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
     const result = await demoTenantApi<unknown>(path, init);
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
-    if (method === "POST" && pathname === "/inventory/stocktake" && typeof init?.body === "string") {
-      let lines: Array<{ expectedOnHand?: number; countedOnHand?: number }> = [];
-      try {
-        const parsed = JSON.parse(init.body) as { lines?: Array<{ expectedOnHand?: number; countedOnHand?: number }> };
-        if (Array.isArray(parsed.lines)) lines = parsed.lines;
-      } catch {
-        // The demo store already validates the request. This fallback only adapts the response shape.
-      }
-      const totalVariance = lines.reduce((sum, line) => sum + ((Number(line.countedOnHand) || 0) - (Number(line.expectedOnHand) || 0)), 0);
-      const changedLines = lines.filter(line => (Number(line.countedOnHand) || 0) !== (Number(line.expectedOnHand) || 0)).length;
-      return {
-        ok: true,
-        stocktakeId: crypto.randomUUID(),
-        countedLines: lines.length,
-        changedLines,
-        totalVariance,
-      } as T;
-    }
     if (method === "GET" && pathname === "/replenishment") {
       const activeVariants = await activeDemoVariantIds();
       const data = result as ReplenishmentResponse;
