@@ -84,7 +84,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera", dis
         setStarting(false);
         const name = cause instanceof DOMException ? cause.name : "";
         if (name === "NotAllowedError" || name === "SecurityError") {
-          setError("Camera permission was blocked. Allow camera access for OrderMate, or use a Bluetooth/USB scanner or manual entry.");
+          setError("Camera permission was blocked. Allow camera access for Operating Layer, or use a Bluetooth/USB scanner or manual entry.");
         } else if (name === "NotFoundError" || name === "OverconstrainedError") {
           setError("No usable camera was found on this device.");
         } else {
@@ -102,7 +102,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera", dis
 
   return <>
     <button type="button" className="secondary camera-scan-button" disabled={disabled} onClick={() => setOpen(true)}><Camera size={15} /> {label}</button>
-    {open && <Modal title="Scan one barcode" subtitle="Point the rear camera at the product barcode. OrderMate closes the camera after one successful read so a stationary label cannot be counted repeatedly." onClose={() => setOpen(false)}>
+    {open && <Modal title="Scan one barcode" subtitle="Point the rear camera at the product barcode. Operating Layer closes the camera after one successful read so a stationary label cannot be counted repeatedly." onClose={() => setOpen(false)}>
       <div className="camera-scanner">
         <div className="camera-preview">
           <video ref={videoRef} muted playsInline aria-label="Live camera barcode preview" />
@@ -110,7 +110,7 @@ export default function CameraBarcodeScanner({ onScan, label = "Use camera", dis
           {starting && <span className="camera-loading"><span className="loader" /> Starting camera…</span>}
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="camera-help"><strong>Supported workflow</strong><span>EAN/UPC, Code 128/39 and common 2D codes are decoded locally in your browser. The image is not uploaded to OrderMate or Cloudflare.</span></div>
+        <div className="camera-help"><strong>Supported workflow</strong><span>EAN/UPC, Code 128/39 and common 2D codes are decoded locally in your browser. The image is not uploaded to Operating Layer or Cloudflare.</span></div>
         <div className="modal-actions"><button type="button" className="secondary" onClick={() => setOpen(false)}>Close camera</button></div>
       </div>
     </Modal>}
