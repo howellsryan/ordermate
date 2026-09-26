@@ -4,7 +4,8 @@ import { operationsAssistantApp } from "../src/worker/operations-assistant";
 
 function assistantEnv() {
   return {
-    ...env,
+    CONTROL_DB: env.CONTROL_DB,
+    TENANT_STORES: env.TENANT_STORES,
     GOOGLE_CLIENT_ID: "test-client",
     GOOGLE_CLIENT_SECRET: "test-secret",
     BETTER_AUTH_SECRET: "test-better-auth-secret-that-is-long-enough-for-tests",
