@@ -72,7 +72,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
       <div><p className="eyebrow">Operating intelligence</p><h3>Plan the shortage before it happens</h3></div>
       <div className="replenishment-heading-actions"><ReplenishmentPolicies tenant={tenant} defaultThreshold={query.data?.default_threshold ?? 5} /><BrainCircuit size={21} /></div>
     </div>
-    <p>Operating Layer blends 90 days of fulfilment history with current availability, incoming supply, supplier lead time and your stock policy. Every recommendation exposes the calculation and stays a draft until a person approves it.</p>
+    <p>Operating Layer blends up to 90 days of fulfilment history with current availability, incoming supply, supplier lead time and your stock policy. Every recommendation exposes the calculation and stays a draft until a person approves it.</p>
 
     {planning && <div className="intelligence-summary" aria-label="Planning summary">
       <InsightMetric label="At risk" value={planning.summary.at_risk} />
@@ -119,7 +119,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
               </div>
               <div className="scenario-actions" aria-label="Purchase scenarios">
                 <ScenarioButton label="Minimum" quantity={suggestion.scenarios.minimum} helper="Protect buffer" disabled={!canWrite || !supplier} onClick={() => create(suggestion, "minimum")} />
-                <ScenarioButton label="Recommended" quantity={suggestion.scenarios.recommended} helper="28d cover" primary disabled={!canWrite || !supplier} onClick={() => create(suggestion, "recommended")} />
+                <ScenarioButton label="Recommended" quantity={suggestion.scenarios.recommended} helper={suggestion.policy_custom ? "Policy target" : "28d cover"} primary disabled={!canWrite || !supplier} onClick={() => create(suggestion, "recommended")} />
                 <ScenarioButton label="Maximum" quantity={suggestion.scenarios.maximum} helper="42d cover" disabled={!canWrite || !supplier} onClick={() => create(suggestion, "maximum")} />
               </div>
             </div>
@@ -129,7 +129,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
         })}
       </div>
     </DataState>
-    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Forecast, explain, propose.</strong> The base plan uses 70% recent 30-day demand and 30% of the prior 60-day run rate, with a bounded trend adjustment. Safety stock scales with effective supplier lead time. Context simulation is temporary; choosing a scenario only pre-fills the existing reviewed draft-PO flow.</span></div>
+    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Forecast, explain, propose.</strong> The base plan weights recent and prior demand when both windows exist; with only recent history it uses that observed run-rate rather than treating missing history as zero. Safety stock scales with effective supplier lead time, and custom SKU/location targets remain authoritative for the recommended scenario. Context simulation is temporary; choosing a scenario only pre-fills the existing reviewed draft-PO flow.</span></div>
   </section>;
 }
 
