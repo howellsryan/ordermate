@@ -9,6 +9,7 @@ import type {
 import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date, tenantApi } from "./api";
 import { DataState, ErrorText, Field, Modal, Status } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 type Filter = "open" | "resolved";
 type ProposalPointer = { sourceKey: string; sourceName: string };
@@ -30,6 +31,12 @@ function evidenceFor(record: DeliveryDiscrepancyRecord): DeliveryDiscrepancyEvid
 }
 
 export default function DeliveryDiscrepancies({ tenant }: { tenant: OrganizationSummary }) {
+  const features = useWorkspaceFeatures(tenant.id);
+  if (!features.data || !features.enabled.has("delivery_discrepancies")) return null;
+  return <EnabledDeliveryDiscrepancies tenant={tenant} />;
+}
+
+function EnabledDeliveryDiscrepancies({ tenant }: { tenant: OrganizationSummary }) {
   const [filter, setFilter] = useState<Filter>("open");
   const [openId, setOpenId] = useState<string | null>(null);
   const query = useQuery({
