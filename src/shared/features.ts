@@ -138,3 +138,27 @@ export function defaultFeatureConfiguration(): Record<WorkspaceFeatureKey, boole
 export function validateFeatureConfiguration(_states: Record<WorkspaceFeatureKey, boolean>) {
   return [] as string[];
 }
+
+/** Resolve configured preferences into the features that are actually usable now. */
+export function effectiveWorkspaceFeatures(
+  states: Record<WorkspaceFeatureKey, boolean>,
+  enabledModules: ReadonlySet<WorkspaceModuleKey>,
+): Set<WorkspaceFeatureKey> {
+  const effective = new Set<WorkspaceFeatureKey>();
+  const resolving = new Set<WorkspaceFeatureKey>();
+
+  const active = (key: WorkspaceFeatureKey): boolean => {
+    if (effective.has(key)) return true;
+    if (!states[key] || resolving.has(key)) return false;
+    const definition = WORKSPACE_FEATURE_BY_KEY[key];
+    if (!definition.requiredModules.every(module => enabledModules.has(module))) return false;
+    resolving.add(key);
+    const dependenciesActive = definition.dependencies.every(active);
+    resolving.delete(key);
+    if (dependenciesActive) effective.add(key);
+    return dependenciesActive;
+  };
+
+  for (const key of WORKSPACE_FEATURE_KEYS) active(key);
+  return effective;
+}
