@@ -1,12 +1,12 @@
 import { useState } from "react";
 import {
   ArrowRight,
-  BarChart3,
   Boxes,
   Check,
   ClipboardCheck,
   ClipboardList,
   PackageCheck,
+  PlayCircle,
   ScanBarcode,
   ShieldCheck,
   Sparkles,
@@ -17,87 +17,85 @@ import {
 } from "lucide-react";
 import { BrandLockup, BrandMark } from "./Brand";
 
-const featureGroups = [
+const problemGroups = [
   {
     icon: Boxes,
-    title: "Inventory management without reconciliation",
-    copy: "See on-hand, reserved, available and incoming inventory by location, with an immutable stock movement history behind every number.",
-    tag: "Inventory management",
+    title: "Stock says one thing. The warehouse says another.",
+    copy: "Keep on-hand, reserved, available and incoming stock tied to the movements that created it, so the team stops reconciling spreadsheets before it can act.",
+    tag: "One stock answer",
   },
   {
     icon: ClipboardList,
-    title: "Buy before stock becomes urgent",
-    copy: "Forecast demand, incoming supply, safety stock and supplier lead time together, then turn the recommended scenario into reviewed buying work.",
-    tag: "Purchasing intelligence",
+    title: "Buying starts when somebody notices it is urgent.",
+    copy: "See stockout risk, incoming supply, lead time and supplier terms early enough to prepare the right purchase instead of panic-buying after availability has already become a problem.",
+    tag: "Calmer purchasing",
   },
   {
     icon: PackageCheck,
-    title: "Order management built around promises",
-    copy: "Prioritise customer orders by urgency and required-by date, reserve stock, prevent overselling and move the right work into fulfilment first.",
-    tag: "Order management",
+    title: "Urgent customer work gets buried in the queue.",
+    copy: "Bring required-by dates, reservations and priority into the same view so the team can protect the promises that matter before routine work consumes the day.",
+    tag: "Protect promises",
   },
   {
     icon: ScanBarcode,
-    title: "Warehouse workflows made for scanners and phones",
-    copy: "Use manual entry, hardware barcode scanners or a phone camera for picking, receiving, cycle counts and multi-order wave picking.",
-    tag: "Warehouse operations",
+    title: "More orders turn picking and receiving into a bottleneck.",
+    copy: "Give the team clear, scan-ready picking, receiving and counting workflows so growth does not mean more handwritten checks, duplicate entry and avoidable stock errors.",
+    tag: "Fewer manual handoffs",
   },
   {
-    icon: BarChart3,
-    title: "Forecast and reporting from operational truth",
-    copy: "See stock value, fulfilment, returns, purchase commitments, days of cover, projected stockouts and the work most likely to delay the operation.",
-    tag: "Operating intelligence",
+    icon: Users,
+    title: "Customer work lives in inboxes and one person’s head.",
+    copy: "For service businesses, keep the customer, request, quote, job, visit, materials, invoice and payment connected instead of rebuilding the story from messages every time someone asks for an update.",
+    tag: "Keep customer work joined up",
   },
   {
     icon: Sparkles,
-    title: "A live flow plan instead of another alert inbox",
-    copy: "Continuously turn late orders, forecast stock risk, overdue supply and receiving discrepancies into a short, prioritised list of decisions for the team.",
-    tag: "Flow automation",
+    title: "The team spends the morning finding problems before fixing them.",
+    copy: "Turn late orders, stock risk, overdue supply and receiving exceptions into a short, prioritised flow plan so people start with the work that needs attention rather than another dashboard hunt.",
+    tag: "Less firefighting",
   },
 ];
 
 const outcomes = [
-  "Start the day with the few operational decisions that matter most",
-  "Protect customer required-by dates before lower-priority work consumes time",
-  "See stockout and supplier risk early enough to make a calm buying decision",
-  "Replace spreadsheet reconciliation and manual chasing with traceable operational flow",
-];
-
-const workflows = [
-  { step: "01", title: "Demand lands", copy: "Orders reserve stock and enter a queue ranked by customer promise, priority and age." },
-  { step: "02", title: "Layer plans", copy: "Forecast demand, supply timing and exceptions are checked continuously against live operational truth." },
-  { step: "03", title: "Team executes", copy: "Pick, receive, count and fulfil with barcode-ready workflows that write canonical stock movements." },
-  { step: "04", title: "Flow plan resets", copy: "Late orders, stock risk, overdue POs and receiving discrepancies are reprioritised into the next best work." },
+  "Open the day knowing what needs attention instead of checking five places first",
+  "Protect customer deadlines before they become apology emails and urgent phone calls",
+  "Order stock while there is still time to choose, not after the situation becomes expensive",
+  "Give the whole team one operational picture instead of relying on one person’s memory",
 ];
 
 const faqs = [
   {
-    question: "What is Operating Layer?",
-    answer: "Operating Layer is inventory, order, purchasing and warehouse operations software for growing product businesses. It connects stock control, customer fulfilment, purchase orders, suppliers, replenishment, forecasting and exception automation in one auditable workspace.",
+    question: "What problem does Operating Layer solve?",
+    answer: "Operating Layer is for growing SMEs whose day-to-day work has become spread across spreadsheets, inboxes, stock tools and team knowledge. It connects the operational facts and turns the exceptions into clear next actions, so the team spends less time working out what is going on and more time moving the business forward.",
   },
   {
-    question: "Can Operating Layer manage inventory across multiple locations?",
-    answer: "Yes. It separates on-hand, reserved, available and incoming stock by location and records inventory changes as movements, so teams can understand both the current quantity and how it got there.",
+    question: "What kinds of businesses is it for?",
+    answer: "It is strongest today for product businesses that manage stock, customer orders, suppliers, purchasing and fulfilment, and for service businesses that need CRM, requests, quotes, jobs, visits, materials, invoices and payments. The product is modular, so a workspace only needs to expose the domains that business actually uses.",
   },
   {
-    question: "Does it support purchase orders and stock replenishment?",
-    answer: "Yes. Teams can create and receive purchase orders, track expected delivery dates and discrepancies, and review forward-looking replenishment plans using up to 90 days of fulfilment history, dated incoming supply, lead time, safety stock, stockout timing and configurable replenishment policies.",
+    question: "Can I try it before creating an account?",
+    answer: "Yes. The guest demos run locally in your browser and do not need an account. You can choose from ecommerce, retail, electrician, salon, cafe and dropship scenarios, then reset or switch business at any time. Prototype-only steps are labelled rather than presented as finished production functionality.",
   },
   {
-    question: "What does the automatic flow plan do?",
-    answer: "It continuously checks customer required-by dates, forecast stock risk, incoming supplier dates and receiving discrepancies. It then prioritises the highest-impact exceptions into a short action list so a small team spends less time finding the next problem and more time resolving it.",
+    question: "Will it tell us what to do next?",
+    answer: "For stock-owning operations, the Flow Plan continuously checks customer promise dates, forecast stock risk, incoming supplier dates and receiving discrepancies, then prioritises the highest-impact exceptions into a short action list for review.",
   },
   {
-    question: "Can warehouse teams use barcode scanners?",
-    answer: "Yes. Warehouse workflows support manual barcode entry, USB or Bluetooth keyboard-wedge scanners and mobile-camera scanning for picking, receiving and cycle counting.",
+    question: "Does automation change stock or orders by itself?",
+    answer: "No. Operating Layer can detect, explain, prioritise and prepare work, but business-critical changes still go through explicit, permission-checked and audited workflows. The software does the chasing and preparation; your team keeps authority.",
   },
   {
-    question: "Does AI automatically change inventory or orders?",
-    answer: "No. Operating Layer can extract evidence, explain risk and prepare proposals for review, but canonical stock, order fulfilment and purchase-order changes still go through explicit, deterministic and audited workflows.",
+    question: "Is this a heavyweight ERP?",
+    answer: "No. The product is deliberately aimed at growing SMEs that need more operational control than spreadsheets and disconnected point tools provide, without forcing every business into one large all-or-nothing system. Modules can be enabled around the workflows the business actually needs.",
   },
 ];
 
-export default function LandingPage({ inviteToken }: { inviteToken: string | null }) {
+type LandingPageProps = {
+  inviteToken: string | null;
+  onChooseDemo?: () => void;
+};
+
+export default function LandingPage({ inviteToken, onChooseDemo }: LandingPageProps) {
   const [busy, setBusy] = useState(false);
   const callbackURL = inviteToken ? `${window.location.origin}/?invite=${encodeURIComponent(inviteToken)}` : window.location.origin;
 
@@ -113,6 +111,11 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
     }
   };
 
+  const tryDemo = () => {
+    if (inviteToken) return void signIn();
+    onChooseDemo?.();
+  };
+
   return <div className="landing-page">
     <a className="landing-skip" href="#landing-main">Skip to main content</a>
 
@@ -121,13 +124,13 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
         <BrandLockup />
       </a>
       <nav className="landing-nav" aria-label="Landing page navigation">
-        <a href="#platform">Platform</a>
-        <a href="#product">Product</a>
-        <a href="#automation">Automation</a>
+        <a href="#platform">The problem</a>
+        <a href="#product">See it work</a>
+        <a href="#automation">How it helps</a>
         <a href="#trust">Trust</a>
       </nav>
-      <button type="button" className="landing-nav-cta" disabled={busy} onClick={signIn}>
-        {busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Start with Google"}
+      <button type="button" className="landing-nav-cta" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>
+        {busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Try a live demo"}
         <ArrowRight size={16} aria-hidden="true" />
       </button>
     </header>
@@ -136,21 +139,21 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
       <section className="landing-hero" id="top" aria-labelledby="landing-title">
         <div className="landing-hero-copy">
           {inviteToken && <div className="invite-ribbon" role="status"><Users size={16} aria-hidden="true" /> You’ve been invited to an Operating Layer workspace</div>}
-          <div className="brand-chip">Operations software for inventory-led SMEs</div>
-          <p className="landing-kicker"><span aria-hidden="true" /> Inventory · Orders · Purchasing · Warehouse · Flow automation</p>
-          <h1 id="landing-title">Run orders, stock & purchasing <em>without the daily chasing.</em></h1>
-          <p className="landing-hero-lede">Operating Layer gives growing product businesses one live system that watches customer promises, inventory risk, incoming supply and warehouse work — then shows the team what should move next before delays turn into emergencies.</p>
+          <div className="brand-chip">For growing SMEs with too much operational chasing</div>
+          <p className="landing-kicker"><span aria-hidden="true" /> Know what is late · what will run out · what to buy · what should move next</p>
+          <h1 id="landing-title">Stop running the business from <em>spreadsheets, inboxes & memory.</em></h1>
+          <p className="landing-hero-lede">Operating Layer gives your team one place to understand customer work, stock and suppliers — then brings the problems that need action to the top before they become today’s emergency.</p>
           <div className="landing-hero-actions">
-            <button type="button" className="landing-primary-cta" disabled={busy} onClick={signIn}>
-              <GoogleGlyph />
-              {busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Start with Google"}
+            <button type="button" className="landing-primary-cta" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>
+              {inviteToken ? <GoogleGlyph /> : <PlayCircle size={18} aria-hidden="true" />}
+              {busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Try a business demo"}
             </button>
-            <a className="landing-secondary-cta" href="#automation">See how work gets automated <ArrowRight size={16} aria-hidden="true" /></a>
+            <a className="landing-secondary-cta" href="#platform">See the problems it removes <ArrowRight size={16} aria-hidden="true" /></a>
           </div>
           <div className="landing-proof-row" aria-label="Platform highlights">
-            <span><Check size={15} aria-hidden="true" /> Automatic exception triage</span>
-            <span><Check size={15} aria-hidden="true" /> Forward stock planning</span>
-            <span><Check size={15} aria-hidden="true" /> Human-reviewed actions</span>
+            <span><Check size={15} aria-hidden="true" /> No-account demos</span>
+            <span><Check size={15} aria-hidden="true" /> Use only the modules you need</span>
+            <span><Check size={15} aria-hidden="true" /> People approve business-changing actions</span>
           </div>
         </div>
 
@@ -166,92 +169,87 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
             <div className="hero-product-body">
               <div className="mini-sidebar"><i className="active" /><i /><i /><i /><i /><i /></div>
               <div className="mini-dashboard">
-                <div className="mini-heading"><div><span>AUTOMATIC FLOW PLAN</span><strong>Good morning.</strong></div><b>What should move next.</b></div>
+                <div className="mini-heading"><div><span>TODAY’S FLOW PLAN</span><strong>Good morning.</strong></div><b>What needs attention first.</b></div>
                 <div className="mini-metrics">
                   <div><span>Available stock</span><strong>4,286</strong><small>12 locations</small></div>
                   <div><span>Orders to fulfil</span><strong>38</strong><small>7 urgent</small></div>
                   <div><span>Incoming units</span><strong>1,240</strong><small>9 purchase orders</small></div>
-                  <div><span>Priority actions</span><strong>6</strong><small>Continuously ranked</small></div>
+                  <div><span>Priority actions</span><strong>6</strong><small>Ranked for the team</small></div>
                 </div>
-                <div className="mini-panels"><div className="mini-chart"><span>FULFILMENT THIS WEEK</span><div className="chart-bars"><i /><i /><i /><i /><i /><i /><i /></div></div><div className="mini-attention"><span>FLOW PLAN</span><b>Protect 2 stock risks</b><b>Chase 1 late PO</b><b>Move 3 priority orders</b></div></div>
+                <div className="mini-panels"><div className="mini-chart"><span>FULFILMENT THIS WEEK</span><div className="chart-bars"><i /><i /><i /><i /><i /><i /><i /></div></div><div className="mini-attention"><span>WHAT NEEDS ACTION</span><b>Protect 2 stock risks</b><b>Chase 1 late PO</b><b>Move 3 priority orders</b></div></div>
               </div>
             </div>
           </div>
-          <div className="hero-float hero-float-order"><span><PackageCheck size={17} /> Customer promise</span><strong>Order #1842 first</strong><small>Required today · Nottingham</small></div>
-          <div className="hero-float hero-float-stock"><span><Warehouse size={17} /> Forecast stock risk</span><strong>Buy before Friday</strong><small>12-day cover · A-class SKU</small></div>
-          <div className="hero-float hero-float-auto"><span><Sparkles size={17} /> Flow plan</span><strong>6 actions prioritised</strong><small>4 live checks · human review</small></div>
+          <div className="hero-float hero-float-order"><span><PackageCheck size={17} /> Customer promise</span><strong>Order #1842 should move first</strong><small>Required today · Nottingham</small></div>
+          <div className="hero-float hero-float-stock"><span><Warehouse size={17} /> Stock risk</span><strong>Order before Friday</strong><small>12-day cover · supplier lead time included</small></div>
+          <div className="hero-float hero-float-auto"><span><Sparkles size={17} /> Today’s priorities</span><strong>6 items need attention</strong><small>Reviewed by your team</small></div>
         </div>
       </section>
 
-      <section className="landing-marquee" aria-label="Operating Layer capabilities"><div><span>Inventory management</span><i>•</i><span>Order management</span><i>•</i><span>Purchase orders</span><i>•</i><span>Automatic flow planning</span><i>•</i><span>Warehouse picking</span><i>•</i><span>Barcode scanning</span><i>•</i><span>Forecast replenishment</span><i>•</i><span>Inventory reporting</span></div></section>
+      <section className="landing-marquee" aria-label="Problems Operating Layer helps remove"><div><span>Stop chasing stock</span><i>•</i><span>Know what ships first</span><i>•</i><span>Buy before it is urgent</span><i>•</i><span>Catch late suppliers</span><i>•</i><span>Keep customer work joined up</span><i>•</i><span>One shared operational picture</span></div></section>
 
       <section className="landing-section landing-intro" id="platform" aria-labelledby="platform-title">
         <div className="landing-section-heading">
-          <p className="landing-kicker"><span aria-hidden="true" /> The operating layer your business grows into</p>
-          <h2 id="platform-title">Less chasing. Fewer surprises. <em>More flow.</em></h2>
-          <p>Operating Layer is designed around the operational questions a small product team asks every day — what is late, what will run out, what should we buy, and what must ship first — then connects the answers so the team can act without reconciling five sources first.</p>
+          <p className="landing-kicker"><span aria-hidden="true" /> The point where growth starts to hurt</p>
+          <h2 id="platform-title">Your business is not short of data. <em>It is short of joined-up answers.</em></h2>
+          <p>Growing teams usually do not fail because nobody cares. They lose time because the answer to a simple operational question is split across an order list, a stock sheet, supplier emails and somebody’s memory. Operating Layer is built to remove that gap.</p>
         </div>
         <div className="outcome-grid">{outcomes.map((outcome, index) => <article key={outcome}><span>0{index + 1}</span><p>{outcome}</p></article>)}</div>
       </section>
 
-      <section className="landing-system-band" aria-labelledby="positioning-title">
-        <div className="system-band-head"><div><p className="landing-kicker light"><span aria-hidden="true" /> One record of the operation</p><h2 id="positioning-title">The work between <em>order and outcome</em> finally has a system.</h2></div><p>Inventory software should not be a static stock table. Orders, purchasing, warehouse execution and replenishment all change the same operational truth. Operating Layer keeps that loop connected and continuously reprioritises the exceptions around it.</p></div>
-        <div className="positioning-grid"><article><span>01 / LIVE TRUTH</span><h3>Know the real position</h3><p>On-hand, reserved, available and incoming quantities stay connected to the movements that created them.</p></article><article><span>02 / AUTOMATIC TRIAGE</span><h3>Know what should move next</h3><p>Customer promise dates, stock forecasts, supplier dates and receiving exceptions feed one short operational flow plan.</p></article><article><span>03 / CONTROLLED ACTION</span><h3>Keep the human checkpoint</h3><p>People can see why work was prioritised and approve the business-changing action through deterministic, audited workflows.</p></article></div>
-      </section>
-
-      <section className="landing-section feature-section" aria-labelledby="feature-title">
-        <div className="landing-section-heading compact"><p className="landing-kicker"><span aria-hidden="true" /> Connected operations software</p><h2 id="feature-title">Built around the work, not a list of disconnected modules.</h2></div>
+      <section className="landing-section feature-section" aria-labelledby="problem-title">
+        <div className="landing-section-heading compact"><p className="landing-kicker"><span aria-hidden="true" /> Recognise your day?</p><h2 id="problem-title">Built around the problems SMEs feel, not the feature names software vendors use.</h2></div>
         <div className="feature-bento">
-          {featureGroups.map(({ icon: Icon, title, copy, tag }, index) => <article className={`feature-card feature-card-${index + 1}`} key={title}>
+          {problemGroups.map(({ icon: Icon, title, copy, tag }, index) => <article className={`feature-card feature-card-${index + 1}`} key={title}>
             <div className="feature-icon"><Icon size={20} aria-hidden="true" /></div><span className="feature-tag">{tag}</span><h3>{title}</h3><p>{copy}</p>
-            {index === 0 && <div className="feature-stock-visual" aria-hidden="true"><span><b>SKU-1048</b><small>Available</small></span><strong>214</strong><div><i /><i /><i /></div></div>}
-            {index === 3 && <div className="feature-scan-visual" aria-hidden="true"><ScanBarcode size={46} /><span>Scan → stage → verify → fulfil</span></div>}
-            {index === 5 && <div className="feature-ai-visual" aria-hidden="true"><span>Detect</span><ArrowRight size={13} /><span>Prioritise</span><ArrowRight size={13} /><strong>Review action</strong></div>}
+            {index === 0 && <div className="feature-stock-visual" aria-hidden="true"><span><b>SKU-1048</b><small>Available now</small></span><strong>214</strong><div><i /><i /><i /></div></div>}
+            {index === 3 && <div className="feature-scan-visual" aria-hidden="true"><ScanBarcode size={46} /><span>Scan → verify → move on</span></div>}
+            {index === 5 && <div className="feature-ai-visual" aria-hidden="true"><span>Spot risk</span><ArrowRight size={13} /><span>Prioritise</span><ArrowRight size={13} /><strong>Team acts</strong></div>}
           </article>)}
         </div>
       </section>
 
-      <section className="landing-section product-section" id="product" aria-labelledby="product-title">
-        <div className="landing-section-heading"><p className="landing-kicker"><span aria-hidden="true" /> Product proof, not product theatre</p><h2 id="product-title">A calm interface for <em>busy operations.</em></h2><p>Dense enough for the people doing the job. Clear enough that a growing team does not need a systems expert to understand what happens next.</p></div>
-        <div className="product-showcase">
-          <figure className="product-shot product-shot-wide"><div className="shot-chrome"><span /><span /><span /><b>Overview</b></div><img src="/product/overview.svg" width="1200" height="760" alt="Operating Layer inventory and operations dashboard showing stock, order, purchasing and attention metrics" decoding="async" loading="lazy" /><figcaption><span>01</span><div><strong>Start with the next best work</strong><p>A continuously prioritised flow plan brings late promises, forecast stock risk, supplier delays and receiving exceptions together before the team starts hunting.</p></div></figcaption></figure>
-          <figure className="product-shot"><div className="shot-chrome"><span /><span /><span /><b>Wave Picking</b></div><img src="/product/wave-picking.svg" width="1200" height="760" alt="Operating Layer warehouse wave picking workspace aggregating repeated SKUs across customer orders" decoding="async" loading="lazy" /><figcaption><span>02</span><div><strong>Turn priority orders into one efficient pick</strong><p>Group 2–10 orders, scan shared SKUs once and see exactly how units allocate back to each customer promise.</p></div></figcaption></figure>
-          <figure className="product-shot"><div className="shot-chrome"><span /><span /><span /><b>Purchasing</b></div><img src="/product/purchasing.svg" width="1200" height="760" alt="Operating Layer purchasing software showing purchase orders, incoming inventory and replenishment recommendations" decoding="async" loading="lazy" /><figcaption><span>03</span><div><strong>Buy before it becomes urgent</strong><p>See days of cover, stockout and order-by timing, dated incoming supply and minimum/recommended/maximum buying scenarios instead of relying on memory and gut feel.</p></div></figcaption></figure>
-        </div>
+      <section className="landing-system-band" aria-labelledby="positioning-title">
+        <div className="system-band-head"><div><p className="landing-kicker light"><span aria-hidden="true" /> More control without ERP weight</p><h2 id="positioning-title">Grow past spreadsheets <em>without making work harder.</em></h2></div><p>Operating Layer is deliberately modular. An ecommerce team can run orders, inventory, purchasing and warehouse work. A field-service team can run CRM, requests, quotes, jobs, materials, invoices and payments. Your workspace does not need to expose parts of the product your business does not use.</p></div>
+        <div className="positioning-grid"><article><span>01 / ONE ANSWER</span><h3>Stop reconciling before acting</h3><p>Operational records stay connected so the team can understand the current position and the history behind it without rebuilding the story manually.</p></article><article><span>02 / EARLY WARNING</span><h3>See the exception while there is still time</h3><p>Deadlines, stock risk, supplier dates and discrepancies surface as action before they become a customer or cash-flow problem.</p></article><article><span>03 / RIGHT-SIZED</span><h3>Use the operating pieces you need</h3><p>Modules are enabled around the business rather than forcing every SME through the same heavyweight setup.</p></article></div>
       </section>
 
-      <section className="landing-section workflow-section" aria-labelledby="workflow-title">
-        <div className="landing-section-heading compact"><p className="landing-kicker"><span aria-hidden="true" /> The operating loop</p><h2 id="workflow-title">From customer demand to next action — without losing the thread.</h2></div>
-        <div className="operating-loop"><ol className="workflow-line">{workflows.map(item => <li key={item.step}><span>{item.step}</span><div><h3>{item.title}</h3><p>{item.copy}</p></div></li>)}</ol></div>
+      <section className="landing-section product-section" id="product" aria-labelledby="product-title">
+        <div className="landing-section-heading"><p className="landing-kicker"><span aria-hidden="true" /> See the product doing the job</p><h2 id="product-title">The software should make the next decision <em>easier to see.</em></h2><p>Product screens are organised around the work that needs attention, not around showing as many controls as possible.</p></div>
+        <div className="product-showcase">
+          <figure className="product-shot product-shot-wide"><div className="shot-chrome"><span /><span /><span /><b>Overview</b></div><img src="/product/overview.svg" width="1200" height="760" alt="Operating Layer overview showing stock, order, purchasing and attention metrics" decoding="async" loading="lazy" /><figcaption><span>01</span><div><strong>Start with what needs attention</strong><p>Late customer promises, forecast stock risk, supplier delays and receiving exceptions are brought together before the team starts hunting for them.</p></div></figcaption></figure>
+          <figure className="product-shot"><div className="shot-chrome"><span /><span /><span /><b>Wave Picking</b></div><img src="/product/wave-picking.svg" width="1200" height="760" alt="Operating Layer warehouse workspace combining repeated SKUs across customer orders" decoding="async" loading="lazy" /><figcaption><span>02</span><div><strong>Get more orders out with less repeated handling</strong><p>Group several orders, scan shared SKUs once and keep the allocation back to each customer clear.</p></div></figcaption></figure>
+          <figure className="product-shot"><div className="shot-chrome"><span /><span /><span /><b>Purchasing</b></div><img src="/product/purchasing.svg" width="1200" height="760" alt="Operating Layer purchasing view showing incoming stock and replenishment planning" decoding="async" loading="lazy" /><figcaption><span>03</span><div><strong>Buy while you still have options</strong><p>See how long stock should last, when supply is due and when an order needs placing instead of waiting for a low-stock surprise.</p></div></figcaption></figure>
+        </div>
       </section>
 
       <section className="landing-section automation-section" id="automation" aria-labelledby="automation-title">
         <div className="automation-visual" aria-hidden="true">
-          <div className="automation-core"><BrandMark /><strong>Operating Layer</strong><span>automatic flow plan</span></div>
-          <div className="automation-node node-a"><PackageCheck size={17} /> Promise dates</div><div className="automation-node node-b"><Truck size={17} /> Incoming supply</div><div className="automation-node node-c"><Boxes size={17} /> Stock forecast</div><div className="automation-node node-d"><ClipboardCheck size={17} /> Receipt exceptions</div>
+          <div className="automation-core"><BrandMark /><strong>Operating Layer</strong><span>today’s flow plan</span></div>
+          <div className="automation-node node-a"><PackageCheck size={17} /> Customer deadlines</div><div className="automation-node node-b"><Truck size={17} /> Late supply</div><div className="automation-node node-c"><Boxes size={17} /> Stock risk</div><div className="automation-node node-d"><ClipboardCheck size={17} /> Receiving problems</div>
           <svg viewBox="0 0 600 420" focusable="false"><path d="M130 95C230 110 230 190 300 210M470 92C380 112 385 185 300 210M115 328C210 320 225 245 300 210M485 330C390 322 375 248 300 210" /></svg>
         </div>
         <div className="automation-copy">
-          <p className="landing-kicker light"><span aria-hidden="true" /> Automation for the handoffs that slow SMEs down</p><h2 id="automation-title">Stop finding the work manually. <em>Start with what should move next.</em></h2><p>Operating Layer continuously turns live operational evidence into a short flow plan. Instead of asking someone to check orders, stock, suppliers and receiving separately, the system performs those checks and ranks the exceptions for review.</p>
-          <ul><li><Zap size={18} aria-hidden="true" /><span><strong>Protect customer promises</strong> — overdue and urgent confirmed orders move ahead of routine fulfilment work.</span></li><li><Zap size={18} aria-hidden="true" /><span><strong>Protect availability</strong> — forecast demand, safety stock, incoming supply and lead time turn stock risk into a concrete buying decision.</span></li><li><Zap size={18} aria-hidden="true" /><span><strong>Protect supply flow</strong> — overdue POs, partial receipts and receiving discrepancies surface before someone discovers them in a spreadsheet or email trail.</span></li></ul>
-          <div className="human-control"><ShieldCheck size={20} aria-hidden="true" /><span><strong>Automation does the triage; people keep authority.</strong> The flow plan can detect, explain and prioritise. Canonical inventory, fulfilment and purchasing still change through explicit, permission-checked and audited workflows.</span></div>
+          <p className="landing-kicker light"><span aria-hidden="true" /> Stop paying people to chase the system</p><h2 id="automation-title">Let the software find the exception. <em>Let your team make the call.</em></h2><p>Operating Layer checks the operational evidence continuously and turns the exceptions into a short, explainable list. That removes the repetitive checking without handing business authority to a black box.</p>
+          <ul><li><Zap size={18} aria-hidden="true" /><span><strong>Customer deadline at risk?</strong> Bring the order forward before a routine pick consumes the stock or time it needs.</span></li><li><Zap size={18} aria-hidden="true" /><span><strong>Likely to run out?</strong> Turn demand, incoming supply, lead time and supplier constraints into a buying decision while there is still room to act.</span></li><li><Zap size={18} aria-hidden="true" /><span><strong>Supplier or receipt problem?</strong> Surface it in the same place as the downstream work it could delay instead of leaving it buried in a PO list.</span></li></ul>
+          <div className="human-control"><ShieldCheck size={20} aria-hidden="true" /><span><strong>Your team stays in control.</strong> Operating Layer can detect, explain, prioritise and prepare. Stock, fulfilment, purchasing and other business-changing actions still move through explicit reviewed workflows.</span></div>
         </div>
       </section>
 
       <section className="landing-section trust-section" id="trust" aria-labelledby="trust-title">
-        <div className="trust-copy"><p className="landing-kicker"><span aria-hidden="true" /> Serious foundations for a growing business</p><h2 id="trust-title">Operational control should scale with the team.</h2><p>Operating Layer is a multi-tenant Cloudflare-native SaaS with clear permission boundaries, isolated business data and an audit trail behind operational mutations.</p></div>
-        <div className="trust-grid"><article><ShieldCheck size={22} aria-hidden="true" /><strong>Business isolation</strong><p>Operational data lives in a separate tenant datastore rather than sharing one giant operational table across customers.</p></article><article><Users size={22} aria-hidden="true" /><strong>Role-aware access</strong><p>Owner, admin, manager, inventory, fulfilment and viewer roles keep capability aligned to responsibility.</p></article><article><ClipboardCheck size={22} aria-hidden="true" /><strong>Auditable work</strong><p>Inventory and order mutations follow canonical workflows rather than hidden automation shortcuts.</p></article><article><Warehouse size={22} aria-hidden="true" /><strong>EU data controls</strong><p>Control-plane data and documents use Cloudflare resources configured with EU jurisdiction where supported.</p></article></div>
+        <div className="trust-copy"><p className="landing-kicker"><span aria-hidden="true" /> Built for a business you expect to keep</p><h2 id="trust-title">Useful for the team. Serious underneath.</h2><p>The product keeps customer businesses separated, limits actions by role and records important operational changes so growth does not mean losing control of who changed what.</p></div>
+        <div className="trust-grid"><article><ShieldCheck size={22} aria-hidden="true" /><strong>Your business stays separate</strong><p>Each customer’s operational data is kept in its own tenant datastore rather than mixed into one shared operational table.</p></article><article><Users size={22} aria-hidden="true" /><strong>People see what they need</strong><p>Roles keep owners, managers, inventory, fulfilment and read-only users aligned to the work they are responsible for.</p></article><article><ClipboardCheck size={22} aria-hidden="true" /><strong>Important changes leave a trail</strong><p>Inventory and order mutations follow controlled workflows with an audit record rather than hidden background shortcuts.</p></article><article><Warehouse size={22} aria-hidden="true" /><strong>EU data controls</strong><p>Core tenant data and documents use Cloudflare resources configured for EU jurisdiction where the platform supports it.</p></article></div>
       </section>
 
       <section className="seo-faq" id="faq" aria-labelledby="faq-title">
-        <div className="landing-section-heading"><p className="landing-kicker"><span aria-hidden="true" /> Common questions</p><h2 id="faq-title">What growing operations teams ask before they switch.</h2></div>
+        <div className="landing-section-heading"><p className="landing-kicker"><span aria-hidden="true" /> Before you spend time evaluating it</p><h2 id="faq-title">The questions an SME should ask first.</h2></div>
         <div className="seo-faq-grid">{faqs.map(item => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>
       </section>
 
-      <section className="landing-cta-section" aria-labelledby="cta-title"><div className="cta-orb" aria-hidden="true" /><p className="landing-kicker light"><span aria-hidden="true" /> Run the work between order and outcome</p><h2 id="cta-title">Give your team fewer things to chase <em>by hand.</em></h2><p>Bring inventory, orders, purchasing and warehouse execution into one connected workspace that continuously surfaces the next best operational work.</p><button type="button" className="landing-primary-cta inverted" disabled={busy} onClick={signIn}><GoogleGlyph />{busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Start with Google"}</button></section>
+      <section className="landing-cta-section" id="get-started" aria-labelledby="cta-title"><div className="cta-orb" aria-hidden="true" /><p className="landing-kicker light"><span aria-hidden="true" /> See whether it fits your operation</p><h2 id="cta-title">Start with a business problem you <em>already recognise.</em></h2><p>Choose a no-account demo and follow a realistic workstream. If it feels like your day, create a workspace and shape the modules around your business.</p><div className="landing-hero-actions"><button type="button" className="landing-primary-cta inverted" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>{inviteToken ? <GoogleGlyph /> : <PlayCircle size={18} aria-hidden="true" />}{busy ? "Opening Google…" : inviteToken ? "Join your workspace" : "Choose a business demo"}</button>{!inviteToken && <button type="button" className="landing-secondary-cta" disabled={busy} onClick={signIn}><GoogleGlyph />{busy ? "Opening Google…" : "Create a workspace with Google"}</button>}</div></section>
     </main>
 
-    <footer className="landing-footer"><BrandLockup inverse /><p>Inventory, order, purchasing & warehouse operations software for growing businesses.</p><a href="#top">Back to top</a></footer>
+    <footer className="landing-footer"><BrandLockup inverse /><p>Operations software for growing SMEs that need customer work, stock and suppliers to stay joined up.</p><a href="#top">Back to top</a></footer>
   </div>;
 }
 
