@@ -53,7 +53,11 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
 
 function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant: OrganizationSummary; suppliers: Supplier[]; onClose: () => void; onSaved: () => void }) {
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
-  const variants = useMemo(() => (products.data || []).flatMap(product => product.variants.map(variant => ({ ...variant, productName: product.name }))), [products.data]);
+  const variants = useMemo(() => (products.data || [])
+    .filter(product => product.status === "active")
+    .flatMap(product => product.variants
+      .filter(variant => variant.active !== 0)
+      .map(variant => ({ ...variant, productName: product.name }))), [products.data]);
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id || "");
   const [variantId, setVariantId] = useState("");
   const [supplierSku, setSupplierSku] = useState("");
@@ -78,11 +82,12 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
   return <Modal title="Link supplier variant" subtitle="This is operational metadata only. It never changes the Operating Layer SKU or historical purchase orders." onClose={onClose} wide>
     <form className="form-grid" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
+      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select active variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
       <Field label="Supplier SKU"><input value={supplierSku} onChange={event => setSupplierSku(event.target.value)} placeholder="Their code for this item" /></Field>
       <Field label="Last known unit cost (£)"><input type="number" min="0" step="0.01" value={lastCost} onChange={event => setLastCost(event.target.value)} /></Field>
       <Field label="Typical lead time (days)"><input type="number" min="0" max="3650" step="1" value={leadTime} onChange={event => setLeadTime(event.target.value)} /></Field>
       <div className="mapping-hint"><PackageSearch size={18} /><span><strong>Used for matching and planning</strong><small>Document automation can match supplier codes to variants; replenishment can account for lead time before suggesting quantities.</small></span></div>
+      {!products.isLoading && !variants.length && <p className="form-note full-span">No active product variants are available to link. Restore an archived product or add a new product first.</p>}
       {save.error && <ErrorText error={save.error} />}
       <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={save.isPending || !supplierId || !variantId}><Link2 size={16} /> Save mapping</button></div>
     </form>
