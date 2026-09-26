@@ -3,6 +3,7 @@ import { resetDemoModules, setDemoModules } from "./demo-modules";
 import { applyDemoProfileData } from "./demo-profile-data";
 
 export const DEMO_PROFILE_KEY = "operating-layer:demo-profile:v1";
+const DEMO_BUSINESS_PROFILE_KEY = "operating-layer:demo-business-profile:v1";
 
 export type DemoProfileKey = "ecommerce" | "retail" | "electrician" | "salon" | "cafe" | "dropship";
 
@@ -76,6 +77,7 @@ export function chooseDemoProfile(key: DemoProfileKey) {
   const profile = DEMO_PROFILES.find(item => item.key === key);
   if (!profile) throw new Error("Unknown demo profile");
   window.localStorage.setItem(DEMO_PROFILE_KEY, key);
+  window.localStorage.removeItem(DEMO_BUSINESS_PROFILE_KEY);
   resetDemoModules();
   setDemoModules(profile.modules);
   return profile;
@@ -83,6 +85,7 @@ export function chooseDemoProfile(key: DemoProfileKey) {
 
 export function resetDemoProfile() {
   window.localStorage.removeItem(DEMO_PROFILE_KEY);
+  window.localStorage.removeItem(DEMO_BUSINESS_PROFILE_KEY);
   resetDemoModules();
 }
 
