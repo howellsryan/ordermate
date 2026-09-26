@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Link2, ShieldCheck, UserPlus } from "lucide-react";
 import type { OrganizationSummary, Role } from "../../shared/types";
 import { controlApi, date } from "../api";
+import { isDemoTenant } from "../demo-store";
 import { DataState, ErrorText, Field, PageHeader } from "../ui";
 
 type Member = {
@@ -32,10 +33,12 @@ const assignableRoles: Array<Exclude<Role, "owner">> = ["admin", "manager", "inv
 
 export default function Team({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
+  const demo = isDemoTenant(tenant.id);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Exclude<Role, "owner">>("manager");
   const [inviteUrl, setInviteUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [demoAdded, setDemoAdded] = useState(false);
   const query = useQuery({
     queryKey: ["team", tenant.id],
     queryFn: () => controlApi<TeamResponse>(`/organizations/${tenant.id}/members`),
@@ -47,8 +50,13 @@ export default function Team({ tenant }: { tenant: OrganizationSummary }) {
       body: JSON.stringify({ email, role }),
     }),
     onSuccess: data => {
-      setInviteUrl(data.inviteUrl);
-      setCopied(false);
+      if (demo) {
+        setInviteUrl("");
+        setDemoAdded(true);
+      } else {
+        setInviteUrl(data.inviteUrl);
+        setCopied(false);
+      }
       setEmail("");
       refresh();
     },
@@ -67,17 +75,18 @@ export default function Team({ tenant }: { tenant: OrganizationSummary }) {
   };
 
   return <>
-    <PageHeader eyebrow="Access" title="Team & roles" description="One Google identity can belong to multiple Operating Layer businesses. Membership is verified before any tenant datastore can be reached." />
+    <PageHeader eyebrow="Access" title="Team & roles" description={demo ? "Try role management with local demo teammates. Nothing here creates an account, sends an invite or leaves this browser." : "One Google identity can belong to multiple Operating Layer businesses. Membership is verified before any tenant datastore can be reached."} />
     {query.data?.canManage && <section className="panel invite-panel">
-      <div className="panel-heading"><div><p className="eyebrow">Invite member</p><h3>Share an email-bound link</h3></div><UserPlus size={21} /></div>
-      <p>The link expires after seven days and only works when the recipient signs in with the Google account matching the invited email.</p>
-      <form className="invite-form" onSubmit={event => { event.preventDefault(); invite.mutate(); }}>
-        <Field label="Google email"><input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" /></Field>
+      <div className="panel-heading"><div><p className="eyebrow">{demo ? "Demo teammate" : "Invite member"}</p><h3>{demo ? "Add someone to this local workspace" : "Share an email-bound link"}</h3></div><UserPlus size={21} /></div>
+      <p>{demo ? "This simulates adding a teammate so you can exercise roles and permissions. The teammate exists only in this browser's demo data and no email is sent." : "The link expires after seven days and only works when the recipient signs in with the Google account matching the invited email."}</p>
+      <form className="invite-form" onSubmit={event => { event.preventDefault(); setDemoAdded(false); invite.mutate(); }}>
+        <Field label={demo ? "Demo email" : "Google email"}><input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" /></Field>
         <Field label="Role"><select value={role} onChange={event => setRole(event.target.value as Exclude<Role, "owner">)}>{assignableRoles.map(value => <option key={value} value={value}>{labelRole(value)}</option>)}</select></Field>
-        <button className="primary" disabled={invite.isPending}><Link2 size={16} /> Create invite link</button>
+        <button className="primary" disabled={invite.isPending}><Link2 size={16} /> {demo ? "Add demo teammate" : "Create invite link"}</button>
       </form>
       {invite.error && <ErrorText error={invite.error} />}
-      {inviteUrl && <div className="invite-link"><div><strong>Invite ready</strong><code>{inviteUrl}</code></div><button className="secondary" onClick={copyInvite}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy link"}</button></div>}
+      {demoAdded && <div className="invite-link"><div><strong>Demo teammate added</strong><span>You can change their role below. Refreshing keeps the change; Reset demo restores the seeded team.</span></div></div>}
+      {!demo && inviteUrl && <div className="invite-link"><div><strong>Invite ready</strong><code>{inviteUrl}</code></div><button className="secondary" onClick={copyInvite}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy link"}</button></div>}
     </section>}
 
     <section className="panel table-panel team-table">
@@ -86,7 +95,7 @@ export default function Team({ tenant }: { tenant: OrganizationSummary }) {
       </DataState>
     </section>
 
-    {query.data?.canManage && query.data.pendingInvites.length > 0 && <section className="panel pending-panel"><div className="panel-heading"><div><p className="eyebrow">Pending</p><h3>Unused invite links</h3></div></div><div className="pending-list">{query.data.pendingInvites.map(item => <div key={item.id}><span><strong>{item.email}</strong><small>{labelRole(item.role)} · expires {date(item.expiresAt)}</small></span><span className="status">pending</span></div>)}</div></section>}
+    {!demo && query.data?.canManage && query.data.pendingInvites.length > 0 && <section className="panel pending-panel"><div className="panel-heading"><div><p className="eyebrow">Pending</p><h3>Unused invite links</h3></div></div><div className="pending-list">{query.data.pendingInvites.map(item => <div key={item.id}><span><strong>{item.email}</strong><small>{labelRole(item.role)} · expires {date(item.expiresAt)}</small></span><span className="status">pending</span></div>)}</div></section>}
   </>;
 }
 
