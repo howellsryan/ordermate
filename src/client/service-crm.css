@@ -317,6 +317,66 @@
   cursor: not-allowed;
 }
 
+.demo-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .8rem;
+}
+
+.demo-profile-card {
+  appearance: none;
+  border: 1px solid var(--line, rgba(20, 30, 28, .12));
+  border-radius: 16px;
+  background: rgba(127, 143, 137, .045);
+  color: inherit;
+  padding: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.demo-profile-card:hover {
+  border-color: var(--accent, #5f7c70);
+  background: rgba(95, 124, 112, .08);
+  transform: translateY(-1px);
+}
+
+.demo-profile-card strong,
+.demo-profile-card p,
+.demo-profile-card small,
+.demo-profile-card span {
+  display: block;
+}
+
+.demo-profile-kicker {
+  margin-bottom: .3rem;
+  color: var(--accent, #5f7c70);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .065em;
+  text-transform: uppercase;
+}
+
+.demo-profile-card strong {
+  font-size: 1.05rem;
+}
+
+.demo-profile-card p {
+  margin: .45rem 0;
+  color: var(--text-muted, #65706c);
+  line-height: 1.45;
+}
+
+.demo-profile-card small {
+  color: var(--text-muted, #65706c);
+  line-height: 1.4;
+}
+
+.demo-profile-open {
+  margin-top: .75rem;
+  font-weight: 700;
+}
+
 @media (max-width: 980px) {
   .service-layout {
     grid-template-columns: 1fr;
@@ -332,7 +392,8 @@
 @media (max-width: 640px) {
   .crm-summary-grid,
   .service-kpis,
-  .module-grid {
+  .module-grid,
+  .demo-profile-grid {
     grid-template-columns: 1fr;
   }
   .crm-contact-card,
