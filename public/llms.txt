@@ -27,11 +27,12 @@ OrderMate is aimed at SMEs that have outgrown disconnected spreadsheets and manu
 
 Automate repetitive operational work while keeping important business decisions explicit, reviewable and attributable to people.
 
-## Public page sections
+## Public product guide
 
-- /#platform — platform value and operational outcomes
-- /#automation — automation and human-review model
-- /#product — product previews and workflows
-- /#trust — security, isolation, audit and role controls
+- [Platform overview](/#platform) — platform value and operational outcomes.
+- [Automation](/#automation) — automation and human-review model.
+- [Product previews](/#product) — screenshots and connected workflows.
+- [Trust and controls](/#trust) — security, isolation, audit and role controls.
+- [Agent resource catalog](/.well-known/ai-catalog.json) — machine-readable declaration of public agentic resources.
 
 Authentication uses Google sign-in from the public landing page.
