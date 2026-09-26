@@ -4,14 +4,14 @@ import {
 } from "../shared/features";
 import type { WorkspaceModuleKey } from "../shared/modules";
 import type { Role } from "../shared/types";
-import type { TenantStore } from "./tenant-store-order-planning";
 
 type FeatureState = { key: WorkspaceFeatureKey; enabled: boolean };
 type FeaturesResponse = { features: FeatureState[] };
 type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 type Actor = { id: string; role: Role; name?: string };
+type TenantFeatureStub = { fetch(request: Request): Promise<Response> };
 
-async function tenantJson<T>(stub: DurableObjectStub<TenantStore>, path: string, actor: Actor) {
+async function tenantJson<T>(stub: TenantFeatureStub, path: string, actor: Actor) {
   const response = await stub.fetch(new Request(`https://tenant.internal${path}`, {
     headers: {
       "x-ordermate-actor-id": actor.id,
@@ -24,7 +24,7 @@ async function tenantJson<T>(stub: DurableObjectStub<TenantStore>, path: string,
 }
 
 export async function workspaceFeatureEnabled(
-  stub: DurableObjectStub<TenantStore>,
+  stub: TenantFeatureStub,
   key: WorkspaceFeatureKey,
   actor: Actor,
 ) {
