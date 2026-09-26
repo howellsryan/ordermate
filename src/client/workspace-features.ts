@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { WorkspaceFeatureKey } from "../shared/features";
+import {
+  effectiveWorkspaceFeatures,
+  type WorkspaceFeatureKey,
+} from "../shared/features";
+import type { WorkspaceModuleKey } from "../shared/modules";
 import { tenantApi } from "./api";
 import { demoFeatures, demoFeaturesApi } from "./demo-features";
 import { isDemoTenant } from "./demo-store";
@@ -10,13 +14,14 @@ export type WorkspaceFeatureState = {
   label: string;
   description: string;
   group: string;
-  requiredModules: string[];
+  requiredModules: WorkspaceModuleKey[];
   dependencies: WorkspaceFeatureKey[];
   enabled: boolean;
   updated_at?: string | null;
   updated_by?: string | null;
 };
 
+type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 export type FeaturesResponse = { features: WorkspaceFeatureState[] };
 
 export async function getWorkspaceFeatures(tenantId: string): Promise<FeaturesResponse> {
@@ -39,11 +44,18 @@ export function useWorkspaceFeatures(tenantId?: string) {
     queryFn: () => getWorkspaceFeatures(tenantId!),
     enabled: !!tenantId,
   });
-  const enabled = useMemo(
-    () => new Set(query.data?.features.filter(feature => feature.enabled).map(feature => feature.key) || []),
-    [query.data],
-  );
-  return { ...query, enabled };
+  const modules = useQuery({
+    queryKey: ["tenant", tenantId, "modules"],
+    queryFn: () => tenantApi<ModulesResponse>(tenantId!, "/modules"),
+    enabled: !!tenantId,
+  });
+  const enabled = useMemo(() => {
+    if (!query.data || !modules.data) return new Set<WorkspaceFeatureKey>();
+    const configured = Object.fromEntries(query.data.features.map(feature => [feature.key, feature.enabled])) as Record<WorkspaceFeatureKey, boolean>;
+    const enabledModules = new Set(modules.data.modules.filter(module => module.enabled).map(module => module.key));
+    return effectiveWorkspaceFeatures(configured, enabledModules);
+  }, [query.data, modules.data]);
+  return { ...query, enabled, modulesReady: !!modules.data, modulesError: modules.error };
 }
 
 export function featureEnabled(response: FeaturesResponse | undefined, key: WorkspaceFeatureKey) {
