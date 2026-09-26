@@ -68,6 +68,7 @@
     "staging": {
       "name": "ordermate-staging",
       "workers_dev": true,
+      "preview_urls": false,
       "vars": {
         "AI_DOCUMENT_EXTRACTION_ENABLED": "false"
       },
