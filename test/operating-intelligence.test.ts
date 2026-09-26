@@ -96,6 +96,18 @@ describe("operating intelligence", () => {
     expect(withIncoming.forecast_12_weeks[0].projected).toBeGreaterThan(withoutIncoming.forecast_12_weeks[0].projected);
   });
 
+  it("moves the next order date later when scheduled incoming supply covers the lead-time window", () => {
+    const withoutIncoming = applyPlanningContext(input(), "A", "2026-09-26");
+    const withIncoming = applyPlanningContext(input({
+      incoming: 60,
+      incoming_schedule: [{ daysFromNow: 2, quantity: 60 }],
+    }), "A", "2026-09-26");
+
+    expect(withoutIncoming.order_by_date).toBe("2026-09-26");
+    expect(withIncoming.order_by_date).not.toBeNull();
+    expect(withIncoming.order_by_date!).toBeGreaterThan(withoutIncoming.order_by_date!);
+  });
+
   it("moves dated incoming supply when simulating a supplier delay", () => {
     const scenarioInput = input({
       on_hand: 18,
