@@ -1,0 +1,85 @@
+import { buildOperatingIntelligence, type IntelligenceInput } from "../shared/operating-intelligence";
+import type { InventoryPolicy, InventoryRow, OrderDetail, Product, ReplenishmentResponse, SupplierVariant } from "./model";
+import { demoTenantApi } from "./demo-stocktake";
+
+type DemoSettings = { low_stock_threshold: number };
+
+function ageInDays(iso: string) {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+}
+
+export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse> {
+  const [inventory, products, mappings, policies, orders, settings] = await Promise.all([
+    demoTenantApi<InventoryRow[]>("/inventory"),
+    demoTenantApi<Product[]>("/products"),
+    demoTenantApi<SupplierVariant[]>("/supplier-variants"),
+    demoTenantApi<InventoryPolicy[]>("/inventory-policies"),
+    demoTenantApi<OrderDetail[]>("/orders"),
+    demoTenantApi<DemoSettings>("/settings"),
+  ]);
+
+  const variantIndex = new Map(products.flatMap(product => product.variants.map(variant => [variant.id, { product, variant }] as const)));
+  const active = new Set(products
+    .filter(product => product.status === "active")
+    .flatMap(product => product.variants.filter(variant => variant.active !== 0).map(variant => variant.id)));
+
+  const inputs: IntelligenceInput[] = inventory
+    .filter(row => row.tracked !== 0 && active.has(row.variant_id))
+    .flatMap(row => {
+      const indexed = variantIndex.get(row.variant_id);
+      if (!indexed) return [];
+      const policy = policies.find(item => item.variant_id === row.variant_id && item.location_id === row.location_id);
+      const supplierMappings = mappings.filter(item => item.variant_id === row.variant_id);
+      const suppliers = supplierMappings.map(mapping => ({
+        supplierId: mapping.supplier_id,
+        supplierName: mapping.supplier_name,
+        supplierSku: mapping.supplier_sku,
+        lastCostMinor: mapping.last_cost_minor,
+        leadTimeDays: mapping.lead_time_days,
+        preferred: mapping.supplier_id === policy?.preferred_supplier_id,
+      })).sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.supplierName.localeCompare(b.supplierName));
+      const preferred = suppliers.find(item => item.preferred);
+      const knownLeadTimes = suppliers.map(item => item.leadTimeDays).filter((days): days is number => days !== null && days !== undefined && days >= 0);
+      const leadTime = preferred ? preferred.leadTimeDays ?? 7 : knownLeadTimes.length ? Math.min(...knownLeadTimes) : 7;
+
+      let fulfilled30 = 0;
+      let fulfilledPrevious60 = 0;
+      for (const order of orders) {
+        if (order.location_id !== row.location_id) continue;
+        const age = ageInDays(order.created_at);
+        if (age < 0 || age > 90) continue;
+        const units = order.lines.filter(line => line.variant_id === row.variant_id).reduce((sum, line) => sum + Math.max(0, line.quantity_fulfilled), 0);
+        if (age <= 30) fulfilled30 += units;
+        else fulfilledPrevious60 += units;
+      }
+
+      const recentDaily = fulfilled30 / 30;
+      const threshold = policy?.reorder_point ?? settings.low_stock_threshold;
+      const target = policy?.target_stock ?? Math.max(threshold * 2, Math.ceil(recentDaily * 14) + threshold);
+
+      return [{
+        id: `${row.variant_id}:${row.location_id}`,
+        variant_id: row.variant_id,
+        product_name: indexed.product.name,
+        variant_name: indexed.variant.name,
+        sku: indexed.variant.sku,
+        location_id: row.location_id,
+        location_name: row.location_name,
+        on_hand: row.on_hand,
+        reserved: row.reserved,
+        available: row.available,
+        incoming: row.incoming,
+        fulfilled_30d: fulfilled30,
+        fulfilled_prev_60d: fulfilledPrevious60,
+        cost_minor: indexed.variant.cost_minor,
+        threshold,
+        target_stock: target,
+        policy_custom: !!policy,
+        preferred_supplier_id: policy?.preferred_supplier_id || null,
+        effective_lead_time_days: leadTime,
+        suppliers,
+      }];
+    });
+
+  return buildOperatingIntelligence(inputs, { defaultThreshold: settings.low_stock_threshold });
+}
