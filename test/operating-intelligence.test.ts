@@ -38,7 +38,16 @@ describe("operating intelligence", () => {
     expect(row.scenarios.minimum).toBeLessThanOrEqual(row.scenarios.recommended);
     expect(row.scenarios.recommended).toBeLessThanOrEqual(row.scenarios.maximum);
     expect(row.recommended_quantity).toBe(row.scenarios.recommended);
-    expect(row.explanation).toHaveLength(4);
+    expect(row.explanation).toContain("The configured target stock of 30 units remains the recommended post-arrival target for this SKU/location policy.");
+  });
+
+  it("uses the recent run-rate without inventing a trend when prior history is absent", () => {
+    const row = applyPlanningContext(input({ fulfilled_30d: 30, fulfilled_prev_60d: 0 }), "A", "2026-09-26");
+
+    expect(row.average_daily_demand).toBe(1);
+    expect(row.forecast_daily_demand).toBe(1);
+    expect(row.trend_percent).toBeNull();
+    expect(row.trend_label).toBe("insufficient_history");
   });
 
   it("makes a positive demand scenario more conservative without mutating the base input", () => {
@@ -105,7 +114,7 @@ describe("operating intelligence", () => {
 
     expect(withoutIncoming.order_by_date).toBe("2026-09-26");
     expect(withIncoming.order_by_date).not.toBeNull();
-    expect(withIncoming.order_by_date!).toBeGreaterThan(withoutIncoming.order_by_date!);
+    expect(Date.parse(`${withIncoming.order_by_date}T00:00:00Z`)).toBeGreaterThan(Date.parse(`${withoutIncoming.order_by_date}T00:00:00Z`));
   });
 
   it("moves dated incoming supply when simulating a supplier delay", () => {
