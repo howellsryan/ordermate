@@ -9,10 +9,8 @@ export const WORKSPACE_FEATURE_KEYS = [
   "delivery_discrepancies",
   "saved_views",
   "inventory_history",
-  "catalogue_import",
   "wave_picking",
   "cycle_counts",
-  "barcode_lookup",
 ] as const;
 
 export type WorkspaceFeatureKey = typeof WORKSPACE_FEATURE_KEYS[number];
@@ -101,15 +99,6 @@ export const WORKSPACE_FEATURES: readonly WorkspaceFeatureDefinition[] = [
     defaultEnabled: true,
   },
   {
-    key: "catalogue_import",
-    label: "Catalogue CSV import",
-    description: "Allow reviewed CSV catalogue imports for products, variants, supplier mappings and opening stock.",
-    group: "Inventory & warehouse",
-    requiredModules: ["inventory"],
-    dependencies: [],
-    defaultEnabled: true,
-  },
-  {
     key: "wave_picking",
     label: "Wave picking",
     description: "Batch compatible confirmed orders into one reviewed warehouse picking session.",
@@ -122,15 +111,6 @@ export const WORKSPACE_FEATURES: readonly WorkspaceFeatureDefinition[] = [
     key: "cycle_counts",
     label: "Cycle counts",
     description: "Show the cycle-count workflow for reconciling physical stock with recorded stock.",
-    group: "Inventory & warehouse",
-    requiredModules: ["inventory"],
-    dependencies: [],
-    defaultEnabled: true,
-  },
-  {
-    key: "barcode_lookup",
-    label: "Barcode lookup",
-    description: "Show the quick inventory barcode lookup tool for scanner-led stock checks.",
     group: "Inventory & warehouse",
     requiredModules: ["inventory"],
     dependencies: [],
