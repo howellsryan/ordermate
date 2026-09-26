@@ -34,7 +34,14 @@ export async function createOrganization(name: string) {
 }
 
 export async function controlApi<T>(path: string, init?: RequestInit): Promise<T> {
-  if (isDemoMode()) return demoControlApi<T>(path, init);
+  if (isDemoMode()) {
+    const method = (init?.method || "GET").toUpperCase();
+    const pathname = new URL(path, "https://demo.local").pathname;
+    if (method === "GET" && pathname === "/delivery-documents/sources") return { sources: [], truncated: false } as T;
+    if (method === "GET" && pathname === "/delivery-documents/proposals") return { proposals: [], truncated: false } as T;
+    if (pathname.startsWith("/delivery-documents")) throw new Error("Delivery-document upload and AI extraction are disabled in the local guest demo because files never leave this browser.");
+    return demoControlApi<T>(path, init);
+  }
 
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
@@ -44,7 +51,30 @@ export async function controlApi<T>(path: string, init?: RequestInit): Promise<T
 }
 
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
-  if (isDemoTenant(tenantId)) return demoTenantApi<T>(path, init);
+  if (isDemoTenant(tenantId)) {
+    const result = await demoTenantApi<unknown>(path, init);
+    const method = (init?.method || "GET").toUpperCase();
+    const pathname = new URL(path, "https://demo.local").pathname;
+    if (method === "POST" && pathname === "/inventory/stocktake" && typeof init?.body === "string") {
+      let lines: Array<{ expectedOnHand?: number; countedOnHand?: number }> = [];
+      try {
+        const parsed = JSON.parse(init.body) as { lines?: Array<{ expectedOnHand?: number; countedOnHand?: number }> };
+        if (Array.isArray(parsed.lines)) lines = parsed.lines;
+      } catch {
+        // The demo store already validates the request. This fallback only adapts the response shape.
+      }
+      const totalVariance = lines.reduce((sum, line) => sum + ((Number(line.countedOnHand) || 0) - (Number(line.expectedOnHand) || 0)), 0);
+      const changedLines = lines.filter(line => (Number(line.countedOnHand) || 0) !== (Number(line.expectedOnHand) || 0)).length;
+      return {
+        ok: true,
+        stocktakeId: crypto.randomUUID(),
+        countedLines: lines.length,
+        changedLines,
+        totalVariance,
+      } as T;
+    }
+    return result as T;
+  }
 
   const headers = new Headers(init?.headers);
   headers.set("x-ordermate-tenant", tenantId);
