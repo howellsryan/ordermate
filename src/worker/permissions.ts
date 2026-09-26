@@ -1,29 +1,29 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "order_planning" | "customers" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "order_planning" | "customers" | "crm" | "service" | "modules" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: ["read"], reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
-    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
   },
   fulfilment: {
-    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], reports: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], crm: ["read"], service: ["read", "update"], modules: ["read"], reports: ["read"], preferences: "*",
   },
   viewer: {
-    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], reports: ["read"], analytics: ["read"], settings: ["read"], members: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], reports: ["read"], analytics: ["read"], settings: ["read"], members: ["read"], preferences: "*",
   },
 };
 
@@ -35,6 +35,15 @@ export function can(role: Role, resource: Resource, action: Action): boolean {
 export function permissionForRequest(path: string, method: string): { resource: Resource; action: Action } {
   const action: Action = method === "GET" || method === "HEAD" ? "read" : method === "DELETE" ? "delete" : method === "POST" ? "create" : "update";
 
+  if (path.startsWith("/modules")) return { resource: "modules", action };
+  if (path.startsWith("/crm/contacts")) {
+    const lifecycleAction = method === "POST" && /\/convert$/.test(path) ? "update" : action;
+    return { resource: "crm", action: lifecycleAction };
+  }
+  if (path.startsWith("/service")) {
+    const lifecycleAction = method === "POST" && /\/(qualify|convert-to-quote|convert-to-job|send|accept|reject|create-job|start|complete|materials|issue|payments|void)$/.test(path) ? "update" : action;
+    return { resource: "service", action: lifecycleAction };
+  }
   if (path.startsWith("/saved-views")) return { resource: "preferences", action };
   if (path.startsWith("/imports/catalogue")) return { resource: "catalogue", action: "create" };
   if (path.startsWith("/products") || path.startsWith("/categories")) return { resource: "catalogue", action };
