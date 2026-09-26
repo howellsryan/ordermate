@@ -60,7 +60,7 @@ export function deterministicOperationsAnswer(question: string, context: Operati
   const q = question.trim().toLocaleLowerCase();
   const stockQuestion = hasAny(q, ["stock", "inventory", "reorder", "short", "run out", "stockout", "buy", "replen"]);
   const orderQuestion = hasAny(q, ["order", "customer", "fulfil", "fulfill", "pick", "urgent", "late"]);
-  const purchasingQuestion = hasAny(q, ["purchase", "supplier", "po", "delivery", "incoming", "overdue"]);
+  const purchasingQuestion = hasAny(q, ["purchase", "purchasing", "supplier", "po", "delivery", "incoming", "overdue"]);
 
   if (stockQuestion && context.intelligence) {
     const summary = context.intelligence.summary;
