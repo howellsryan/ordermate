@@ -57,6 +57,7 @@ describe("workspace feature flags", () => {
     effective = effectiveWorkspaceFeatures(config, allModules);
     expect(effective.has("flow_plan")).toBe(false);
     expect(effective.has("smart_buy_batches")).toBe(false);
+    expect(effective.has("operations_copilot")).toBe(true);
   });
 
   it("allows everyone to read feature configuration but only owners and admins to change it", () => {
