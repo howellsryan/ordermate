@@ -51,17 +51,17 @@ export const DEMO_PROFILES: readonly DemoProfile[] = [
     key: "cafe",
     name: "Coffee shop",
     businessName: "Morrow Coffee — Demo",
-    description: "Ingredient and retail stock purchasing with daily operational counts; recipe depletion/waste is the next reusable food-service module.",
-    workstream: "Buy ingredients → receive → consume/count → replenish · recipe/waste prototype",
+    description: "Ingredient stock, supplier buying and counts use the live core; recipe depletion and wastage are playable food-service prototypes kept separate from ordinary SKU orders.",
+    workstream: "Opening count → menu sale/recipe depletion → waste → replenish → PO → receive → closing count",
     modules: { crm: false, service: false, orders: false, inventory: true, purchasing: true, warehouse: false, reports: true },
   },
   {
     key: "dropship",
     name: "Dropship ecommerce",
     businessName: "Atlas Direct — Demo",
-    description: "Customer demand and supplier purchasing without owned warehouse stock; supplier-direct fulfilment is modelled as a dedicated vertical prototype.",
-    workstream: "Customer order → supplier PO → supplier dispatch → customer completion",
-    modules: { crm: true, service: false, orders: true, inventory: true, purchasing: true, warehouse: false, reports: true },
+    description: "Customer and supplier-direct fulfilment without owned stock. The demo does not misuse warehouse Orders or Inventory to represent a supplier shipping straight to the customer.",
+    workstream: "Checkout → supplier route → acknowledgement → direct dispatch/tracking → delivered → exception/return",
+    modules: { crm: true, service: false, orders: false, inventory: false, purchasing: false, warehouse: false, reports: false },
   },
 ] as const;
 
