@@ -62,14 +62,14 @@ export default function CatalogueImportModal({ tenant, onClose, onCommitted }: {
     preview.mutate(parsed.rows);
   };
 
-  return <Modal title="Import catalogue from CSV" subtitle="Create new products, variants, supplier mappings and opening stock from one reviewed file. OrderMate validates everything before one atomic commit." onClose={onClose} wide>
+  return <Modal title="Import catalogue from CSV" subtitle="Create new products, variants, supplier mappings and opening stock from one reviewed file. Operating Layer validates everything before one atomic commit." onClose={onClose} wide>
     {committed ? <div className="import-complete">
       <span><CheckCircle2 size={28} /></span>
       <div><p className="eyebrow">Import committed</p><h3>{committed.summary.productsToCreate} products · {committed.summary.variantsToCreate} variants</h3><p>Opening stock and supplier mappings were committed with the catalogue in the same tenant transaction. Import reference: <code>{committed.importId}</code>.</p></div>
       <div className="modal-actions"><button className="primary" onClick={onClose}>Done</button></div>
     </div> : <div className="catalogue-import">
       <section className="import-source">
-        <div className="import-source-head"><div><p className="eyebrow">1 · Source file</p><h3>Use the OrderMate template</h3><p>Required columns are <code>product_name</code>, <code>variant_name</code> and <code>sku</code>. Add arbitrary option dimensions with headers such as <code>option:Size</code>.</p></div><button type="button" className="secondary" onClick={downloadCatalogueImportTemplate}><Download size={15} /> Download template</button></div>
+        <div className="import-source-head"><div><p className="eyebrow">1 · Source file</p><h3>Use the Operating Layer template</h3><p>Required columns are <code>product_name</code>, <code>variant_name</code> and <code>sku</code>. Add arbitrary option dimensions with headers such as <code>option:Size</code>.</p></div><button type="button" className="secondary" onClick={downloadCatalogueImportTemplate}><Download size={15} /> Download template</button></div>
         <div className={`import-drop ${dragging ? "dragging" : ""}`} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (event.currentTarget === event.target) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); void load(event.dataTransfer.files[0]); }}>
           <input ref={inputRef} hidden type="file" accept=".csv,text/csv" onChange={event => { void load(event.target.files?.[0]); event.currentTarget.value = ""; }} />
           <UploadCloud size={24} />
@@ -84,7 +84,7 @@ export default function CatalogueImportModal({ tenant, onClose, onCommitted }: {
       </section>}
 
       {(preview.isPending || plan) && <section className="import-review">
-        <div className="import-section-title"><div><p className="eyebrow">3 · Tenant dry-run</p><h3>{preview.isPending ? "Checking live OrderMate data…" : plan?.canCommit ? "Ready for review" : "Fix the CSV before importing"}</h3></div>{preview.isPending ? <div className="loader" /> : plan?.canCommit ? <span className="import-state good"><CheckCircle2 size={14} /> No blocking conflicts</span> : <span className="import-state bad"><AlertTriangle size={14} /> {plan?.errors.length || 0} blocking</span>}</div>
+        <div className="import-section-title"><div><p className="eyebrow">3 · Tenant dry-run</p><h3>{preview.isPending ? "Checking live Operating Layer data…" : plan?.canCommit ? "Ready for review" : "Fix the CSV before importing"}</h3></div>{preview.isPending ? <div className="loader" /> : plan?.canCommit ? <span className="import-state good"><CheckCircle2 size={14} /> No blocking conflicts</span> : <span className="import-state bad"><AlertTriangle size={14} /> {plan?.errors.length || 0} blocking</span>}</div>
         {plan && <>
           <div className="import-summary">
             <Summary label="Products" value={plan.summary.productsToCreate} />
