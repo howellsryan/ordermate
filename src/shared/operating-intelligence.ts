@@ -135,13 +135,14 @@ function abcClasses(inputs: IntelligenceInput[]) {
 function demandSignals(input: IntelligenceInput, demandAdjustmentPercent: number) {
   const recentDaily = Math.max(0, input.fulfilled_30d) / 30;
   const priorDaily = Math.max(0, input.fulfilled_prev_60d) / 60;
-  const weighted = recentDaily * 0.7 + priorDaily * 0.3;
-  const rawTrend = priorDaily > 0 ? (recentDaily - priorDaily) / priorDaily : recentDaily > 0 ? 0.2 : 0;
+  const hasPriorHistory = priorDaily > 0;
+  const weighted = hasPriorHistory ? recentDaily * 0.7 + priorDaily * 0.3 : recentDaily;
+  const rawTrend = hasPriorHistory ? (recentDaily - priorDaily) / priorDaily : 0;
   const trendFactor = clamp(1 + rawTrend * 0.35, 0.75, 1.25);
   const contextFactor = clamp(1 + demandAdjustmentPercent / 100, 0.1, 3);
   const forecastDaily = weighted * trendFactor * contextFactor;
-  const trendPercent = priorDaily > 0 ? Math.round(rawTrend * 100) : null;
-  const trendLabel = priorDaily <= 0 && recentDaily <= 0
+  const trendPercent = hasPriorHistory ? Math.round(rawTrend * 100) : null;
+  const trendLabel = !hasPriorHistory
     ? "insufficient_history"
     : rawTrend > 0.12 ? "rising" : rawTrend < -0.12 ? "falling" : "stable";
   return { recentDaily, priorDaily, forecastDaily, trendPercent, trendLabel } as const;
@@ -215,7 +216,9 @@ export function applyPlanningContext(
   const orderByDate = orderByOffset === null ? null : isoDateFromOffset(todayIso, orderByOffset);
 
   const minimumTarget = safetyStock;
-  const recommendedTarget = Math.max(input.target_stock, Math.ceil(signals.forecastDaily * 28) + safetyStock);
+  const recommendedTarget = input.policy_custom
+    ? input.target_stock
+    : Math.max(input.target_stock, Math.ceil(signals.forecastDaily * 28) + safetyStock);
   const maximumTarget = Math.max(recommendedTarget, Math.ceil(signals.forecastDaily * 42) + safetyStock);
   const minimum = Math.max(0, minimumTarget - projectedAtLead);
   const recommended = Math.max(minimum, recommendedTarget - projectedAtLead);
@@ -234,11 +237,12 @@ export function applyPlanningContext(
   const datedIncoming = normalizedIncomingSchedule(scenarioInput, leadTimeDays);
   const explanation = [
     `${input.fulfilled_30d} units fulfilled in the last 30 days and ${input.fulfilled_prev_60d} in the prior 60 days.`,
-    `Forecast demand is ${round2(signals.forecastDaily)} units/day after weighting recent demand, trend and the active planning context.`,
+    `Forecast demand is ${round2(signals.forecastDaily)} units/day after weighting available history, bounded trend and the active planning context.`,
     `${leadTimeDays} days effective lead time with ${bufferDays} days of demand buffer produces ${safetyStock} units of safety stock.`,
     `Current available stock plus ${datedIncoming.reduce((sum, item) => sum + item.quantity, 0)} dated incoming units projects to ${projectedAtLead} units when a new replenishment order would be expected to arrive.`,
   ];
 
+  if (input.policy_custom) explanation.push(`The configured target stock of ${input.target_stock} units remains the recommended post-arrival target for this SKU/location policy.`);
   if (demandAdjustmentPercent) explanation.push(`Planning scenario adjusts demand by ${demandAdjustmentPercent > 0 ? "+" : ""}${demandAdjustmentPercent}%.`);
   if (extraLeadTimeDays) explanation.push(`Planning scenario adds ${extraLeadTimeDays} days to supplier timing, including dated incoming supply.`);
 
