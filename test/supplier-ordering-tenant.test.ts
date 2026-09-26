@@ -25,7 +25,7 @@ async function request<T>(stub: Stub, path: string, method = "GET", body?: unkno
 }
 
 describe("supplier buying terms", () => {
-  it("persists MOQ/multiple, audits the change and returns an order-ready replenishment quantity", async () => {
+  it("persists MOQ/multiple atomically with the mapping, audits the change and returns an order-ready replenishment quantity", async () => {
     const stub = tenant();
     const location = await request<{ id: string }>(stub, "/locations", "POST", { name: "Main warehouse", code: `M${crypto.randomUUID().slice(0, 5)}` });
     expect(location.response.status).toBe(201);
@@ -73,10 +73,12 @@ describe("supplier buying terms", () => {
     expect(replenishment.data.suggestions[0].explanation.some(line => line.includes("order-ready"))).toBe(true);
 
     await runInDurableObject(stub, async (_instance, state) => {
-      const audit = state.storage.sql.exec<{ action: string; entity_id: string | null }>(
-        "SELECT action, entity_id FROM audit_events WHERE action = 'supplier_variant.ordering_terms_updated' ORDER BY created_at DESC LIMIT 1",
+      const audit = state.storage.sql.exec<{ action: string; entity_id: string | null; metadata_json: string | null }>(
+        "SELECT action, entity_id, metadata_json FROM audit_events WHERE action = 'supplier_variant.updated' ORDER BY created_at DESC LIMIT 1",
       ).toArray()[0];
-      expect(audit).toEqual({ action: "supplier_variant.ordering_terms_updated", entity_id: `${supplier.data.id}:${variantId}` });
+      expect(audit.action).toBe("supplier_variant.updated");
+      expect(audit.entity_id).toBe(`${supplier.data.id}:${variantId}`);
+      expect(JSON.parse(audit.metadata_json || "{}")).toMatchObject({ minimumOrderQuantity: 12, orderMultiple: 12 });
     });
   });
 
