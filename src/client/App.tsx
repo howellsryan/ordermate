@@ -163,8 +163,9 @@ export default function App() {
   useEffect(() => {
     if (!activeTenant) return;
     const unavailableDemoPage = !!navForPage?.demoOnly && !demo;
-    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || moduleForPage && modules.data && !enabledModules.has(moduleForPage)) setPage("overview");
-  }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, modules.data, enabledModules]);
+    const unavailableModule = !!moduleForPage && (!!modules.error || !!modules.data && !enabledModules.has(moduleForPage));
+    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || unavailableModule) setPage("overview");
+  }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, modules.data, modules.error, enabledModules]);
 
   if (sessionQuery.isLoading) {
     return activeTenantId ? <LoadingScreen /> : <LandingWithDemo inviteToken={inviteToken} />;
@@ -175,12 +176,12 @@ export default function App() {
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
 
-  const visibleNav = nav.filter(item => (!item.demoOnly || demo) && pageVisible(activeTenant.role, item.id) && (!item.module || !modules.data || enabledModules.has(item.module)));
+  const visibleNav = nav.filter(item => (!item.demoOnly || demo) && pageVisible(activeTenant.role, item.id) && (!item.module || !!modules.data && enabledModules.has(item.module)));
   const navigate = (target: Page) => {
     const targetNav = nav.find(item => item.id === target);
     if (targetNav?.demoOnly && !demo) return;
     if (!pageVisible(activeTenant.role, target)) return;
-    if (targetNav?.module && modules.data && !enabledModules.has(targetNav.module)) return;
+    if (targetNav?.module && (!modules.data || !enabledModules.has(targetNav.module))) return;
     setPage(target);
     setMobileNav(false);
   };
@@ -225,7 +226,7 @@ export default function App() {
         <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>{demo ? "Browser only" : "Cloudflare EU"}</span><small>·</small><span className="role-pill">{demo ? "demo" : activeTenant.role}</span></div></header>
         <div className="workspace">
           {demo && <div className="demo-workspace-banner" role="status"><div><strong>{demoProfile?.businessName} · local guest demo</strong><span>{demoProfile?.workstream}. Changes are saved only in this browser and reset independently from production.</span></div><div><button type="button" className="secondary" onClick={resetDemo}><RotateCcw size={14} /> Reset demo</button><button type="button" className="secondary" onClick={leaveDemo}>Choose another demo</button></div></div>}
-          {modules.error && !demo && <div className="form-error" role="alert">Module configuration could not be loaded. Navigation is showing the safe default set; refresh before changing workspace configuration.</div>}
+          {modules.error && <div className="form-error" role="alert">Module configuration could not be loaded. Navigation is showing the safe default set; refresh before changing workspace configuration.</div>}
           <Suspense fallback={<WorkspaceLoading />}>
             {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
             {page === "workstream" && demo && <DemoWorkstream tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}

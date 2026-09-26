@@ -31,6 +31,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
   const inventoryEnabled = enabled.has("inventory");
   const purchasingEnabled = enabled.has("purchasing");
   const operationsEnabled = ordersEnabled || inventoryEnabled || purchasingEnabled;
+  const commercePlanningEnabled = ordersEnabled && inventoryEnabled && purchasingEnabled;
 
   const query = useQuery({
     queryKey: ["tenant", tenant.id, "dashboard"],
@@ -118,9 +119,9 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Customers" value={crm.isLoading ? "—" : customers} helper="Established CRM relationships" tone="ink" />
     </section> : null}
 
-    {inventoryEnabled && purchasingEnabled && <FlowPlan tenant={tenant} onNavigate={onNavigate} />}
+    {commercePlanningEnabled && <FlowPlan tenant={tenant} onNavigate={onNavigate} />}
 
-    {operationsEnabled && <OperationsAssistant tenant={tenant} onNavigate={onNavigate} />}
+    {commercePlanningEnabled && <OperationsAssistant tenant={tenant} onNavigate={onNavigate} />}
 
     {(serviceEnabled || operationsEnabled) && <section className="panel attention-panel">
       <div className="panel-heading"><div><p className="eyebrow">Needs attention</p><h3>{serviceEnabled ? "Work inbox" : "Operational inbox"}</h3></div><AlertTriangle size={21} /></div>

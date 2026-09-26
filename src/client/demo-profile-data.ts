@@ -5,6 +5,7 @@ const DEMO_DATA_KEY = "operating-layer:demo-data:v1";
 type Row = Record<string, any>;
 type DemoRawState = {
   products: Row[];
+  modifiers: Row[];
   locations: Row[];
   inventory: Row[];
   suppliers: Row[];
@@ -13,7 +14,9 @@ type DemoRawState = {
   inventoryPolicies: Row[];
   purchaseOrders: Row[];
   orders: Row[];
+  audit: Row[];
   movements: Row[];
+  members: Row[];
   [key: string]: unknown;
 };
 
@@ -137,7 +140,11 @@ function productIdentity(data: ProfileData, variantId: string) {
 }
 
 function mapVariantSnapshots(state: DemoRawState, data: ProfileData) {
+  // Non-ecommerce profiles reuse stable demo IDs, but must not inherit Northstar's
+  // packaging-specific add-ons into unrelated verticals.
+  state.modifiers = [];
   for (const product of state.products) {
+    product.modifiers = [];
     const identity = data.products[String(product.id)];
     if (!identity) continue;
     product.name = identity.productName;
@@ -159,7 +166,11 @@ function mapVariantSnapshots(state: DemoRawState, data: ProfileData) {
     row.sku = identity.variant.sku;
   };
   for (const row of state.inventory) patchRow(row, String(row.variant_id));
-  for (const row of state.supplierVariants) patchRow(row, String(row.variant_id));
+  for (const row of state.supplierVariants) {
+    patchRow(row, String(row.variant_id));
+    const identity = productIdentity(data, String(row.variant_id));
+    if (identity && row.supplier_sku) row.supplier_sku = identity.variant.sku;
+  }
   for (const row of state.inventoryPolicies) patchRow(row, String(row.variant_id));
   for (const row of state.movements) patchRow(row, String(row.variant_id));
 
@@ -178,6 +189,7 @@ function mapVariantSnapshots(state: DemoRawState, data: ProfileData) {
       line.product_name_snapshot = identity.product.productName;
       line.variant_name_snapshot = identity.variant.name;
       line.sku_snapshot = identity.variant.sku;
+      line.modifiers = [];
     }
   }
 }
@@ -222,6 +234,25 @@ function mapCustomers(state: DemoRawState, data: ProfileData) {
   }
 }
 
+function mapTeam(state: DemoRawState, profile: DemoProfileKey) {
+  for (const member of state.members || []) {
+    if (typeof member.email !== "string" || !member.email.endsWith("@northstar.example")) continue;
+    const localPart = member.email.split("@")[0] || "team";
+    member.email = `${localPart}@${profile}.example.test`;
+  }
+}
+
+function removeDisabledModuleHistory(state: DemoRawState, data: ProfileData) {
+  state.audit = (state.audit || []).filter(event => {
+    const action = String(event.action || "");
+    const entity = String(event.entity_type || "");
+    if (data.disableCommerceOrders && (action.startsWith("order.") || entity === "order")) return false;
+    if (data.disablePurchasing && (action.startsWith("purchase_order.") || action.startsWith("delivery_") || entity === "purchase_order" || entity === "delivery_discrepancy")) return false;
+    if (data.disableInventory && (action.startsWith("inventory.") || entity === "inventory")) return false;
+    return true;
+  });
+}
+
 export function applyDemoProfileData(profile: DemoProfileKey) {
   if (typeof window === "undefined" || profile === "ecommerce") return;
   const data = PROFILES[profile];
@@ -236,6 +267,8 @@ export function applyDemoProfileData(profile: DemoProfileKey) {
   mapLocations(state, data);
   mapSuppliers(state, data);
   mapCustomers(state, data);
+  mapTeam(state, profile);
+  removeDisabledModuleHistory(state, data);
 
   if (data.disableCommerceOrders) {
     state.orders = [];
@@ -248,10 +281,19 @@ export function applyDemoProfileData(profile: DemoProfileKey) {
     state.purchaseOrders = [];
     state.supplierVariants = [];
     state.inventoryPolicies = [];
+    state.suppliers = [];
   }
   if (data.disableInventory) {
+    state.products = [];
+    state.modifiers = [];
+    state.locations = [];
     state.inventory = [];
     state.movements = [];
+  }
+  if (profile === "dropship") {
+    // CRM owns the supplier-direct demo's customer identity. Do not leave the
+    // compatibility commerce customers from the stock-owning seed reachable.
+    state.customers = [];
   }
 
   window.localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(state));
