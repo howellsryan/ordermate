@@ -45,14 +45,16 @@ The page also contains natural-language sections for multi-location inventory, o
 - semantic, crawlable HTML fallback before React hydration;
 - descriptive `<title>` and meta description;
 - consistent Open Graph / Twitter brand metadata;
-- canonical homepage declaration;
 - Organisation + WebApplication JSON-LD containing only factual claims;
 - descriptive product-image alt text;
 - one H1 and a structured heading hierarchy;
 - native `<details>` FAQ content that is useful even without a search enhancement;
 - `llms.txt` and machine-readable agent discovery metadata;
 - accessible landmarks, skip navigation and reduced-motion treatment from the existing landing implementation;
-- public landing remains split from authenticated operational code to protect load performance.
+- public landing remains split from authenticated operational code to protect load performance;
+- environment-aware robots/sitemap handling, with staging explicitly kept out of search indexes.
+
+A canonical link is intentionally **not** emitted yet. A relative `href="/"` is not an acceptable substitute for the final public URL and also gets treated as an asset directory by the current Vite HTML build. The production canonical will be added as an absolute URL once the production domain is selected and cleared.
 
 Do not add SoftwareApplication rich-result `offers`, `review` or `aggregateRating` values until they represent real public pricing/reviews. Structured data must describe visible, truthful content.
 
@@ -61,7 +63,7 @@ Do not add SoftwareApplication rich-result `offers`, `review` or `aggregateRatin
 The current `ordermate-staging.rlh.workers.dev` hostname is a test environment, not the canonical public brand domain. It should not compete with the future production domain in search.
 
 The Worker therefore needs an explicit environment-aware crawler policy before the public domain launches:
-- staging: `X-Robots-Tag: noindex, nofollow` on the landing response and `Disallow: /` in robots;
+- staging: `X-Robots-Tag: noindex, nofollow, noarchive` on public responses and `Disallow: /` in robots;
 - production: allow crawling and advertise an absolute sitemap URL.
 
 Do not hard-code an unconfirmed Operating Layer domain into sitemap/canonical metadata. Complete the domain decision first.
