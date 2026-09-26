@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, PackageSearch, Plus, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
@@ -25,24 +25,27 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
 
   return <section className="panel supplier-catalogue">
     <div className="panel-heading">
-      <div><p className="eyebrow">Supplier catalogue</p><h3>Map how suppliers identify your stock</h3></div>
-      {canWrite && <button className="secondary" onClick={() => setOpen(true)}><Plus size={15} /> Link variant</button>}
+      <div><p className="eyebrow">Supplier catalogue</p><h3>Map how suppliers identify and sell your stock</h3></div>
+      {canWrite && <button className="secondary" onClick={() => setOpen(true)}><Plus size={15} /> Link / update variant</button>}
     </div>
-    <p>Supplier SKU, latest known cost and lead time give receiving, document matching and replenishment a reliable deterministic anchor.</p>
-    <DataState loading={mappings.isLoading} error={mappings.error || unlink.error} empty={!mappings.data?.length} emptyText="No supplier variants are linked yet. Add a mapping to unlock better PO matching and replenishment suggestions.">
+    <p>Supplier SKU, latest known cost, lead time, minimum order quantity and order multiple turn receiving, document matching and forecast replenishment into an order-ready buying workflow.</p>
+    <DataState loading={mappings.isLoading} error={mappings.error || unlink.error} empty={!mappings.data?.length} emptyText="No supplier variants are linked yet. Add a mapping to unlock better PO matching and order-ready replenishment suggestions.">
       <div className="supplier-map-list">
-        <div className="supplier-map-head"><span>Supplier</span><span>Operating Layer variant</span><span>Supplier SKU</span><span>Last cost</span><span>Lead time</span><span /></div>
+        <div className="supplier-map-head"><span>Supplier</span><span>Operating Layer variant</span><span>Supplier SKU</span><span>Last cost</span><span>Lead / buying terms</span><span /></div>
         {mappings.data?.map(mapping => <div className="supplier-map-row" key={`${mapping.supplier_id}:${mapping.variant_id}`}>
           <div><strong>{mapping.supplier_name}</strong></div>
           <div><strong>{mapping.product_name} · {mapping.variant_name}</strong><small className="mono">{mapping.sku}</small></div>
           <span className="mono">{mapping.supplier_sku || "—"}</span>
           <span>{mapping.last_cost_minor == null ? "—" : money(mapping.last_cost_minor)}</span>
-          <span>{mapping.lead_time_days == null ? "—" : `${mapping.lead_time_days} day${mapping.lead_time_days === 1 ? "" : "s"}`}</span>
+          <div>
+            <span>{mapping.lead_time_days == null ? "Lead —" : `${mapping.lead_time_days} day${mapping.lead_time_days === 1 ? "" : "s"}`}</span>
+            <small>{mapping.minimum_order_quantity ? `MOQ ${mapping.minimum_order_quantity}` : "No MOQ"} · {mapping.order_multiple ? `multiple ${mapping.order_multiple}` : "any quantity"}</small>
+          </div>
           <span>{canWrite && <button className="icon-button" aria-label={`Unlink ${mapping.product_name} from ${mapping.supplier_name}`} disabled={unlink.isPending} onClick={() => unlink.mutate(mapping)}><Trash2 size={15} /></button>}</span>
         </div>)}
       </div>
     </DataState>
-    {open && canWrite && <SupplierVariantModal tenant={tenant} suppliers={suppliers} onClose={() => setOpen(false)} onSaved={() => {
+    {open && canWrite && <SupplierVariantModal tenant={tenant} suppliers={suppliers} mappings={mappings.data || []} onClose={() => setOpen(false)} onSaved={() => {
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "supplier-variants"] });
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] });
@@ -51,7 +54,7 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
   </section>;
 }
 
-function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant: OrganizationSummary; suppliers: Supplier[]; onClose: () => void; onSaved: () => void }) {
+function SupplierVariantModal({ tenant, suppliers, mappings, onClose, onSaved }: { tenant: OrganizationSummary; suppliers: Supplier[]; mappings: SupplierVariant[]; onClose: () => void; onSaved: () => void }) {
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const variants = useMemo(() => (products.data || [])
     .filter(product => product.status === "active")
@@ -63,7 +66,28 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
   const [supplierSku, setSupplierSku] = useState("");
   const [lastCost, setLastCost] = useState("");
   const [leadTime, setLeadTime] = useState("7");
+  const [minimumOrderQuantity, setMinimumOrderQuantity] = useState("");
+  const [orderMultiple, setOrderMultiple] = useState("");
   const selected = variants.find(variant => variant.id === variantId);
+
+  useEffect(() => {
+    if (!variantId) return;
+    const existing = mappings.find(mapping => mapping.supplier_id === supplierId && mapping.variant_id === variantId);
+    if (existing) {
+      setSupplierSku(existing.supplier_sku || "");
+      setLastCost(existing.last_cost_minor == null ? "" : (existing.last_cost_minor / 100).toFixed(2));
+      setLeadTime(existing.lead_time_days == null ? "" : String(existing.lead_time_days));
+      setMinimumOrderQuantity(existing.minimum_order_quantity == null ? "" : String(existing.minimum_order_quantity));
+      setOrderMultiple(existing.order_multiple == null ? "" : String(existing.order_multiple));
+      return;
+    }
+
+    setSupplierSku("");
+    setLastCost(selected ? (selected.cost_minor / 100).toFixed(2) : "");
+    setLeadTime("7");
+    setMinimumOrderQuantity("");
+    setOrderMultiple("");
+  }, [mappings, selected, supplierId, variantId]);
 
   const save = useMutation({
     mutationFn: () => tenantApi(tenant.id, "/supplier-variants", {
@@ -74,19 +98,23 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
         supplierSku: supplierSku || undefined,
         lastCostMinor: lastCost === "" ? selected?.cost_minor : pounds(lastCost),
         leadTimeDays: leadTime === "" ? undefined : Number(leadTime),
+        minimumOrderQuantity: minimumOrderQuantity === "" ? null : Number(minimumOrderQuantity),
+        orderMultiple: orderMultiple === "" ? null : Number(orderMultiple),
       }),
     }),
     onSuccess: onSaved,
   });
 
-  return <Modal title="Link supplier variant" subtitle="This is operational metadata only. It never changes the Operating Layer SKU or historical purchase orders." onClose={onClose} wide>
+  return <Modal title="Link or update supplier variant" subtitle="Existing supplier terms are loaded when you choose a linked item. Buying terms affect future replenishment recommendations only and never rewrite historical purchase orders." onClose={onClose} wide>
     <form className="form-grid" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select active variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
+      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => setVariantId(event.target.value)}><option value="">Select active variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
       <Field label="Supplier SKU"><input value={supplierSku} onChange={event => setSupplierSku(event.target.value)} placeholder="Their code for this item" /></Field>
       <Field label="Last known unit cost (£)"><input type="number" min="0" step="0.01" value={lastCost} onChange={event => setLastCost(event.target.value)} /></Field>
       <Field label="Typical lead time (days)"><input type="number" min="0" max="3650" step="1" value={leadTime} onChange={event => setLeadTime(event.target.value)} /></Field>
-      <div className="mapping-hint"><PackageSearch size={18} /><span><strong>Used for matching and planning</strong><small>Document automation can match supplier codes to variants; replenishment can account for lead time before suggesting quantities.</small></span></div>
+      <Field label="Minimum order quantity"><input type="number" min="1" max="1000000" step="1" value={minimumOrderQuantity} onChange={event => setMinimumOrderQuantity(event.target.value)} placeholder="Optional MOQ" /></Field>
+      <Field label="Order multiple / pack size"><input type="number" min="1" max="1000000" step="1" value={orderMultiple} onChange={event => setOrderMultiple(event.target.value)} placeholder="e.g. 12 per case" /></Field>
+      <div className="mapping-hint"><PackageSearch size={18} /><span><strong>Used for matching and order-ready planning</strong><small>Replenishment keeps zero demand at zero, then rounds positive buying scenarios up to the supplier MOQ and pack multiple before a person reviews the purchase.</small></span></div>
       {!products.isLoading && !variants.length && <p className="form-note full-span">No active product variants are available to link. Restore an archived product or add a new product first.</p>}
       {save.error && <ErrorText error={save.error} />}
       <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={save.isPending || !supplierId || !variantId}><Link2 size={16} /> Save mapping</button></div>

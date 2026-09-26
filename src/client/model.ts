@@ -1,4 +1,5 @@
 import type { IntelligenceSupplier, OperatingIntelligenceResponse, OperatingIntelligenceRow } from "../shared/operating-intelligence";
+import type { OrderingConstraintSummary } from "../shared/supplier-ordering";
 
 export type ProductModifier = {
   id: string;
@@ -71,6 +72,8 @@ export type SupplierVariant = {
   supplier_sku?: string | null;
   last_cost_minor?: number | null;
   lead_time_days?: number | null;
+  minimum_order_quantity?: number | null;
+  order_multiple?: number | null;
 };
 
 export type InventoryPolicy = {
@@ -89,8 +92,13 @@ export type InventoryPolicy = {
 };
 
 export type ReplenishmentSupplier = IntelligenceSupplier;
-export type ReplenishmentSuggestion = OperatingIntelligenceRow;
-export type ReplenishmentResponse = OperatingIntelligenceResponse;
+export type ReplenishmentSuggestion = OperatingIntelligenceRow & {
+  ordering_constraints?: OrderingConstraintSummary;
+};
+export type ReplenishmentResponse = Omit<OperatingIntelligenceResponse, "positions" | "suggestions"> & {
+  positions: ReplenishmentSuggestion[];
+  suggestions: ReplenishmentSuggestion[];
+};
 
 export type Customer = {
   id: string;

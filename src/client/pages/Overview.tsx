@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Archive, Sparkles, Warehouse } from "lucide-react";
 import type { OrganizationSummary, DashboardSummary } from "../../shared/types";
 import { money, tenantApi, tenantOpsApi } from "../api";
+import FlowPlan from "../FlowPlan";
 import { isDemoTenant } from "../demo-store";
 import type { AttentionResponse, SearchResult } from "../model";
 import OperationsAssistant from "../OperationsAssistant";
@@ -28,6 +29,8 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Open purchase orders" value={data?.purchaseOrdersOpen ?? "—"} helper="Including partial receipts" tone="blue" />
       <Metric label="Low stock" value={data?.lowStockVariants ?? "—"} helper="Active tracked positions" tone="rose" />
     </section>
+
+    <FlowPlan tenant={tenant} onNavigate={onNavigate} />
 
     <OperationsAssistant tenant={tenant} onNavigate={onNavigate} />
 

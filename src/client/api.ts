@@ -5,6 +5,7 @@ import { demoOpsApi } from "./demo-attention";
 import { demoCsv } from "./demo-export";
 import { demoOperatingIntelligence } from "./demo-operating-intelligence";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
+import { demoDeleteSupplierVariant, demoSaveSupplierVariant, demoSupplierVariants } from "./demo-supplier-ordering";
 import { demoTenantApi } from "./demo-stocktake";
 
 export async function errorFrom(response: Response) {
@@ -66,6 +67,9 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
   if (isDemoTenant(tenantId)) {
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
+    if (method === "GET" && pathname === "/supplier-variants") return await demoSupplierVariants() as T;
+    if (method === "POST" && pathname === "/supplier-variants") return await demoSaveSupplierVariant(init) as T;
+    if (method === "DELETE" && /^\/supplier-variants\/[^/]+\/[^/]+$/.test(pathname)) return await demoDeleteSupplierVariant(path, init) as T;
     if (method === "GET" && pathname === "/replenishment") return await demoOperatingIntelligence() as T;
 
     const result = await demoTenantApi<unknown>(path, init);

@@ -1,19 +1,25 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BrainCircuit, Clock3, PackagePlus, RotateCcw, Sparkles, TrendingDown } from "lucide-react";
+import { ArrowRight, BrainCircuit, Clock3, Layers3, PackagePlus, RotateCcw, Sparkles, TrendingDown } from "lucide-react";
+import { buildBuyBatches, deterministicPlanningSupplier } from "../shared/buy-batches";
 import { applyPlanningContext } from "../shared/operating-intelligence";
+import { orderableQuantity } from "../shared/supplier-ordering";
 import type { OrganizationSummary } from "../shared/types";
 import { calendarDate, money, tenantApi } from "./api";
 import type { ReplenishmentResponse, ReplenishmentSuggestion, ReplenishmentSupplier } from "./model";
 import ReplenishmentPolicies from "./ReplenishmentPolicies";
 import { DataState } from "./ui";
 
-export type PurchaseOrderSeed = {
-  supplierId: string;
-  locationId: string;
+export type PurchaseOrderSeedLine = {
   variantId: string;
   quantity: number;
   costMinor: number | null;
+};
+
+export type PurchaseOrderSeed = {
+  supplierId: string;
+  locationId: string;
+  lines: PurchaseOrderSeedLine[];
   sourceLabel: string;
 };
 
@@ -32,10 +38,25 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
   const planning = useMemo(() => {
     if (!query.data) return null;
     const date = query.data.generated_at.slice(0, 10);
-    const positions = query.data.positions.map(row => applyPlanningContext(row, row.abc_class, date, {
-      demandAdjustmentPercent: demandAdjustment,
-      extraLeadTimeDays: extraLeadDays,
-    }));
+    const positions = query.data.positions.map(row => {
+      const planned = applyPlanningContext(row, row.abc_class, date, {
+        demandAdjustmentPercent: demandAdjustment,
+        extraLeadTimeDays: extraLeadDays,
+      }) as ReplenishmentSuggestion;
+      const constraints = row.ordering_constraints;
+      if (!constraints) return planned;
+      const scenarios = {
+        minimum: orderableQuantity(planned.scenarios.minimum, constraints.minimum_order_quantity, constraints.order_multiple),
+        recommended: orderableQuantity(planned.scenarios.recommended, constraints.minimum_order_quantity, constraints.order_multiple),
+        maximum: orderableQuantity(planned.scenarios.maximum, constraints.minimum_order_quantity, constraints.order_multiple),
+      };
+      return {
+        ...planned,
+        ordering_constraints: constraints,
+        scenarios,
+        recommended_quantity: scenarios.recommended,
+      };
+    });
     const suggestions = positions.filter(row => row.risk !== "healthy" && row.scenarios.recommended > 0);
     return {
       positions,
@@ -50,6 +71,11 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
     };
   }, [query.data, demandAdjustment, extraLeadDays]);
 
+  const buyBatches = useMemo(() => {
+    if (!planning || !query.data) return [];
+    return buildBuyBatches(planning.suggestions, query.data.generated_at.slice(0, 10));
+  }, [planning, query.data]);
+
   const create = (suggestion: ReplenishmentSuggestion, scenario: ScenarioName) => {
     const supplier = planningSupplier(suggestion);
     const quantity = suggestion.scenarios[scenario];
@@ -57,10 +83,17 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
     onCreatePurchaseOrder({
       supplierId: supplier.supplierId,
       locationId: suggestion.location_id,
-      variantId: suggestion.variant_id,
-      quantity,
-      costMinor: supplier.lastCostMinor ?? null,
+      lines: [{ variantId: suggestion.variant_id, quantity, costMinor: supplier.lastCostMinor ?? null }],
       sourceLabel: `${suggestion.product_name} · ${suggestion.variant_name} · ${scenario} intelligence scenario`,
+    });
+  };
+
+  const createBatch = (batch: ReturnType<typeof buildBuyBatches>[number]) => {
+    onCreatePurchaseOrder({
+      supplierId: batch.supplierId,
+      locationId: batch.locationId,
+      lines: batch.lines.map(line => ({ variantId: line.variantId, quantity: line.quantity, costMinor: line.costMinor })),
+      sourceLabel: `Smart buy batch for ${batch.supplierName} · ${batch.locationName}`,
     });
   };
 
@@ -87,6 +120,15 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
       <label>Supplier delay <span>+{extraLeadDays}d</span><input type="range" min="0" max="30" step="1" value={extraLeadDays} onChange={event => setExtraLeadDays(Number(event.target.value))} /></label>
       <button type="button" className="table-action quiet" disabled={!contextActive} onClick={resetContext}><RotateCcw size={14} /> Reset scenario</button>
     </div>
+
+    {!!buyBatches.length && <div className="smart-buy-section">
+      <div className="smart-buy-heading"><span><Layers3 size={17} /><span><strong>Smart buy batches</strong><small>Due recommendations grouped by supplier + destination so one review replaces several draft POs.</small></span></span><b>{buyBatches.reduce((sum, batch) => sum + batch.lines.length, 0)} SKU{buyBatches.reduce((sum, batch) => sum + batch.lines.length, 0) === 1 ? "" : "s"} ready</b></div>
+      <div className="smart-buy-grid">{buyBatches.map(batch => <article className="smart-buy-card" key={batch.id}>
+        <div><small>Supplier batch</small><strong>{batch.supplierName}</strong><span>{batch.locationName} · {batch.lines.length} SKU{batch.lines.length === 1 ? "" : "s"} · {batch.totalUnits} units</span></div>
+        <div className="smart-buy-lines">{batch.lines.slice(0, 3).map(line => <span key={line.variantId}><b>{line.productName} · {line.variantName}</b><small>{line.sku} · +{line.quantity}{line.risk === "critical" ? " · critical" : ""}</small></span>)}{batch.lines.length > 3 && <span><b>+{batch.lines.length - 3} more</b><small>Included in the reviewable draft</small></span>}</div>
+        <div className="smart-buy-footer"><span><small>Estimated goods cost</small><strong>{batch.estimatedCostMinor == null ? "Review costs" : money(batch.estimatedCostMinor)}</strong></span><button type="button" className="secondary" disabled={!canWrite} onClick={() => createBatch(batch)}>Review draft PO <ArrowRight size={14} /></button></div>
+      </article>)}</div>
+    </div>}
 
     <DataState loading={query.isLoading} error={query.error} empty={!planning?.suggestions.length} emptyText={contextActive ? "Nothing is forecast to need replenishment under this planning scenario." : "No tracked stock is forecast to need replenishment under the current plan."}>
       <div className="replenishment-list intelligence-list">
@@ -115,7 +157,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
 
             <div className="intelligence-action-grid">
               <div className="replenishment-action">
-                {supplier ? <div className="planning-supplier"><span>{supplier.preferred ? "Preferred supplier" : "Planning supplier"}</span><strong>{supplier.supplierName}</strong><small>{supplier.supplierSku ? `${supplier.supplierSku} · ` : ""}{supplier.leadTimeDays ?? suggestion.effective_lead_time_days}d recorded lead{supplier.lastCostMinor != null ? ` · ${money(supplier.lastCostMinor)}` : ""}</small></div> : <div className="supplier-missing"><Clock3 size={15} /><span><strong>No supplier mapped</strong><small>Link this variant in Suppliers before creating a suggested PO.</small></span></div>}
+                {supplier ? <div className="planning-supplier"><span>{supplier.preferred ? "Preferred supplier" : "Only mapped supplier"}</span><strong>{supplier.supplierName}</strong><small>{supplier.supplierSku ? `${supplier.supplierSku} · ` : ""}{supplier.leadTimeDays ?? suggestion.effective_lead_time_days}d recorded lead{supplier.lastCostMinor != null ? ` · ${money(supplier.lastCostMinor)}` : ""}</small>{suggestion.ordering_constraints?.adjusted && <small>Recommended quantities respect MOQ / order multiple.</small>}</div> : <div className="supplier-missing"><Clock3 size={15} /><span><strong>{suggestion.suppliers.length > 1 ? "Choose a preferred supplier" : "No supplier mapped"}</strong><small>{suggestion.suppliers.length > 1 ? "Several suppliers are mapped. Set a preferred supplier before Operating Layer prepares a PO." : "Link this variant in Suppliers before creating a suggested PO."}</small></span></div>}
               </div>
               <div className="scenario-actions" aria-label="Purchase scenarios">
                 <ScenarioButton label="Minimum" quantity={suggestion.scenarios.minimum} helper="Protect buffer" disabled={!canWrite || !supplier} onClick={() => create(suggestion, "minimum")} />
@@ -129,19 +171,12 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
         })}
       </div>
     </DataState>
-    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Forecast, explain, propose.</strong> The base plan weights recent and prior demand when both windows exist; with only recent history it uses that observed run-rate rather than treating missing history as zero. Safety stock scales with effective supplier lead time, and custom SKU/location targets remain authoritative for the recommended scenario. Context simulation is temporary; choosing a scenario only pre-fills the existing reviewed draft-PO flow.</span></div>
+    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Forecast, explain, group, propose.</strong> The base plan weights recent and prior demand when both windows exist; with only recent history it uses that observed run-rate rather than treating missing history as zero. Safety stock scales with effective supplier lead time, supplier buying terms are preserved after scenario simulation, and custom SKU/location targets remain authoritative. Choosing a scenario or batch only pre-fills the existing reviewed draft-PO flow.</span></div>
   </section>;
 }
 
 function planningSupplier(suggestion: ReplenishmentSuggestion): ReplenishmentSupplier | undefined {
-  const preferred = suggestion.suppliers.find(supplier => supplier.preferred);
-  if (preferred) return preferred;
-  const exact = suggestion.suppliers.find(supplier => supplier.leadTimeDays === suggestion.effective_lead_time_days);
-  if (exact) return exact;
-  const withKnownLead = suggestion.suppliers
-    .filter((supplier): supplier is ReplenishmentSupplier & { leadTimeDays: number } => supplier.leadTimeDays != null)
-    .sort((a, b) => a.leadTimeDays - b.leadTimeDays)[0];
-  return withKnownLead || suggestion.suppliers[0];
+  return deterministicPlanningSupplier(suggestion);
 }
 
 function trendCopy(suggestion: ReplenishmentSuggestion) {

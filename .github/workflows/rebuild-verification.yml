@@ -2,13 +2,16 @@ name: Rebuild verification
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: rebuild-verification-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -25,35 +28,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set +e
-          npm install --no-audit --no-fund --verbose
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "--- npm debug log ---"
-            latest_log="$(ls -1t "$HOME"/.npm/_logs/*-debug-0.log 2>/dev/null | head -n 1)"
-            if [ -n "$latest_log" ]; then
-              cat "$latest_log"
-            fi
-            exit "$status"
-          fi
-
-      - name: Commit generated lockfile
-        shell: bash
-        run: |
-          if git diff --quiet -- package-lock.json && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
-            echo "package-lock.json already tracked and unchanged"
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "chore: lock npm dependencies"
-          git push origin HEAD:rebuild/cloudflare-saas
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Verify Operating Layer brand sweep
         run: node scripts/rebrand-operating-layer.mjs
@@ -61,8 +39,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Test full suite
         run: npm test
+
+      - name: Validate guest demo workflows explicitly
+        run: npx vitest run test/demo-guest-acceptance.test.ts
 
       - name: Build production configuration
         run: npm run build

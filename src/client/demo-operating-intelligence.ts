@@ -1,6 +1,8 @@
 import { buildOperatingIntelligence, type IntelligenceInput } from "../shared/operating-intelligence";
-import type { InventoryPolicy, InventoryRow, Product, PurchaseOrderDetail, ReplenishmentResponse, SupplierVariant } from "./model";
+import { applySupplierOrderingTerms } from "../shared/supplier-ordering";
+import type { InventoryPolicy, InventoryRow, Product, PurchaseOrderDetail, ReplenishmentResponse } from "./model";
 import { demoOpsApi as demoRuntimeOpsApi } from "./demo-runtime";
+import { demoSupplierVariants } from "./demo-supplier-ordering";
 import { demoTenantApi } from "./demo-stocktake";
 
 type DemoSettings = { low_stock_threshold: number };
@@ -30,7 +32,7 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
   const [inventory, products, mappings, policies, movements, purchaseOrders, settings] = await Promise.all([
     demoTenantApi<InventoryRow[]>("/inventory"),
     demoTenantApi<Product[]>("/products"),
-    demoTenantApi<SupplierVariant[]>("/supplier-variants"),
+    demoSupplierVariants(),
     demoTenantApi<InventoryPolicy[]>("/inventory-policies"),
     demoRuntimeOpsApi<DemoForecastMovement[]>("/movements"),
     demoTenantApi<PurchaseOrderDetail[]>("/purchase-orders"),
@@ -114,5 +116,11 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
       }];
     });
 
-  return buildOperatingIntelligence(inputs, { defaultThreshold: settings.low_stock_threshold });
+  const intelligence = buildOperatingIntelligence(inputs, { defaultThreshold: settings.low_stock_threshold });
+  return applySupplierOrderingTerms(intelligence, mappings.map(mapping => ({
+    supplier_id: mapping.supplier_id,
+    variant_id: mapping.variant_id,
+    minimum_order_quantity: mapping.minimum_order_quantity ?? null,
+    order_multiple: mapping.order_multiple ?? null,
+  })));
 }
