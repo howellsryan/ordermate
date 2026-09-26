@@ -1,6 +1,7 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
 import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
-import { demoControlApi, demoOpsApi, demoTenantApi } from "./demo-acceptance";
+import { demoOpsApi } from "./demo-attention";
+import { demoControlApi, demoTenantApi } from "./demo-acceptance";
 import { demoCsv } from "./demo-export";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
 
