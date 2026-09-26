@@ -1,4 +1,5 @@
-import type { SessionPayload } from "../shared/types";
+import type { DashboardSummary, SessionPayload } from "../shared/types";
+import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
 import { demoControlApi, demoCsv, demoOpsApi, demoTenantApi } from "./demo-runtime";
 
@@ -51,6 +52,11 @@ export async function controlApi<T>(path: string, init?: RequestInit): Promise<T
   return response.json();
 }
 
+async function activeDemoVariantIds() {
+  const products = await demoTenantApi<Product[]>("/products");
+  return new Set(products.filter(product => product.status === "active").flatMap(product => product.variants.filter(variant => variant.active !== 0).map(variant => variant.id)));
+}
+
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
     const result = await demoTenantApi<unknown>(path, init);
@@ -74,6 +80,21 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
         totalVariance,
       } as T;
     }
+    if (method === "GET" && pathname === "/replenishment") {
+      const activeVariants = await activeDemoVariantIds();
+      const data = result as ReplenishmentResponse;
+      return { ...data, suggestions: data.suggestions.filter(item => activeVariants.has(item.variant_id)) } as T;
+    }
+    if (method === "GET" && pathname === "/dashboard") {
+      const activeVariants = await activeDemoVariantIds();
+      const inventory = await demoTenantApi<InventoryRow[]>("/inventory");
+      const settings = await demoTenantApi<{ low_stock_threshold: number }>("/settings");
+      const data = result as DashboardSummary;
+      return {
+        ...data,
+        lowStockVariants: inventory.filter(row => activeVariants.has(row.variant_id) && row.tracked !== 0 && row.available <= settings.low_stock_threshold).length,
+      } as T;
+    }
     return result as T;
   }
 
@@ -86,7 +107,21 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
 }
 
 export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
-  if (isDemoTenant(tenantId)) return demoOpsApi<T>(path);
+  if (isDemoTenant(tenantId)) {
+    const result = await demoOpsApi<unknown>(path);
+    const pathname = new URL(path, "https://demo.local").pathname;
+    if (pathname === "/attention") {
+      const activeVariants = await activeDemoVariantIds();
+      const data = result as AttentionResponse;
+      const items = data.items.filter(item => {
+        if (item.type !== "Low stock") return true;
+        const [, variantId] = item.id.split(":");
+        return activeVariants.has(variantId || "");
+      });
+      return { total: items.length, items } as T;
+    }
+    return result as T;
+  }
 
   const headers = new Headers(init?.headers);
   headers.set("x-ordermate-tenant", tenantId);
