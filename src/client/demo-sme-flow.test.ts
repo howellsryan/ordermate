@@ -88,7 +88,7 @@ describe("guest demo SME automation journey", () => {
   it("turns a demo stock risk into a Smart Buy batch and a reviewable draft PO without moving stock", async () => {
     await tenantApi(DEMO_TENANT_ID, "/inventory/adjust", {
       method: "POST",
-      body: JSON.stringify({ variantId: "var-labels", locationId: "loc-birmingham", quantityDelta: -11, reason: "Demo Smart Buy validation" }),
+      body: JSON.stringify({ variantId: "var-labels", locationId: "loc-birmingham", quantityDelta: -12, reason: "Demo Smart Buy validation" }),
     });
 
     const replenishment = await tenantApi<ReplenishmentResponse>(DEMO_TENANT_ID, "/replenishment");
