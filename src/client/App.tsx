@@ -26,10 +26,12 @@ import {
   Warehouse,
   Wrench,
 } from "lucide-react";
+import type { WorkspaceFeatureKey } from "../shared/features";
 import type { WorkspaceModuleKey } from "../shared/modules";
 import type { Role, SessionPayload } from "../shared/types";
 import { controlApi, createOrganization, getSession, tenantApi } from "./api";
 import { BrandLockup, BrandMark } from "./Brand";
+import { resetDemoFeatures } from "./demo-features";
 import { chooseDemoProfile, DEMO_PROFILES, getDemoProfile, type DemoProfileKey } from "./demo-profiles";
 import { resetDemoService } from "./demo-service";
 import { enterDemoMode, exitDemoMode, isDemoTenant, resetDemoData } from "./demo-store";
@@ -37,6 +39,7 @@ import { resetDemoWorkstream } from "./demo-workstreams";
 import GlobalSearch from "./GlobalSearch";
 import LandingPage from "./LandingPage";
 import { ErrorText, Field, Modal } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 const WorkspaceStyles = lazy(() => import("./WorkspaceStyles"));
 const Overview = lazy(() => import("./pages/Overview"));
@@ -57,7 +60,7 @@ const Team = lazy(() => import("./pages/Team"));
 const Suppliers = lazy(() => import("./pages/People").then(module => ({ default: module.Suppliers })));
 
 type Page = "overview" | "workstream" | "crm" | "service" | "orders" | "warehouse" | "wave-pick" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "reports" | "activity" | "team" | "settings";
-type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard; module?: WorkspaceModuleKey; demoOnly?: boolean };
+type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard; module?: WorkspaceModuleKey; feature?: WorkspaceFeatureKey; demoOnly?: boolean };
 type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 
 const TENANT_STORAGE_KEY = "operating-layer:tenant";
@@ -70,8 +73,8 @@ const nav: NavItem[] = [
   { id: "service", label: "Service", icon: Wrench, module: "service" },
   { id: "orders", label: "Orders", icon: ShoppingCart, module: "orders" },
   { id: "warehouse", label: "Warehouse", icon: ScanBarcode, module: "warehouse" },
-  { id: "wave-pick", label: "Wave picking", icon: Layers3, module: "warehouse" },
-  { id: "stocktake", label: "Cycle count", icon: ClipboardCheck, module: "inventory" },
+  { id: "wave-pick", label: "Wave picking", icon: Layers3, module: "warehouse", feature: "wave_picking" },
+  { id: "stocktake", label: "Cycle count", icon: ClipboardCheck, module: "inventory", feature: "cycle_counts" },
   { id: "products", label: "Products", icon: Boxes, module: "inventory" },
   { id: "inventory", label: "Inventory", icon: Warehouse, module: "inventory" },
   { id: "purchasing", label: "Purchase orders", icon: ClipboardList, module: "purchasing" },
@@ -125,6 +128,8 @@ export default function App() {
     enabled: !!activeTenant,
   });
   const enabledModules = useMemo(() => new Set(modules.data?.modules.filter(module => module.enabled).map(module => module.key) || []), [modules.data]);
+  const features = useWorkspaceFeatures(activeTenant?.id);
+  const enabledFeatures = features.enabled;
 
   const acceptInvite = useMutation({
     mutationFn: (token: string) => controlApi<{ ok: true; organizationId: string }>("/invites/accept", {
@@ -160,12 +165,14 @@ export default function App() {
 
   const navForPage = nav.find(item => item.id === page);
   const moduleForPage = navForPage?.module;
+  const featureForPage = navForPage?.feature;
   useEffect(() => {
     if (!activeTenant) return;
     const unavailableDemoPage = !!navForPage?.demoOnly && !demo;
     const unavailableModule = !!moduleForPage && (!!modules.error || !!modules.data && !enabledModules.has(moduleForPage));
-    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || unavailableModule) setPage("overview");
-  }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, modules.data, modules.error, enabledModules]);
+    const unavailableFeature = !!featureForPage && (!!features.error || !!features.data && !enabledFeatures.has(featureForPage));
+    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || unavailableModule || unavailableFeature) setPage("overview");
+  }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, featureForPage, modules.data, modules.error, enabledModules, features.data, features.error, enabledFeatures]);
 
   if (sessionQuery.isLoading) {
     return activeTenantId ? <LoadingScreen /> : <LandingWithDemo inviteToken={inviteToken} />;
@@ -176,12 +183,16 @@ export default function App() {
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
 
-  const visibleNav = nav.filter(item => (!item.demoOnly || demo) && pageVisible(activeTenant.role, item.id) && (!item.module || !!modules.data && enabledModules.has(item.module)));
+  const visibleNav = nav.filter(item => (!item.demoOnly || demo)
+    && pageVisible(activeTenant.role, item.id)
+    && (!item.module || !!modules.data && enabledModules.has(item.module))
+    && (!item.feature || !!features.data && enabledFeatures.has(item.feature)));
   const navigate = (target: Page) => {
     const targetNav = nav.find(item => item.id === target);
     if (targetNav?.demoOnly && !demo) return;
     if (!pageVisible(activeTenant.role, target)) return;
     if (targetNav?.module && (!modules.data || !enabledModules.has(targetNav.module))) return;
+    if (targetNav?.feature && (!features.data || !enabledFeatures.has(targetNav.feature))) return;
     setPage(target);
     setMobileNav(false);
   };
@@ -194,6 +205,7 @@ export default function App() {
 
   const resetDemo = () => {
     resetDemoData();
+    resetDemoFeatures();
     resetDemoService();
     if (demoProfile) {
       resetDemoWorkstream(demoProfile.key);
@@ -227,6 +239,7 @@ export default function App() {
         <div className="workspace">
           {demo && <div className="demo-workspace-banner" role="status"><div><strong>{demoProfile?.businessName} · local guest demo</strong><span>{demoProfile?.workstream}. Changes are saved only in this browser and reset independently from production.</span></div><div><button type="button" className="secondary" onClick={resetDemo}><RotateCcw size={14} /> Reset demo</button><button type="button" className="secondary" onClick={leaveDemo}>Choose another demo</button></div></div>}
           {modules.error && <div className="form-error" role="alert">Module configuration could not be loaded. Navigation is showing the safe default set; refresh before changing workspace configuration.</div>}
+          {features.error && <div className="form-error" role="alert">Feature configuration could not be loaded. Optional feature entry points are hidden until the workspace configuration is available.</div>}
           <Suspense fallback={<WorkspaceLoading />}>
             {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
             {page === "workstream" && demo && <DemoWorkstream tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
@@ -257,6 +270,7 @@ function LandingWithDemo({ inviteToken }: { inviteToken: string | null }) {
   const startDemo = (profileKey: DemoProfileKey) => {
     chooseDemoProfile(profileKey);
     resetDemoData();
+    resetDemoFeatures();
     resetDemoService();
     resetDemoWorkstream(profileKey);
     enterDemoMode();
