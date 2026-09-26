@@ -6,6 +6,7 @@ import { controlApi, date, errorFrom } from "./api";
 import { isDemoTenant } from "./demo-store";
 import DocumentProposals from "./DocumentProposals";
 import { ErrorText } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 type DocumentSummary = { key: string; name: string; size: number; uploaded: string; contentType: string; purpose: string; status: string };
 type DocumentList = { documents: DocumentSummary[]; truncated: boolean; cursor?: string };
@@ -13,6 +14,8 @@ type DocumentCapabilities = { aiDocumentExtractionEnabled: boolean; aiProcessing
 type ExtractionQueueResult = { status: "queued" | "already_queued" | "already_processed"; eventId: string };
 
 export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary }) {
+  const features = useWorkspaceFeatures(tenant.id);
+  if (!features.data || !features.enabled.has("document_assist")) return null;
   return isDemoTenant(tenant.id) ? <LocalDemoDocumentInbox /> : <LiveDocumentInbox tenant={tenant} />;
 }
 
