@@ -18,6 +18,7 @@ type Env = AuthEnv & {
   EVENTS_QUEUE: Queue;
   AI: Ai;
   AI_DOCUMENT_EXTRACTION_ENABLED: string;
+  APP_ENV: string;
 };
 
 type Membership = { id: string; role: Role };
@@ -30,6 +31,40 @@ function secureApiResponse(response: Response) {
   secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   secured.headers.set("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
   return secured;
+}
+
+function stagingSafePage(response: Response, env: Env) {
+  if (env.APP_ENV !== "staging") return response;
+  const safe = new Response(response.body, response);
+  safe.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  safe.headers.set("Cache-Control", "no-store");
+  return safe;
+}
+
+function robotsResponse(url: URL, env: Env) {
+  const staging = env.APP_ENV === "staging";
+  const body = staging
+    ? "User-agent: *\nDisallow: /\n"
+    : `User-agent: *\nAllow: /\nSitemap: ${url.origin}/sitemap.xml\n`;
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": staging ? "no-store" : "public, max-age=3600",
+      ...(staging ? { "X-Robots-Tag": "noindex, nofollow, noarchive" } : {}),
+    },
+  });
+}
+
+function sitemapResponse(url: URL, env: Env) {
+  const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>${url.origin}/</loc>\n    <lastmod>2026-09-26</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n</urlset>\n`;
+  const staging = env.APP_ENV === "staging";
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Cache-Control": staging ? "no-store" : "public, max-age=3600",
+      ...(staging ? { "X-Robots-Tag": "noindex, nofollow, noarchive" } : {}),
+    },
+  });
 }
 
 function isUnsafeMethod(method: string) {
@@ -101,6 +136,9 @@ function isDeliveryNoteUploadedEvent(value: unknown): value is DeliveryNoteUploa
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/robots.txt") return robotsResponse(url, env);
+    if (request.method === "GET" && url.pathname === "/sitemap.xml") return sitemapResponse(url, env);
+
     const crossOrigin = rejectCrossOriginMutation(request, url);
     if (crossOrigin) return crossOrigin;
     const denied = await enforceControlPlaneRead(request, env, url);
@@ -131,7 +169,8 @@ export default {
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
     const response = await baseWorker.fetch(request, env, ctx);
-    return url.pathname.startsWith("/api/") ? secureApiResponse(maskUnexpectedApiError(url.pathname, response)) : response;
+    if (url.pathname.startsWith("/api/")) return secureApiResponse(maskUnexpectedApiError(url.pathname, response));
+    return stagingSafePage(response, env);
   },
 
   async queue(batch: MessageBatch, env: Env) {
@@ -142,19 +181,19 @@ export default {
           if (env.AI_DOCUMENT_EXTRACTION_ENABLED === "true") {
             await processDocumentUploaded(message.body, env);
           } else {
-            console.log("OrderMate event skipped: AI document extraction disabled", envelope.eventId || message.id);
+            console.log("Operating Layer event skipped: AI document extraction disabled", envelope.eventId || message.id);
           }
         } else if (isDeliveryNoteUploadedEvent(message.body)) {
           if (env.AI_DOCUMENT_EXTRACTION_ENABLED === "true") {
             await processDeliveryNoteUploaded(message.body, env);
           } else {
-            console.log("OrderMate event skipped: AI delivery-note extraction disabled", envelope.eventId || message.id);
+            console.log("Operating Layer event skipped: AI delivery-note extraction disabled", envelope.eventId || message.id);
           }
         }
-        console.log("OrderMate event processed", envelope.type || "unknown", envelope.eventId || message.id);
+        console.log("Operating Layer event processed", envelope.type || "unknown", envelope.eventId || message.id);
         message.ack();
       } catch (cause) {
-        console.error("OrderMate event failed", envelope.type || "unknown", envelope.eventId || message.id, cause instanceof Error ? cause.message : "unknown error");
+        console.error("Operating Layer event failed", envelope.type || "unknown", envelope.eventId || message.id, cause instanceof Error ? cause.message : "unknown error");
         message.retry();
       }
     }
