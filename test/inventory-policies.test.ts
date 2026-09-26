@@ -10,6 +10,10 @@ function tenant(): Stub {
   return env.TENANT_STORES.getByName(`policy-${crypto.randomUUID()}`);
 }
 
+function currentMigrationIds() {
+  return Array.from({ length: CURRENT_TENANT_SCHEMA_VERSION }, (_, index) => index + 1);
+}
+
 async function request<T>(stub: Stub, path: string, method = "GET", body?: unknown) {
   const headers = new Headers({
     "x-ordermate-actor-id": "planner-user",
@@ -51,13 +55,13 @@ async function setup(stub: Stub) {
 }
 
 describe("tenant schema evolution", () => {
-  it("records migrations 1-7 and creates planning, due-date, discrepancy, saved-view, order-urgency and supplier-term schema", async () => {
+  it("records the complete migration chain and creates planning plus modular service schema", async () => {
     const stub = tenant();
     await request(stub, "/settings");
 
     await runInDurableObject(stub, async (_instance, state) => {
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map(row => row.id)).toEqual(currentMigrationIds());
       expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray()).toHaveLength(1);
       const poColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(purchase_orders)").toArray();
       expect(poColumns.some(column => column.name === "expected_delivery_date")).toBe(true);
@@ -73,10 +77,14 @@ describe("tenant schema evolution", () => {
       const supplierVariantColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(supplier_variants)").toArray();
       expect(supplierVariantColumns.some(column => column.name === "minimum_order_quantity")).toBe(true);
       expect(supplierVariantColumns.some(column => column.name === "order_multiple")).toBe(true);
+      expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='crm_contacts'").toArray()).toHaveLength(1);
+      expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='service_invoices'").toArray()).toHaveLength(1);
+      const settingsColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(tenant_settings)").toArray();
+      expect(settingsColumns.some(column => column.name === "invoice_address_json")).toBe(true);
     });
   });
 
-  it("replays missing v2-v7 migration markers without losing v1 business data", async () => {
+  it("replays missing v2-latest migration markers without losing v1 business data", async () => {
     const stub = tenant();
     await setup(stub);
 
@@ -88,14 +96,14 @@ describe("tenant schema evolution", () => {
         state.storage.sql.exec("DROP TABLE inventory_policies");
         state.storage.sql.exec("DROP TABLE delivery_discrepancies");
         state.storage.sql.exec("DROP TABLE saved_views");
-        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (2, 3, 4, 5, 6, 7)");
+        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id >= 2");
       });
       expect(state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray().map(row => row.id)).toEqual([1]);
 
       expect(migrateTenantSchema(state.storage)).toBe(CURRENT_TENANT_SCHEMA_VERSION);
 
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map(row => row.id)).toEqual(currentMigrationIds());
       const productCountAfter = state.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM products").toArray()[0].count;
       expect(productCountAfter).toBe(productCountBefore);
       expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_policies'").toArray()).toHaveLength(1);
@@ -119,23 +127,23 @@ describe("tenant schema evolution", () => {
       state.storage.transactionSync(() => {
         state.storage.sql.exec("DROP TABLE delivery_discrepancies");
         state.storage.sql.exec("DROP TABLE saved_views");
-        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (3, 4, 5, 6, 7)");
+        state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id >= 3");
       });
       expect(migrateTenantSchema(state.storage)).toBe(CURRENT_TENANT_SCHEMA_VERSION);
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map(row => row.id)).toEqual(currentMigrationIds());
     });
   });
 
-  it("replays migrations 4-7 idempotently when their DDL exists but markers are missing", async () => {
+  it("replays migrations 4-latest idempotently when their DDL exists but markers are missing", async () => {
     const stub = tenant();
     await request(stub, "/settings");
 
     await runInDurableObject(stub, async (_instance, state) => {
-      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id IN (4, 5, 6, 7)");
+      state.storage.sql.exec("DELETE FROM _sql_schema_migrations WHERE id >= 4");
       expect(migrateTenantSchema(state.storage)).toBe(CURRENT_TENANT_SCHEMA_VERSION);
       const versions = state.storage.sql.exec<{ id: number }>("SELECT id FROM _sql_schema_migrations ORDER BY id").toArray();
-      expect(versions.map(row => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map(row => row.id)).toEqual(currentMigrationIds());
     });
   });
 });
