@@ -1,5 +1,6 @@
 import type { DemoModuleConfig } from "./demo-modules";
 import { resetDemoModules, setDemoModules } from "./demo-modules";
+import { applyDemoProfileData } from "./demo-profile-data";
 
 export const DEMO_PROFILE_KEY = "operating-layer:demo-profile:v1";
 
@@ -84,3 +85,8 @@ export function resetDemoProfile() {
   window.localStorage.removeItem(DEMO_PROFILE_KEY);
   resetDemoModules();
 }
+
+// Demo starts/resets reseed the canonical local store and then reload the workspace.
+// Applying the selected profile at module boot keeps the proven demo engine/IDs while
+// ensuring the visitor sees business-specific products, locations and contacts.
+if (typeof window !== "undefined") applyDemoProfileData(getDemoProfile().key);
