@@ -107,25 +107,27 @@ function PurchaseOrderModal({ tenant, seed, onClose, onCreated }: { tenant: Orga
       .map(variant => ({ ...variant, productName: product.name }))), [products.data]);
   const [supplierId, setSupplierId] = useState(seed?.supplierId || "");
   const [locationId, setLocationId] = useState(seed?.locationId || "");
-  const [notes, setNotes] = useState(seed ? `Replenishment suggestion for ${seed.sourceLabel} — review before submitting.` : "");
-  const [lines, setLines] = useState<DraftLine[]>(seed ? [{
+  const [notes, setNotes] = useState(seed ? `${seed.lines.length > 1 ? "Smart buy batch" : "Replenishment suggestion"} — ${seed.sourceLabel}. Review before submitting.` : "");
+  const [lines, setLines] = useState<DraftLine[]>(seed ? seed.lines.map(line => ({
     id: crypto.randomUUID(),
-    variantId: seed.variantId,
-    quantity: String(seed.quantity),
-    cost: seed.costMinor == null ? "" : (seed.costMinor / 100).toFixed(2),
+    variantId: line.variantId,
+    quantity: String(line.quantity),
+    cost: line.costMinor == null ? "" : (line.costMinor / 100).toFixed(2),
     tax: "",
-  }] : [{ id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }]);
+  })) : [{ id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }]);
 
   useEffect(() => {
     if (!seed || !variants.length) return;
-    const variant = variants.find(item => item.id === seed.variantId);
-    if (!variant) return;
-    setLines(current => current.map(line => line.variantId === seed.variantId ? {
-      ...line,
-      cost: line.cost || (variant.cost_minor / 100).toFixed(2),
-      tax: line.tax || (variant.tax_rate_bps / 100).toString(),
-    } : line));
-  }, [seed?.variantId, variants.length]);
+    setLines(current => current.map(line => {
+      const variant = variants.find(item => item.id === line.variantId);
+      if (!variant) return line;
+      return {
+        ...line,
+        cost: line.cost || (variant.cost_minor / 100).toFixed(2),
+        tax: line.tax || (variant.tax_rate_bps / 100).toString(),
+      };
+    }));
+  }, [seed?.sourceLabel, variants]);
 
   const patchLine = (lineId: string, patch: Partial<DraftLine>) => setLines(current => current.map(line => line.id === lineId ? { ...line, ...patch } : line));
   const selectVariant = (lineId: string, variantId: string) => {
@@ -141,7 +143,7 @@ function PurchaseOrderModal({ tenant, seed, onClose, onCreated }: { tenant: Orga
   });
   const invalidLine = lines.some(line => !line.variantId || !Number.isInteger(Number(line.quantity)) || Number(line.quantity) <= 0 || line.cost === "" || Number(line.cost) < 0 || line.tax === "" || Number(line.tax) < 0 || Number(line.tax) > 100);
 
-  return <Modal title={seed ? "Review suggested purchase order" : "New purchase order"} subtitle={seed ? "Operating Layer has pre-filled the supplier, destination and suggested quantity. Review every commercial value before creating the draft." : "Costs and tax are snapshotted now. Receiving later creates the actual stock movements."} onClose={onClose} wide><form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.data?.map(supplier => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></Field><Field label="Receive into"><select required value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field><Field label="Notes"><input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Supplier reference, delivery note…" /></Field><div />
+  return <Modal title={seed ? (seed.lines.length > 1 ? "Review smart buy batch" : "Review suggested purchase order") : "New purchase order"} subtitle={seed ? `Operating Layer has pre-filled the supplier, destination and ${seed.lines.length} suggested line${seed.lines.length === 1 ? "" : "s"}. Review every commercial value before creating the draft.` : "Costs and tax are snapshotted now. Receiving later creates the actual stock movements."} onClose={onClose} wide><form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.data?.map(supplier => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></Field><Field label="Receive into"><select required value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field><Field label="Notes"><input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Supplier reference, delivery note…" /></Field><div />
       {seed && <div className="suggestion-review full-span"><strong>Suggested, not automatic</strong><span>The recommendation only pre-fills this draft. Nothing affects incoming or on-hand stock until you create, submit and later receive the PO.</span></div>}
       <div className="form-section full-span"><div><p className="eyebrow">Lines</p><h3>What are you ordering?</h3></div><button type="button" className="secondary" onClick={() => setLines(current => [...current, { id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }])}><Plus size={15} /> Add line</button></div>
       <div className="line-editor full-span"><div className="line-editor-head"><span>Variant</span><span>Qty</span><span>Unit cost</span><span>Tax %</span><span /></div>{lines.map(line => <div className="line-editor-row" key={line.id}><select required value={line.variantId} onChange={event => selectVariant(line.id, event.target.value)}><option value="">Choose active product variant</option>{variants.map(variant => <option value={variant.id} key={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select><input required type="number" min="1" step="1" value={line.quantity} onChange={event => patchLine(line.id, { quantity: event.target.value })} /><input required type="number" min="0" step="0.01" value={line.cost} onChange={event => patchLine(line.id, { cost: event.target.value })} /><input required type="number" min="0" max="100" step="0.01" value={line.tax} onChange={event => patchLine(line.id, { tax: event.target.value })} /><button type="button" className="icon-button" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines(current => current.filter(item => item.id !== line.id))}><Trash2 size={16} /></button></div>)}</div>
