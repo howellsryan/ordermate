@@ -72,6 +72,18 @@ describe("automatic flow plan", () => {
     expect(plan.actions[0]?.evidence).toContain("A-class inventory position");
   });
 
+  it("asks the buyer to choose when multiple suppliers exist without a preferred supplier", () => {
+    const plan = buildFlowPlan([], intelligence([stock({
+      preferred_supplier_id: null,
+      suppliers: [
+        { supplierId: "supplier-a", supplierName: "Supplier A", preferred: false },
+        { supplierId: "supplier-b", supplierName: "Supplier B", preferred: false },
+      ],
+    })]));
+
+    expect(plan.actions[0]?.nextAction).toBe("Review the recommended buy of 37 units and choose a supplier");
+  });
+
   it("ignores healthy/watch replenishment positions and keeps the queue exception-first", () => {
     const plan = buildFlowPlan([], intelligence([
       stock({ id: "watch", risk: "watch" }),
