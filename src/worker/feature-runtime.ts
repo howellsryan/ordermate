@@ -38,6 +38,10 @@ export class FeatureRuntime {
 
       const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
       if (requiredFeature && !this.featureEnabled(requiredFeature)) {
+        // The shared attention aggregator reads the open discrepancy queue. Returning
+        // an empty list keeps Overview healthy while ensuring the disabled feature
+        // contributes no discrepancy work to the user's journey.
+        if (requiredFeature === "delivery_discrepancies" && method === "GET") return Response.json([]);
         return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled for this workspace.`, 404);
       }
 
