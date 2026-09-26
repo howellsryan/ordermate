@@ -9,10 +9,11 @@
   },
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/", "/robots.txt", "/sitemap.xml"]
   },
   "vars": {
-    "AI_DOCUMENT_EXTRACTION_ENABLED": "false"
+    "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+    "APP_ENV": "production"
   },
   "ai": {
     "binding": "AI"
@@ -70,7 +71,8 @@
       "workers_dev": true,
       "preview_urls": false,
       "vars": {
-        "AI_DOCUMENT_EXTRACTION_ENABLED": "false"
+        "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+        "APP_ENV": "staging"
       },
       "ai": {
         "binding": "AI"
