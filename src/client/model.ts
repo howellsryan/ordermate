@@ -1,3 +1,5 @@
+import type { IntelligenceSupplier, OperatingIntelligenceResponse, OperatingIntelligenceRow } from "../shared/operating-intelligence";
+
 export type ProductModifier = {
   id: string;
   name: string;
@@ -86,45 +88,9 @@ export type InventoryPolicy = {
   updated_by: string;
 };
 
-export type ReplenishmentSupplier = {
-  supplierId: string;
-  supplierName: string;
-  supplierSku?: string | null;
-  lastCostMinor?: number | null;
-  leadTimeDays?: number | null;
-  preferred?: boolean;
-};
-
-export type ReplenishmentSuggestion = {
-  id: string;
-  variant_id: string;
-  product_name: string;
-  variant_name: string;
-  sku: string;
-  location_id: string;
-  location_name: string;
-  on_hand: number;
-  reserved: number;
-  available: number;
-  incoming: number;
-  fulfilled_30d: number;
-  threshold: number;
-  target_stock?: number;
-  policy_custom?: boolean;
-  preferred_supplier_id?: string | null;
-  average_daily_demand: number;
-  effective_lead_time_days: number;
-  projected_at_lead_time: number;
-  recommended_quantity: number;
-  suppliers: ReplenishmentSupplier[];
-};
-
-export type ReplenishmentResponse = {
-  generated_at: string;
-  window_days: number;
-  default_threshold?: number;
-  suggestions: ReplenishmentSuggestion[];
-};
+export type ReplenishmentSupplier = IntelligenceSupplier;
+export type ReplenishmentSuggestion = OperatingIntelligenceRow;
+export type ReplenishmentResponse = OperatingIntelligenceResponse;
 
 export type Customer = {
   id: string;
