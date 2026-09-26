@@ -28,6 +28,17 @@ async function enableService(stub: Stub) {
   expect(enabled.response.ok).toBe(true);
 }
 
+async function configureInvoiceIdentity(stub: Stub) {
+  const profile = await request(stub, "/business-profile", "PATCH", {
+    address: { line1: "12 Market Street", city: "Nottingham", postcode: "NG1 2AB", country: "GB" },
+    email: "accounts@wiredright.example.test",
+    phone: "0115 555 0199",
+    vatNumber: "GB123456789",
+    companyNumber: "12345678",
+  });
+  expect(profile.response.ok).toBe(true);
+}
+
 async function createLocation(stub: Stub) {
   const result = await request<{ id: string }>(stub, "/locations", "POST", {
     name: "WiredRight Workshop",
@@ -92,6 +103,7 @@ describe("service lifecycle", () => {
   it("moves a prospect from request through quote, job, invoice and payment without creating an order", async () => {
     const stub = tenant();
     await enableService(stub);
+    await configureInvoiceIdentity(stub);
 
     const contact = await request<{ id: string }>(stub, "/crm/contacts", "POST", {
       lifecycleStage: "prospect",
@@ -201,6 +213,7 @@ describe("service lifecycle", () => {
 
     const audit = await request<Array<{ action: string }>>(stub, "/audit");
     expect(audit.data.map(event => event.action)).toEqual(expect.arrayContaining([
+      "business_profile.updated",
       "service_request.created",
       "service_quote.accepted",
       "service_job.material_posted",
@@ -208,5 +221,63 @@ describe("service lifecycle", () => {
       "service_invoice.issued",
       "service_invoice.payment_recorded",
     ]));
+  });
+
+  it("can issue a service invoice with commerce, warehouse, purchasing and inventory modules switched off", async () => {
+    const stub = tenant();
+    await enableService(stub);
+    await configureInvoiceIdentity(stub);
+
+    expect((await request(stub, "/modules/warehouse", "PATCH", { enabled: false })).response.ok).toBe(true);
+    expect((await request(stub, "/modules/orders", "PATCH", { enabled: false })).response.ok).toBe(true);
+    expect((await request(stub, "/modules/purchasing", "PATCH", { enabled: false })).response.ok).toBe(true);
+    expect((await request(stub, "/modules/inventory", "PATCH", { enabled: false })).response.ok).toBe(true);
+
+    const modules = await request<{ modules: Array<{ key: string; enabled: boolean }> }>(stub, "/modules");
+    const config = Object.fromEntries(modules.data.modules.map(module => [module.key, module.enabled]));
+    expect(config).toMatchObject({ crm: true, service: true, orders: false, inventory: false, purchasing: false, warehouse: false });
+
+    const contact = await request<{ id: string }>(stub, "/crm/contacts", "POST", {
+      lifecycleStage: "prospect",
+      name: "Aisha Khan",
+      email: "aisha@example.test",
+      mobile: "07700900123",
+      address: { line1: "55 Mapperley Road", city: "Nottingham", postcode: "NG3 5AQ", country: "GB" },
+    });
+    expect(contact.response.status).toBe(201);
+
+    const serviceRequest = await request<{ id: string; caseId: string }>(stub, "/service/requests", "POST", {
+      contactId: contact.data.id,
+      title: "Replace failed light fitting",
+      details: "Replace customer-supplied light fitting and test the circuit.",
+      siteAddress: { line1: "55 Mapperley Road", city: "Nottingham", postcode: "NG3 5AQ", country: "GB" },
+    });
+    expect(serviceRequest.response.status).toBe(201);
+
+    const job = await request<{ jobId: string }>(stub, `/service/requests/${serviceRequest.data.id}/convert-to-job`, "POST", {});
+    expect(job.response.status).toBe(201);
+    expect((await request(stub, `/service/jobs/${job.data.jobId}/start`, "POST", {})).response.ok).toBe(true);
+    expect((await request(stub, `/service/jobs/${job.data.jobId}/complete`, "POST", {})).response.ok).toBe(true);
+
+    const invoice = await request<{ invoiceId: string }>(stub, "/service/invoices", "POST", {
+      caseId: serviceRequest.data.caseId,
+      jobId: job.data.jobId,
+      dueDate: "2026-10-20",
+      lines: [{ lineType: "service", description: "Light fitting replacement and circuit test", quantityMilli: 1000, unitPriceMinor: 9500, taxRateBps: 2000 }],
+    });
+    expect(invoice.response.status).toBe(201);
+
+    const issued = await request<{ issueDate: string; supplyDate: string }>(stub, `/service/invoices/${invoice.data.invoiceId}/issue`, "POST", {});
+    expect(issued.response.ok).toBe(true);
+
+    const inventoryRoute = await request(stub, "/inventory");
+    expect(inventoryRoute.response.status).toBe(404);
+
+    const ordersRoute = await request(stub, "/orders");
+    expect(ordersRoute.response.status).toBe(404);
+
+    const cases = await request<{ cases: Array<{ id: string }> }>(stub, "/service/cases");
+    expect(cases.response.ok).toBe(true);
+    expect(cases.data.cases.some(item => item.id === serviceRequest.data.caseId)).toBe(true);
   });
 });
