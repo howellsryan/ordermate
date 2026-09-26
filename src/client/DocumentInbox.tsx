@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileImage, FileText, FileUp, LockKeyhole, Sparkles, UploadCloud } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date, errorFrom } from "./api";
+import { isDemoTenant } from "./demo-store";
 import DocumentProposals from "./DocumentProposals";
 import { ErrorText } from "./ui";
 
@@ -12,6 +13,18 @@ type DocumentCapabilities = { aiDocumentExtractionEnabled: boolean; aiProcessing
 type ExtractionQueueResult = { status: "queued" | "already_queued" | "already_processed"; eventId: string };
 
 export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary }) {
+  return isDemoTenant(tenant.id) ? <LocalDemoDocumentInbox /> : <LiveDocumentInbox tenant={tenant} />;
+}
+
+function LocalDemoDocumentInbox() {
+  return <section className="panel document-inbox demo-document-local">
+    <div className="panel-heading"><div><p className="eyebrow">Source documents</p><h3>Purchasing inbox</h3></div><LockKeyhole size={21} /></div>
+    <div className="document-compliance"><LockKeyhole size={17} /><div><strong>Browser-only demo boundary</strong><span>Supplier file upload and AI extraction are intentionally unavailable in guest mode because a PDF or image would have to leave localStorage/browser memory to use the production document pipeline.</span></div></div>
+    <div className="document-state"><FileText size={22} /><strong>No cloud document storage in guest mode</strong><span>Use the seeded purchase orders, receiving, supplier mappings and catalogue CSV import to exercise the operational flow. Sign in to a real workspace to use R2-backed source documents and reviewed extraction proposals.</span></div>
+  </section>;
+}
+
+function LiveDocumentInbox({ tenant }: { tenant: OrganizationSummary }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
