@@ -15,13 +15,14 @@ type ProfileState = {
 
 function seed(): ProfileState {
   const profile = getDemoProfile();
+  const serviceVatDemo = profile.key === "electrician" || profile.key === "salon";
   return {
     profile: profile.key,
     businessName: profile.businessName.replace(" — Demo", ""),
     address: { line1: "24 Market Lane", city: "Nottingham", postcode: "NG1 6HX", country: "GB" },
     email: `hello@${profile.key}.example.test`,
     phone: "0115 555 0120",
-    vatNumber: null,
+    vatNumber: serviceVatDemo ? "GB123456789" : null,
     companyNumber: null,
     updatedAt: null,
   };
