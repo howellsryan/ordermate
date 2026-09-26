@@ -38,10 +38,10 @@ This release closes that gap without changing Operating Layer's trust model.
 
 ### Explainable forward planning
 
-For every active tracked SKU/location position, Operating Layer now builds a 90-day demand signal:
+For every active tracked SKU/location position, Operating Layer now builds a demand signal from up to 90 days of immutable fulfilment movements:
 
-- last 30 days are weighted at 70%;
-- the prior 60-day run rate is weighted at 30%;
+- when both history windows exist, the last 30-day run rate is weighted at 70% and the prior 60-day run rate at 30%;
+- when prior history is absent, the observed recent run rate is used directly rather than treating missing history as zero or inventing a trend;
 - recent-vs-prior trend applies a bounded adjustment rather than an unlimited extrapolation;
 - current availability and **dated incoming PO supply** are included, using expected delivery dates and falling back to supplier lead time when an open PO is undated;
 - supplier/preferred-supplier lead time is included;
@@ -54,7 +54,7 @@ The result exposes:
 - recent demand trend;
 - days of cover;
 - projected stockout date;
-- order-by date;
+- order-by date that accounts for already-scheduled incoming supply;
 - projected stock when replenishment should arrive;
 - safety stock and buffer days; and
 - a 12-week inventory projection.
@@ -66,8 +66,8 @@ The 12-week horizon is intentional. Operating Layer currently has a 90-day histo
 Each at-risk position now has three explainable draft-PO scenarios:
 
 - **Minimum** — restore the safety-stock buffer.
-- **Recommended** — target roughly 28 days of post-arrival cover, while respecting any higher configured target stock.
-- **Maximum** — target roughly 42 days of post-arrival cover.
+- **Recommended** — use the configured SKU/location arrival target when a custom replenishment policy exists; otherwise target roughly 28 days of post-arrival cover.
+- **Maximum** — target roughly 42 days of post-arrival cover as a more conservative optional scenario.
 
 Choosing a scenario only pre-fills the existing reviewed purchase-order flow. It does not submit a PO and it never mutates stock.
 
@@ -103,7 +103,7 @@ Both receive only role-permitted data. The AI path has no write tool and no muta
 
 ### Guest-demo parity
 
-The guest demo uses the same shared forecasting/scenario engine as live tenants, including seeded PO expected dates for incoming supply. Its copilot uses the same deterministic answer contract and operates entirely from browser-local demo records. Demo operations do not call the live application API or Workers AI.
+The guest demo uses the same shared forecasting/scenario engine as live tenants, including seeded PO expected dates for incoming supply. Demand history comes from the same timestamped movement-ledger contract used by the demo Inventory History surface, rather than from mutable order snapshots. Its copilot uses the same deterministic answer contract and operates entirely from browser-local demo records. Demo operations do not call the live application API or Workers AI.
 
 ## Trust boundary retained
 
