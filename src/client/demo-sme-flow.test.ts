@@ -125,4 +125,30 @@ describe("guest demo SME automation journey", () => {
     expect(afterRow.on_hand).toBe(beforeRow.on_hand);
     expect(afterRow.incoming).toBe(beforeRow.incoming);
   });
+
+  it("restores seeded buying terms when the user resets the browser demo", async () => {
+    const initial = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
+    const tape = initial.find(item => item.supplier_id === "sup-pack" && item.variant_id === "var-tape")!;
+    expect(tape).toMatchObject({ minimum_order_quantity: 24, order_multiple: 12 });
+
+    await tenantApi(DEMO_TENANT_ID, "/supplier-variants", {
+      method: "POST",
+      body: JSON.stringify({
+        supplierId: tape.supplier_id,
+        variantId: tape.variant_id,
+        supplierSku: tape.supplier_sku || undefined,
+        lastCostMinor: tape.last_cost_minor ?? undefined,
+        leadTimeDays: tape.lead_time_days ?? undefined,
+        minimumOrderQuantity: 99,
+        orderMultiple: 9,
+      }),
+    });
+    const edited = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
+    expect(edited.find(item => item.supplier_id === tape.supplier_id && item.variant_id === tape.variant_id)).toMatchObject({ minimum_order_quantity: 99, order_multiple: 9 });
+
+    resetDemoData();
+
+    const reset = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
+    expect(reset.find(item => item.supplier_id === tape.supplier_id && item.variant_id === tape.variant_id)).toMatchObject({ minimum_order_quantity: 24, order_multiple: 12 });
+  });
 });
