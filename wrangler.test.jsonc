@@ -5,7 +5,8 @@
   "compatibility_date": "2026-09-25",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "AI_DOCUMENT_EXTRACTION_ENABLED": "false"
+    "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+    "AI_OPERATIONS_ASSISTANT_ENABLED": "false"
   },
   "d1_databases": [
     {
