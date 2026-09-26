@@ -2,3 +2,4 @@
 // guest demo suites here so demo parity is part of the canonical CI test run.
 import "../src/client/demo-acceptance.test";
 import "../src/client/demo-sme-flow.test";
+import "../src/client/demo-profile-data.test";

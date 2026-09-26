@@ -201,6 +201,9 @@ export type AuditEvent = {
 
 export type WorkspacePage =
   | "overview"
+  | "workstream"
+  | "crm"
+  | "service"
   | "orders"
   | "warehouse"
   | "wave-pick"

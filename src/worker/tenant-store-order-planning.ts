@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { OperatingIntelligenceResponse } from "../shared/operating-intelligence";
 import { applySupplierOrderingTerms, type SupplierOrderingTerm } from "../shared/supplier-ordering";
+import { BusinessProfileRuntime } from "./business-profile-runtime";
+import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
 
@@ -53,13 +55,23 @@ function now() {
 /** Order planning metadata and supplier buying terms stay separate from lifecycle transitions. */
 export class TenantStore extends ReportsTenantStore {
   private readonly orderPlanningCtx: DurableObjectState;
+  private readonly businessProfileRuntime: BusinessProfileRuntime;
+  private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
     super(ctx, env);
     this.orderPlanningCtx = ctx;
+    this.businessProfileRuntime = new BusinessProfileRuntime(ctx);
+    this.serviceRuntime = new ServiceRuntime(ctx);
   }
 
   async fetch(request: Request): Promise<Response> {
+    const businessProfileResponse = await this.businessProfileRuntime.handle(request);
+    if (businessProfileResponse) return businessProfileResponse;
+
+    const modularResponse = await this.serviceRuntime.handle(request);
+    if (modularResponse) return modularResponse;
+
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
 
