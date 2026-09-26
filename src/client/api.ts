@@ -1,7 +1,7 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
 import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
-import { demoControlApi, demoCsv, demoOpsApi, demoTenantApi } from "./demo-runtime";
+import { demoControlApi, demoCsv, demoOpsApi, demoTenantApi } from "./demo-acceptance";
 
 export async function errorFrom(response: Response) {
   const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
@@ -41,6 +41,7 @@ export async function controlApi<T>(path: string, init?: RequestInit): Promise<T
     const pathname = new URL(path, "https://demo.local").pathname;
     if (method === "GET" && pathname === "/delivery-documents/sources") return { sources: [], truncated: false } as T;
     if (method === "GET" && pathname === "/delivery-documents/proposals") return { proposals: [], truncated: false } as T;
+    if (method === "GET" && pathname === "/delivery-documents/proposal") return demoControlApi<T>(path, init);
     if (pathname.startsWith("/delivery-documents")) throw new Error("Delivery-document upload and AI extraction are disabled in the local guest demo because files never leave this browser.");
     return demoControlApi<T>(path, init);
   }
