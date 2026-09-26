@@ -1,7 +1,7 @@
 {
   "specVersion": "1.0",
   "host": {
-    "displayName": "OrderMate",
+    "displayName": "Operating Layer",
     "identifier": "https://ordermate-staging.rlh.workers.dev",
     "documentationUrl": "https://ordermate-staging.rlh.workers.dev/llms.txt"
   },
