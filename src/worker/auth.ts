@@ -15,7 +15,7 @@ export type AuthEnv = {
   BETTER_AUTH_SECRET: string;
 };
 
-const orderMateStatements = {
+const operatingLayerStatements = {
   catalogue: ["read", "create", "update", "delete"],
   inventory: ["read", "create", "update", "delete"],
   purchasing: ["read", "create", "update", "delete"],
@@ -27,12 +27,12 @@ const orderMateStatements = {
 
 const statement = {
   ...defaultStatements,
-  ...orderMateStatements,
+  ...operatingLayerStatements,
 } as const;
 
 const ac = createAccessControl(statement);
 
-const allOrderMatePermissions = {
+const allOperatingLayerPermissions = {
   catalogue: ["read", "create", "update", "delete"],
   inventory: ["read", "create", "update", "delete"],
   purchasing: ["read", "create", "update", "delete"],
@@ -45,20 +45,20 @@ const allOrderMatePermissions = {
 /**
  * Better Auth replaces the built-in owner/admin/member permissions when custom
  * roles are supplied. Always merge the matching organization baseline back in;
- * otherwise an OrderMate owner could lose member/invitation management rights.
+ * otherwise an Operating Layer owner could lose member/invitation management rights.
  */
 const roles = {
   owner: ac.newRole({
     ...ownerAc.statements,
-    ...allOrderMatePermissions,
+    ...allOperatingLayerPermissions,
   }),
   admin: ac.newRole({
     ...adminAc.statements,
-    ...allOrderMatePermissions,
+    ...allOperatingLayerPermissions,
   }),
   manager: ac.newRole({
     ...memberAc.statements,
-    ...allOrderMatePermissions,
+    ...allOperatingLayerPermissions,
     inventory: ["read", "update"],
     settings: ["read", "update"],
   }),
