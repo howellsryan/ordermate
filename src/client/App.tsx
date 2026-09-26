@@ -14,7 +14,9 @@ import {
   LogOut,
   Menu,
   PackagePlus,
+  PlayCircle,
   Plus,
+  RotateCcw,
   ScanBarcode,
   Settings as SettingsIcon,
   ShoppingCart,
@@ -26,6 +28,7 @@ import {
 import type { Role, SessionPayload } from "../shared/types";
 import { controlApi, createOrganization, getSession } from "./api";
 import { BrandLockup, BrandMark } from "./Brand";
+import { enterDemoMode, exitDemoMode, isDemoTenant, resetDemoData } from "./demo-store";
 import GlobalSearch from "./GlobalSearch";
 import LandingPage from "./LandingPage";
 import { ErrorText, Field, Modal } from "./ui";
@@ -86,6 +89,12 @@ async function signOut() {
   location.reload();
 }
 
+function leaveDemo() {
+  exitDemoMode();
+  localStorage.removeItem(TENANT_STORAGE_KEY);
+  location.reload();
+}
+
 export default function App() {
   const qc = useQueryClient();
   const sessionQuery = useQuery({ queryKey: ["session"], queryFn: getSession, retry: false });
@@ -97,6 +106,7 @@ export default function App() {
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite"), []);
   const session = sessionQuery.data;
   const activeTenant = useMemo(() => session?.organizations.find(org => org.id === activeTenantId) ?? session?.organizations[0], [session, activeTenantId]);
+  const demo = isDemoTenant(activeTenant?.id);
 
   const acceptInvite = useMutation({
     mutationFn: (token: string) => controlApi<{ ok: true; organizationId: string }>("/invites/accept", {
@@ -113,7 +123,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (session && inviteToken && !inviteAttempted) {
+    if (session && inviteToken && !inviteAttempted && !session.organizations.some(org => isDemoTenant(org.id))) {
       setInviteAttempted(true);
       acceptInvite.mutate(inviteToken);
     }
@@ -135,10 +145,10 @@ export default function App() {
   }, [activeTenant?.role, page]);
 
   if (sessionQuery.isLoading) {
-    return activeTenantId ? <LoadingScreen /> : <LandingPage inviteToken={inviteToken} />;
+    return activeTenantId ? <LoadingScreen /> : <LandingWithDemo inviteToken={inviteToken} />;
   }
-  if (!session) return <LandingPage inviteToken={inviteToken} />;
-  if (inviteToken && !acceptInvite.isSuccess) return <InviteGate pending={acceptInvite.isPending || !inviteAttempted} error={acceptInvite.error} />;
+  if (!session) return <LandingWithDemo inviteToken={inviteToken} />;
+  if (inviteToken && !demo && !acceptInvite.isSuccess) return <InviteGate pending={acceptInvite.isPending || !inviteAttempted} error={acceptInvite.error} />;
   if (acceptInvite.isSuccess && !session.organizations.some(org => org.id === activeTenantId)) return <LoadingScreen />;
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
@@ -156,6 +166,12 @@ export default function App() {
     qc.removeQueries({ queryKey: ["tenant"] });
   };
 
+  const resetDemo = () => {
+    resetDemoData();
+    qc.clear();
+    location.reload();
+  };
+
   return <Suspense fallback={<LoadingScreen />}>
     <WorkspaceStyles />
     <div className="app-shell">
@@ -164,20 +180,21 @@ export default function App() {
         <div className="tenant-stack">
           <button type="button" className="tenant-switcher" aria-label="Current business">
             <span className="tenant-avatar"><Building2 size={18} /></span>
-            <span><small>Business</small><strong>{activeTenant.name}</strong></span>
-            <ChevronDown size={16} />
-            <select aria-label="Switch business" value={activeTenant.id} onChange={event => switchTenant(event.target.value)}>{session.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select>
+            <span><small>{demo ? "Guest demo" : "Business"}</small><strong>{activeTenant.name}</strong></span>
+            {!demo && <ChevronDown size={16} />}
+            {!demo && <select aria-label="Switch business" value={activeTenant.id} onChange={event => switchTenant(event.target.value)}>{session.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select>}
           </button>
-          <button type="button" className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>
+          {!demo && <button type="button" className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>}
         </div>
         <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
-        <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{activeTenant.role}</small></span></div><button type="button" className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()}><LogOut size={18} /></button></div>
+        <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{demo ? "Local demo" : activeTenant.role}</small></span></div><button type="button" className="icon-button" title={demo ? "Exit demo" : "Sign out"} aria-label={demo ? "Exit demo" : "Sign out"} onClick={() => demo ? leaveDemo() : void signOut()}><LogOut size={18} /></button></div>
       </aside>
       {mobileNav && <button type="button" className="scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
 
       <main className="main">
-        <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>Cloudflare EU</span><small>·</small><span className="role-pill">{activeTenant.role}</span></div></header>
+        <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>{demo ? "Browser only" : "Cloudflare EU"}</span><small>·</small><span className="role-pill">{demo ? "demo" : activeTenant.role}</span></div></header>
         <div className="workspace">
+          {demo && <div className="demo-workspace-banner" role="status"><div><strong>Guest demo · local to this browser</strong><span>Explore the full operating workflow with sample data. Changes are saved only in localStorage and never sent to Operating Layer, Google or Cloudflare.</span></div><div><button type="button" className="secondary" onClick={resetDemo}><RotateCcw size={14} /> Reset demo</button><button type="button" className="secondary" onClick={leaveDemo}>Exit demo</button></div></div>}
           <Suspense fallback={<WorkspaceLoading />}>
             {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
             {page === "orders" && <Orders tenant={activeTenant} />}
@@ -196,9 +213,25 @@ export default function App() {
           </Suspense>
         </div>
       </main>
-      {newBusinessOpen && <NewBusinessModal onClose={() => setNewBusinessOpen(false)} onCreated={() => { setNewBusinessOpen(false); qc.invalidateQueries({ queryKey: ["session"] }); }} />}
+      {newBusinessOpen && !demo && <NewBusinessModal onClose={() => setNewBusinessOpen(false)} onCreated={() => { setNewBusinessOpen(false); qc.invalidateQueries({ queryKey: ["session"] }); }} />}
     </div>
   </Suspense>;
+}
+
+function LandingWithDemo({ inviteToken }: { inviteToken: string | null }) {
+  const startDemo = () => {
+    enterDemoMode();
+    localStorage.setItem(TENANT_STORAGE_KEY, "demo-local-workspace");
+    location.reload();
+  };
+
+  return <>
+    <LandingPage inviteToken={inviteToken} />
+    {!inviteToken && <aside className="demo-launcher" aria-label="Guest demo">
+      <div><span>NO ACCOUNT NEEDED</span><strong>Explore a live guest demo</strong><small>Sample workspace · browser storage only · reset anytime</small></div>
+      <button type="button" onClick={startDemo}><PlayCircle size={17} /> Try demo</button>
+    </aside>}
+  </>;
 }
 
 function LoadingScreen() {
