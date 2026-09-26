@@ -9,7 +9,7 @@ function quoteIdentifier(value: string) {
 }
 
 describe("tenant schema migrations", () => {
-  it("migrates a populated v1 tenant through v8 without losing baseline data", async () => {
+  it("migrates a populated v1 tenant through v9 without losing baseline data", async () => {
     const stub = env.TENANT_STORES.get(env.TENANT_STORES.newUniqueId());
 
     await runInDurableObject(stub, async (_instance, state) => {
@@ -46,7 +46,7 @@ describe("tenant schema migrations", () => {
       const versions = sql.exec<{ id: number }>(
         "SELECT id FROM _sql_schema_migrations ORDER BY id",
       ).toArray().map(row => row.id);
-      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
       const orderColumns = sql.exec<{ name: string }>("PRAGMA table_info(orders)").toArray().map(row => row.name);
       expect(orderColumns).toEqual(expect.arrayContaining(["required_by_date", "priority"]));
@@ -79,6 +79,7 @@ describe("tenant schema migrations", () => {
         "service_invoices",
         "service_invoice_lines",
         "service_payments",
+        "business_profile",
       ]) expect(addedTables.has(table), table).toBe(true);
 
       const preserved = sql.exec<{ name: string }>("SELECT name FROM products WHERE id = ?", "product-v1").toArray()[0];
@@ -94,6 +95,11 @@ describe("tenant schema migrations", () => {
 
       const modules = Object.fromEntries(sql.exec<{ module_key: string; enabled: number }>("SELECT module_key, enabled FROM workspace_modules").toArray().map(row => [row.module_key, row.enabled]));
       expect(modules).toMatchObject({ crm: 1, service: 0, orders: 1, inventory: 1, purchasing: 1, warehouse: 1, reports: 1 });
+
+      const businessProfile = sql.exec<{ id: number; address_json: string | null; updated_by: string }>(
+        "SELECT id, address_json, updated_by FROM business_profile WHERE id = 1",
+      ).toArray()[0];
+      expect(businessProfile).toMatchObject({ id: 1, address_json: null, updated_by: "schema-v9" });
     });
   });
 
