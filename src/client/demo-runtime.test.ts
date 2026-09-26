@@ -4,7 +4,7 @@ import type { OperationsReport } from "../shared/operations-report";
 import { controlApi, tenantApi, tenantOpsApi } from "./api";
 import { DEMO_TENANT_ID, enterDemoMode, resetDemoData } from "./demo-store";
 import { demoCsv } from "./demo-runtime";
-import type { InventoryRow, OrderDetail, Product, PurchaseOrderDetail, SupplierVariant } from "./model";
+import type { InventoryRow, OrderDetail, Product, PurchaseOrderDetail, ReplenishmentResponse, SupplierVariant } from "./model";
 
 const DEMO_DATA_KEY = "operating-layer:demo-data:v1";
 
@@ -54,6 +54,34 @@ describe("hardened local guest demo", () => {
     expect(movements[0]?.actor_name).toBe("Guest operator");
     expect(movements.some(item => item.movement_type === "order_fulfilment")).toBe(true);
     expect(movements.some(item => item.barcode !== null)).toBe(true);
+  });
+
+  it("uses movement timestamps as the demand history for demo operating intelligence", async () => {
+    const raw = JSON.parse(localStorage.getItem(DEMO_DATA_KEY) || "{}") as { movements: Array<Record<string, unknown>> };
+    raw.movements = raw.movements.filter(item => !(item.variant_id === "var-tape" && item.location_id === "loc-birmingham" && item.movement_type === "order_fulfilment"));
+    const movementBase = {
+      product_name: "Paper Packing Tape",
+      variant_name: "50 mm × 50 m",
+      sku: "TAPE-PAPER-50",
+      variant_id: "var-tape",
+      location_id: "loc-birmingham",
+      location_name: "Birmingham Overflow",
+      movement_type: "order_fulfilment",
+      reference_type: "order",
+      reference_id: "forecast-test",
+      reason: null,
+      actor_id: "demo-user",
+      actor_role: "owner",
+    };
+    raw.movements.push({ ...movementBase, id: "forecast-recent", quantity: -30, created_at: new Date().toISOString() });
+    raw.movements.push({ ...movementBase, id: "forecast-prior", quantity: -60, created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString() });
+    localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(raw));
+
+    const intelligence = await tenantApi<ReplenishmentResponse>(DEMO_TENANT_ID, "/replenishment");
+    const position = intelligence.positions.find(row => row.variant_id === "var-tape" && row.location_id === "loc-birmingham");
+
+    expect(position?.fulfilled_30d).toBe(30);
+    expect(position?.fulfilled_prev_60d).toBe(60);
   });
 
   it("uses the selected report window for physical movement KPIs and trends", async () => {
@@ -108,7 +136,6 @@ describe("hardened local guest demo", () => {
     const plan = await tenantApi<CatalogueImportPlan>(DEMO_TENANT_ID, "/imports/catalogue/preview", { method: "POST", body: JSON.stringify({ rows }) });
     expect(plan.canCommit).toBe(true);
     expect(plan.summary.productsToCreate).toBe(1);
-
     await tenantApi(DEMO_TENANT_ID, "/imports/catalogue/commit", { method: "POST", body: JSON.stringify({ rows, expectedFingerprint: plan.fingerprint }) });
 
     const products = await tenantApi<Product[]>(DEMO_TENANT_ID, "/products");
