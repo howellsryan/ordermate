@@ -77,6 +77,13 @@ describe("operations assistant deterministic fallback", () => {
     expect(answer.recommendedPages).toEqual([{ page: "purchasing", label: "Open purchasing" }]);
   });
 
+  it("understands purchasing-focused wording", () => {
+    const answer = deterministicOperationsAnswer("What should purchasing focus on this week?", context());
+
+    expect(answer.answer).toContain("purchase orders");
+    expect(answer.recommendedPages).toEqual([{ page: "purchasing", label: "Open purchasing" }]);
+  });
+
   it("supports an explicit demo mode without changing evidence semantics", () => {
     const answer = deterministicOperationsAnswer("stock risk", context(), "demo");
     expect(answer.mode).toBe("demo");
