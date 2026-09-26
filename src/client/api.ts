@@ -89,7 +89,7 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
 
 export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
-    const result = await demoOpsApi<unknown>(path);
+    const result = await demoOpsApi<unknown>(path, init);
     const pathname = new URL(path, "https://demo.local").pathname;
     if (pathname === "/attention") {
       const activeVariants = await activeDemoVariantIds();
