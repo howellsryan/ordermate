@@ -165,7 +165,12 @@ async function aiAnswer(question: string, context: OperationsAssistantContext, e
 export const operationsAssistantApp = new Hono<{ Bindings: Env }>();
 
 operationsAssistantApp.post("/", async c => {
-  const body = await c.req.json<{ question?: unknown }>().catch(() => ({}));
+  let body: { question?: unknown } = {};
+  try {
+    body = await c.req.json<{ question?: unknown }>();
+  } catch {
+    // Invalid JSON is handled by the same bounded question contract as a missing question.
+  }
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!question || question.length > 500) return c.json({ error: "Ask a question between 1 and 500 characters" }, 400);
 
