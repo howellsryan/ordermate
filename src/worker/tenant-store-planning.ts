@@ -57,8 +57,25 @@ type SupplierMappingRow = {
   lead_time_days: number | null;
 };
 
+type IncomingScheduleRow = {
+  variant_id: string;
+  location_id: string;
+  expected_delivery_date: string | null;
+  quantity: number;
+};
+
 const now = () => new Date().toISOString();
 const newId = () => crypto.randomUUID();
+const DAY_MS = 86_400_000;
+
+function daysFromToday(date: string | null, fallback: number) {
+  if (!date) return fallback;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const expected = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(expected)) return fallback;
+  return Math.max(0, Math.round((expected - todayUtc) / DAY_MS));
+}
 
 /**
  * v2 planning layer. This is intentionally separate from the v1 runtime
@@ -319,6 +336,18 @@ export class TenantStore extends VersionedTenantStore {
        JOIN products p ON p.id = v.product_id AND p.status = 'active'`,
     ).toArray();
 
+    const incomingSchedule = this.planningCtx.storage.sql.exec<IncomingScheduleRow>(
+      `SELECT pol.variant_id,
+              po.location_id,
+              po.expected_delivery_date,
+              SUM(pol.quantity_ordered - pol.quantity_received) AS quantity
+       FROM purchase_order_lines pol
+       JOIN purchase_orders po ON po.id = pol.purchase_order_id
+       WHERE po.status IN ('ordered','partially_received')
+         AND pol.quantity_ordered > pol.quantity_received
+       GROUP BY pol.variant_id, po.location_id, po.expected_delivery_date`,
+    ).toArray();
+
     const inputs: IntelligenceInput[] = stock.map(row => {
       const preferredSupplierId = row.preferred_supplier_id;
       const suppliers = mappings.filter(mapping => mapping.variant_id === row.variant_id).map(mapping => ({
@@ -342,6 +371,10 @@ export class TenantStore extends VersionedTenantStore {
         reorderPoint * 2,
         Math.ceil(recentDailyDemand * 14) + reorderPoint,
       );
+      const schedule = incomingSchedule
+        .filter(item => item.variant_id === row.variant_id && item.location_id === row.location_id)
+        .map(item => ({ daysFromNow: daysFromToday(item.expected_delivery_date, effectiveLeadTimeDays), quantity: item.quantity }))
+        .sort((a, b) => a.daysFromNow - b.daysFromNow);
 
       return {
         id: `${row.variant_id}:${row.location_id}`,
@@ -355,6 +388,7 @@ export class TenantStore extends VersionedTenantStore {
         reserved: row.reserved,
         available: row.available,
         incoming: row.incoming,
+        incoming_schedule: schedule,
         fulfilled_30d: row.fulfilled_30d,
         fulfilled_prev_60d: row.fulfilled_prev_60d,
         cost_minor: row.cost_minor,
