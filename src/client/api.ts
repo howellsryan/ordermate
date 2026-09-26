@@ -1,7 +1,8 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
 import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
+import { demoControlApi, demoOpsApi, demoTenantApi } from "./demo-acceptance";
+import { demoCsv } from "./demo-export";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
-import { demoControlApi, demoCsv, demoOpsApi, demoTenantApi } from "./demo-acceptance";
 
 export async function errorFrom(response: Response) {
   const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
