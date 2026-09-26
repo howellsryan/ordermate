@@ -34,7 +34,7 @@ export class FeatureRuntime {
 
       if (method === "GET" && path === "/features") return this.listFeatures();
       const featureMatch = path.match(/^\/features\/([^/]+)$/);
-      if (method === "PATCH" && featureMatch) return this.updateFeature(decodeURIComponent(featureMatch[1]), request);
+      if (method === "PATCH" && featureMatch) return await this.updateFeature(decodeURIComponent(featureMatch[1]), request);
 
       const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
       if (requiredFeature && !this.featureEnabled(requiredFeature)) {
