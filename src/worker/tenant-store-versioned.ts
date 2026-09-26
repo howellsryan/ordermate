@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 6;
+const CURRENT_TENANT_SCHEMA_VERSION = 7;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -175,6 +175,19 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 6);
     });
     current = 6;
+  }
+
+  if (current < 7) {
+    storage.transactionSync(() => {
+      if (!tableHasColumn(storage, "supplier_variants", "minimum_order_quantity")) {
+        sql.exec("ALTER TABLE supplier_variants ADD COLUMN minimum_order_quantity INTEGER CHECK(minimum_order_quantity IS NULL OR minimum_order_quantity > 0)");
+      }
+      if (!tableHasColumn(storage, "supplier_variants", "order_multiple")) {
+        sql.exec("ALTER TABLE supplier_variants ADD COLUMN order_multiple INTEGER CHECK(order_multiple IS NULL OR order_multiple > 0)");
+      }
+      recordMigration(storage, 7);
+    });
+    current = 7;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
