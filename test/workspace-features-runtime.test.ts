@@ -57,10 +57,23 @@ describe("workspace feature runtime", () => {
 
     const blocked = await request(stub, "/replenishment");
     expect(blocked.status).toBe(404);
-    expect(await blocked.json<{ error: string }>()).toEqual({ error: "Operating Intelligence is disabled for this workspace." });
+    expect(await blocked.json<{ error: string }>()).toEqual({ error: "Operating Intelligence is disabled or unavailable for this workspace." });
 
     const audit = await json<Array<{ action: string; entity_id: string; actor_id: string }>>(await request(stub, "/audit"));
     expect(audit.some(event => event.action === "workspace_feature.updated" && event.entity_id === "operating_intelligence" && event.actor_id === "feature-reviewer")).toBe(true);
+  });
+
+  it("blocks a configured feature when one of its required modules is unavailable", async () => {
+    const stub = tenant();
+    const disablePurchasing = await request(stub, "/modules/purchasing", "PATCH", { enabled: false });
+    expect(disablePurchasing.status).toBe(200);
+
+    const features = await json<FeaturesResponse>(await request(stub, "/features"));
+    expect(features.features.find(feature => feature.key === "operating_intelligence")?.enabled).toBe(true);
+
+    const blocked = await request(stub, "/replenishment");
+    expect(blocked.status).toBe(404);
+    expect(await blocked.json<{ error: string }>()).toEqual({ error: "Operating Intelligence is disabled or unavailable for this workspace." });
   });
 
   it("returns an empty discrepancy queue when disabled so shared attention reads stay healthy", async () => {
@@ -79,9 +92,20 @@ describe("workspace feature runtime", () => {
     expect(mutation.status).toBe(404);
   });
 
-  it("returns a client error for malformed feature updates instead of an internal error", async () => {
+  it("returns client errors for malformed feature updates instead of internal errors", async () => {
     const stub = tenant();
-    const invalid = await request(stub, "/features/flow_plan", "PATCH", { enabled: "yes" });
-    expect(invalid.status).toBe(400);
+    const wrongType = await request(stub, "/features/flow_plan", "PATCH", { enabled: "yes" });
+    expect(wrongType.status).toBe(400);
+
+    const invalidJson = await stub.fetch(new Request("https://tenant.test/features/flow_plan", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-ordermate-actor-id": "feature-reviewer",
+        "x-ordermate-actor-role": "owner",
+      },
+      body: "{",
+    }));
+    expect(invalidJson.status).toBe(400);
   });
 });
