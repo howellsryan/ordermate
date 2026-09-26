@@ -44,8 +44,11 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
+      - name: Build production configuration
         run: npm run build
+
+      - name: Build staging configuration
+        run: npm run build:staging
 
       - name: Commit verified sweep
         shell: bash
