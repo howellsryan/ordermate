@@ -1,0 +1,145 @@
+.smart-buy-section {
+  display: grid;
+  gap: .8rem;
+  margin: 1rem 0 1.15rem;
+  padding: 1rem;
+  border: 1px solid var(--line, #e3e7ed);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel, #fff) 95%, #6172f3 5%);
+}
+
+.smart-buy-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.smart-buy-heading > span {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+}
+
+.smart-buy-heading > span > span {
+  display: grid;
+  gap: .12rem;
+}
+
+.smart-buy-heading strong {
+  font-size: .92rem;
+}
+
+.smart-buy-heading small,
+.smart-buy-heading b {
+  color: var(--muted, #667085);
+  font-size: .75rem;
+}
+
+.smart-buy-heading b {
+  flex: none;
+  padding: .4rem .6rem;
+  border: 1px solid var(--line, #e3e7ed);
+  border-radius: 999px;
+  background: var(--panel, #fff);
+}
+
+.smart-buy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: .7rem;
+}
+
+.smart-buy-card {
+  display: grid;
+  gap: .75rem;
+  padding: .9rem;
+  border: 1px solid var(--line, #e3e7ed);
+  border-radius: 14px;
+  background: var(--panel, #fff);
+}
+
+.smart-buy-card > div:first-child,
+.smart-buy-footer > span {
+  display: grid;
+  gap: .12rem;
+}
+
+.smart-buy-card > div:first-child > small,
+.smart-buy-footer small {
+  color: var(--muted, #667085);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.smart-buy-card > div:first-child > strong {
+  font-size: .98rem;
+}
+
+.smart-buy-card > div:first-child > span {
+  color: var(--muted, #667085);
+  font-size: .77rem;
+}
+
+.smart-buy-lines {
+  display: grid;
+  border-top: 1px solid var(--line, #e3e7ed);
+  border-bottom: 1px solid var(--line, #e3e7ed);
+}
+
+.smart-buy-lines > span {
+  display: grid;
+  gap: .08rem;
+  padding: .55rem 0;
+}
+
+.smart-buy-lines > span + span {
+  border-top: 1px solid var(--line, #e3e7ed);
+}
+
+.smart-buy-lines b {
+  overflow: hidden;
+  font-size: .79rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-buy-lines small {
+  color: var(--muted, #667085);
+  font-size: .72rem;
+}
+
+.smart-buy-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.smart-buy-footer strong {
+  font-size: .9rem;
+}
+
+.smart-buy-footer button {
+  flex: none;
+}
+
+@media (max-width: 680px) {
+  .smart-buy-heading,
+  .smart-buy-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .smart-buy-heading b {
+    align-self: flex-start;
+  }
+
+  .smart-buy-footer button {
+    justify-content: center;
+    width: 100%;
+  }
+}
