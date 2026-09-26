@@ -74,4 +74,19 @@ describe("profile-specific guest demo data", () => {
     expect(JSON.stringify(state.supplierVariants)).not.toContain("MP-MAIL");
     expect(JSON.stringify(state.supplierVariants)).not.toContain("AW-GRIP");
   });
+
+  it("normalizes a selected profile once and preserves later browser-demo edits across reloads", () => {
+    const state = seededProfile("electrician");
+    state.orders.push({ id: "ord-custom", number: "ORD-CUSTOM", lines: [] });
+    state.modifiers.push({ id: "mod-custom", name: "Customer supplied fitting", price_delta_minor: 0 });
+    state.products[0].modifiers.push({ id: "mod-custom", name: "Customer supplied fitting", price_delta_minor: 0 });
+    window.localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(state));
+
+    applyDemoProfileData("electrician");
+
+    const reloaded = JSON.parse(window.localStorage.getItem(DEMO_DATA_KEY)!) as Record<string, any>;
+    expect(reloaded.orders).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ord-custom" })]));
+    expect(reloaded.modifiers).toEqual(expect.arrayContaining([expect.objectContaining({ id: "mod-custom" })]));
+    expect(reloaded.products[0].modifiers).toEqual(expect.arrayContaining([expect.objectContaining({ id: "mod-custom" })]));
+  });
 });

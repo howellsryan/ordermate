@@ -17,6 +17,7 @@ type DemoRawState = {
   audit: Row[];
   movements: Row[];
   members: Row[];
+  demoProfile?: DemoProfileKey;
   [key: string]: unknown;
 };
 
@@ -262,6 +263,9 @@ export function applyDemoProfileData(profile: DemoProfileKey) {
 
   let state: DemoRawState;
   try { state = JSON.parse(raw) as DemoRawState; } catch { return; }
+  // Profile transforms normalize the canonical ecommerce seed once. They must
+  // not become a destructive reload hook after a visitor starts editing data.
+  if (state.demoProfile === profile) return;
 
   mapVariantSnapshots(state, data);
   mapLocations(state, data);
@@ -296,5 +300,6 @@ export function applyDemoProfileData(profile: DemoProfileKey) {
     state.customers = [];
   }
 
+  state.demoProfile = profile;
   window.localStorage.setItem(DEMO_DATA_KEY, JSON.stringify(state));
 }
