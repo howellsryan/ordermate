@@ -1,8 +1,16 @@
 import { buildOperatingIntelligence, type IntelligenceInput } from "../shared/operating-intelligence";
-import type { InventoryPolicy, InventoryRow, OrderDetail, Product, PurchaseOrderDetail, ReplenishmentResponse, SupplierVariant } from "./model";
+import type { InventoryPolicy, InventoryRow, Product, PurchaseOrderDetail, ReplenishmentResponse, SupplierVariant } from "./model";
+import { demoOpsApi as demoRuntimeOpsApi } from "./demo-runtime";
 import { demoTenantApi } from "./demo-stocktake";
 
 type DemoSettings = { low_stock_threshold: number };
+type DemoForecastMovement = {
+  variant_id: string;
+  location_id: string;
+  quantity_delta: number;
+  movement_type: string;
+  created_at: string;
+};
 const DAY_MS = 86_400_000;
 
 function ageInDays(iso: string) {
@@ -19,12 +27,12 @@ function daysFromToday(date: string | null | undefined, fallback: number) {
 }
 
 export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse> {
-  const [inventory, products, mappings, policies, orders, purchaseOrders, settings] = await Promise.all([
+  const [inventory, products, mappings, policies, movements, purchaseOrders, settings] = await Promise.all([
     demoTenantApi<InventoryRow[]>("/inventory"),
     demoTenantApi<Product[]>("/products"),
     demoTenantApi<SupplierVariant[]>("/supplier-variants"),
     demoTenantApi<InventoryPolicy[]>("/inventory-policies"),
-    demoTenantApi<OrderDetail[]>("/orders"),
+    demoRuntimeOpsApi<DemoForecastMovement[]>("/movements"),
     demoTenantApi<PurchaseOrderDetail[]>("/purchase-orders"),
     demoTenantApi<DemoSettings>("/settings"),
   ]);
@@ -55,12 +63,12 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
 
       let fulfilled30 = 0;
       let fulfilledPrevious60 = 0;
-      for (const order of orders) {
-        if (order.location_id !== row.location_id) continue;
-        const age = ageInDays(order.created_at);
-        if (age < 0 || age > 90) continue;
-        const units = order.lines.filter(line => line.variant_id === row.variant_id).reduce((sum, line) => sum + Math.max(0, line.quantity_fulfilled), 0);
-        if (age <= 30) fulfilled30 += units;
+      for (const movement of movements) {
+        if (movement.movement_type !== "order_fulfilment" || movement.variant_id !== row.variant_id || movement.location_id !== row.location_id) continue;
+        const age = ageInDays(movement.created_at);
+        if (age < 0 || age >= 90) continue;
+        const units = Math.abs(Math.min(0, movement.quantity_delta));
+        if (age < 30) fulfilled30 += units;
         else fulfilledPrevious60 += units;
       }
 
