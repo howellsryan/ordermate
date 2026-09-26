@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applySupplierOrderingTerms, orderableQuantity } from "../src/shared/supplier-ordering";
 import type { OperatingIntelligenceResponse, OperatingIntelligenceRow } from "../src/shared/operating-intelligence";
 
-function row(): OperatingIntelligenceRow {
+function row(overrides: Partial<OperatingIntelligenceRow> = {}): OperatingIntelligenceRow {
   return {
     id: "variant-a:location-a",
     variant_id: "variant-a",
@@ -41,11 +41,11 @@ function row(): OperatingIntelligenceRow {
     risk: "critical",
     abc_class: "A",
     explanation: [],
+    ...overrides,
   };
 }
 
-function response(): OperatingIntelligenceResponse {
-  const position = row();
+function response(position = row()): OperatingIntelligenceResponse {
   return {
     generated_at: "2026-09-26T12:00:00.000Z",
     window_days: 90,
@@ -81,5 +81,25 @@ describe("supplier ordering constraints", () => {
     expect(adjusted.recommended_quantity).toBe(24);
     expect(adjusted.ordering_constraints.adjusted).toBe(true);
     expect(adjusted.explanation.at(-1)).toContain("order-ready");
+  });
+
+  it("does not apply one supplier's terms when multiple suppliers exist without a preferred supplier", () => {
+    const position = row({
+      preferred_supplier_id: null,
+      suppliers: [
+        { supplierId: "supplier-a", supplierName: "Supplier A", preferred: false },
+        { supplierId: "supplier-b", supplierName: "Supplier B", preferred: false },
+      ],
+    });
+    const result = applySupplierOrderingTerms(response(position), [{
+      supplier_id: "supplier-a",
+      variant_id: "variant-a",
+      minimum_order_quantity: 24,
+      order_multiple: 12,
+    }]);
+
+    expect(result.suggestions[0].scenarios).toEqual({ minimum: 4, recommended: 23, maximum: 37 });
+    expect(result.suggestions[0].ordering_constraints.supplier_id).toBeNull();
+    expect(result.suggestions[0].ordering_constraints.adjusted).toBe(false);
   });
 });
