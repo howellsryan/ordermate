@@ -36,6 +36,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
   const action: Action = method === "GET" || method === "HEAD" ? "read" : method === "DELETE" ? "delete" : method === "POST" ? "create" : "update";
 
   if (path.startsWith("/modules")) return { resource: "modules", action };
+  if (path.startsWith("/business-profile")) return { resource: "settings", action };
   if (path.startsWith("/crm/contacts")) {
     const lifecycleAction = method === "POST" && /\/convert$/.test(path) ? "update" : action;
     return { resource: "crm", action: lifecycleAction };
