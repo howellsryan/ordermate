@@ -150,15 +150,11 @@ export function defaultFeatureConfiguration(): Record<WorkspaceFeatureKey, boole
   return Object.fromEntries(WORKSPACE_FEATURES.map(feature => [feature.key, feature.defaultEnabled])) as Record<WorkspaceFeatureKey, boolean>;
 }
 
-export function validateFeatureConfiguration(states: Record<WorkspaceFeatureKey, boolean>) {
-  const errors: string[] = [];
-  for (const definition of WORKSPACE_FEATURES) {
-    if (!states[definition.key]) continue;
-    for (const dependency of definition.dependencies) {
-      if (!states[dependency]) {
-        errors.push(`${definition.label} requires ${WORKSPACE_FEATURE_BY_KEY[dependency].label}.`);
-      }
-    }
-  }
-  return errors;
+/**
+ * Feature dependencies are activation requirements, not destructive configuration
+ * constraints. A child preference stays remembered when its parent feature or module
+ * is temporarily disabled, so switching the parent back on restores the prior setup.
+ */
+export function validateFeatureConfiguration(_states: Record<WorkspaceFeatureKey, boolean>) {
+  return [] as string[];
 }
