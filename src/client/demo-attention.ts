@@ -7,7 +7,14 @@ export async function demoOpsApi<T>(path: string, init?: RequestInit): Promise<T
   const url = new URL(path, "https://demo.local");
   const method = (init?.method || "GET").toUpperCase();
   if (url.pathname === "/assistant" && method === "POST") {
-    const body = typeof init?.body === "string" ? JSON.parse(init.body) as { question?: unknown } : {};
+    let body: { question?: unknown } = {};
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body) as { question?: unknown };
+      } catch {
+        throw new Error("Ask a question between 1 and 500 characters");
+      }
+    }
     const question = typeof body.question === "string" ? body.question.trim() : "";
     if (!question || question.length > 500) throw new Error("Ask a question between 1 and 500 characters");
     return await demoAssistant(question) as T;
