@@ -5,6 +5,7 @@ import { buildFlowPlan } from "../shared/flow-plan";
 import { tenantApi, tenantOpsApi } from "./api";
 import type { AttentionResponse, ReplenishmentResponse, SearchResult } from "./model";
 import { DataState } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 const categoryLabel = {
   customer_promise: "Customer promise",
@@ -13,7 +14,13 @@ const categoryLabel = {
   receiving_exception: "Receiving exception",
 } as const;
 
-export default function FlowPlan({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+export default function FlowPlan(props: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+  const features = useWorkspaceFeatures(props.tenant.id);
+  if (!features.data || !features.enabled.has("flow_plan") || !features.enabled.has("operating_intelligence")) return null;
+  return <EnabledFlowPlan {...props} />;
+}
+
+function EnabledFlowPlan({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
   const attention = useQuery({
     queryKey: ["tenant", tenant.id, "attention"],
     queryFn: () => tenantOpsApi<AttentionResponse>(tenant.id, "/attention"),
