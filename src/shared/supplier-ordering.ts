@@ -23,6 +23,11 @@ function positiveInteger(value: number | null | undefined) {
   return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
 }
 
+function deterministicSupplier(row: OperatingIntelligenceRow) {
+  return row.suppliers.find(item => item.preferred)
+    || (row.suppliers.length === 1 ? row.suppliers[0] : null);
+}
+
 export function orderableQuantity(quantity: number, minimumOrderQuantity?: number | null, orderMultiple?: number | null) {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
   const minimum = positiveInteger(minimumOrderQuantity) || 1;
@@ -38,7 +43,7 @@ export function applySupplierOrderingTerms(
   const byKey = new Map(terms.map(term => [`${term.supplier_id}:${term.variant_id}`, term] as const));
 
   const adjust = (row: OperatingIntelligenceRow): OrderReadyIntelligenceRow => {
-    const supplier = row.suppliers.find(item => item.preferred) || row.suppliers[0] || null;
+    const supplier = deterministicSupplier(row);
     const term = supplier ? byKey.get(`${supplier.supplierId}:${row.variant_id}`) : undefined;
     const minimumOrderQuantity = positiveInteger(term?.minimum_order_quantity);
     const orderMultiple = positiveInteger(term?.order_multiple);
