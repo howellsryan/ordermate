@@ -1,0 +1,253 @@
+export type IntelligenceSupplier = {
+  supplierId: string;
+  supplierName: string;
+  supplierSku?: string | null;
+  lastCostMinor?: number | null;
+  leadTimeDays?: number | null;
+  preferred?: boolean;
+};
+
+export type IntelligenceInput = {
+  id: string;
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  location_id: string;
+  location_name: string;
+  on_hand: number;
+  reserved: number;
+  available: number;
+  incoming: number;
+  fulfilled_30d: number;
+  fulfilled_prev_60d: number;
+  cost_minor: number;
+  threshold: number;
+  target_stock: number;
+  policy_custom: boolean;
+  preferred_supplier_id?: string | null;
+  effective_lead_time_days: number;
+  suppliers: IntelligenceSupplier[];
+};
+
+export type PlanningContext = {
+  demandAdjustmentPercent?: number;
+  extraLeadTimeDays?: number;
+};
+
+export type ForecastPoint = {
+  week: number;
+  projected: number;
+};
+
+export type ReplenishmentScenario = {
+  minimum: number;
+  recommended: number;
+  maximum: number;
+};
+
+export type OperatingIntelligenceRow = IntelligenceInput & {
+  average_daily_demand: number;
+  prior_daily_demand: number;
+  forecast_daily_demand: number;
+  trend_percent: number | null;
+  trend_label: "rising" | "falling" | "stable" | "insufficient_history";
+  safety_stock: number;
+  buffer_days: number;
+  projected_at_lead_time: number;
+  days_of_cover: number | null;
+  stockout_date: string | null;
+  order_by_date: string | null;
+  recommended_quantity: number;
+  scenarios: ReplenishmentScenario;
+  forecast_12_weeks: ForecastPoint[];
+  risk: "critical" | "warning" | "watch" | "healthy";
+  abc_class: "A" | "B" | "C";
+  explanation: string[];
+};
+
+export type OperatingIntelligenceResponse = {
+  generated_at: string;
+  history_window_days: number;
+  forecast_horizon_weeks: number;
+  default_threshold: number;
+  summary: {
+    tracked_positions: number;
+    at_risk: number;
+    critical: number;
+    projected_stockouts_30d: number;
+    a_class_positions: number;
+  };
+  positions: OperatingIntelligenceRow[];
+  suggestions: OperatingIntelligenceRow[];
+};
+
+const DAY_MS = 86_400_000;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function round2(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function isoDateFromOffset(todayIso: string, offsetDays: number) {
+  const date = new Date(`${todayIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + Math.max(0, Math.floor(offsetDays)));
+  return date.toISOString().slice(0, 10);
+}
+
+function abcClasses(inputs: IntelligenceInput[]) {
+  const ranked = inputs
+    .map(input => ({ id: input.id, value: Math.max(0, input.fulfilled_30d + input.fulfilled_prev_60d) * Math.max(0, input.cost_minor) }))
+    .sort((a, b) => b.value - a.value || a.id.localeCompare(b.id));
+  const total = ranked.reduce((sum, row) => sum + row.value, 0);
+  const result = new Map<string, "A" | "B" | "C">();
+  if (total <= 0) {
+    for (const row of ranked) result.set(row.id, "C");
+    return result;
+  }
+
+  let cumulative = 0;
+  for (const row of ranked) {
+    cumulative += row.value;
+    const share = cumulative / total;
+    result.set(row.id, share <= 0.8 ? "A" : share <= 0.95 ? "B" : "C");
+  }
+  return result;
+}
+
+function demandSignals(input: IntelligenceInput, demandAdjustmentPercent: number) {
+  const recentDaily = Math.max(0, input.fulfilled_30d) / 30;
+  const priorDaily = Math.max(0, input.fulfilled_prev_60d) / 60;
+  const weighted = recentDaily * 0.7 + priorDaily * 0.3;
+  const rawTrend = priorDaily > 0 ? (recentDaily - priorDaily) / priorDaily : recentDaily > 0 ? 0.2 : 0;
+  const trendFactor = clamp(1 + rawTrend * 0.35, 0.75, 1.25);
+  const contextFactor = clamp(1 + demandAdjustmentPercent / 100, 0.1, 3);
+  const forecastDaily = weighted * trendFactor * contextFactor;
+  const trendPercent = priorDaily > 0 ? Math.round(rawTrend * 100) : null;
+  const trendLabel = priorDaily <= 0 && recentDaily <= 0
+    ? "insufficient_history"
+    : rawTrend > 0.12 ? "rising" : rawTrend < -0.12 ? "falling" : "stable";
+  return { recentDaily, priorDaily, forecastDaily, trendPercent, trendLabel } as const;
+}
+
+function forecastCurve(input: IntelligenceInput, forecastDaily: number, leadTimeDays: number) {
+  const points: ForecastPoint[] = [];
+  const incomingWeek = Math.max(1, Math.ceil(leadTimeDays / 7));
+  let projected = input.available;
+  for (let week = 1; week <= 12; week++) {
+    projected -= forecastDaily * 7;
+    if (week === incomingWeek) projected += input.incoming;
+    points.push({ week, projected: Math.round(projected) });
+  }
+  return points;
+}
+
+export function applyPlanningContext(
+  input: IntelligenceInput,
+  abcClass: "A" | "B" | "C",
+  todayIso: string,
+  context: PlanningContext = {},
+): OperatingIntelligenceRow {
+  const demandAdjustmentPercent = clamp(context.demandAdjustmentPercent || 0, -90, 200);
+  const extraLeadTimeDays = Math.round(clamp(context.extraLeadTimeDays || 0, 0, 120));
+  const leadTimeDays = Math.max(1, Math.round(input.effective_lead_time_days + extraLeadTimeDays));
+  const signals = demandSignals(input, demandAdjustmentPercent);
+  const bufferDays = Math.max(3, Math.min(14, Math.ceil(leadTimeDays * 0.5)));
+  const safetyStock = Math.max(input.threshold, Math.ceil(signals.forecastDaily * bufferDays));
+  const leadDemand = Math.ceil(signals.forecastDaily * leadTimeDays);
+  const projectedAtLead = Math.round(input.available + input.incoming - leadDemand);
+  const inventoryPosition = input.available + input.incoming;
+  const daysOfCover = signals.forecastDaily > 0 ? Math.max(0, Math.floor(inventoryPosition / signals.forecastDaily)) : null;
+  const stockoutDate = daysOfCover === null || daysOfCover > 365 ? null : isoDateFromOffset(todayIso, daysOfCover);
+  const reorderCoverageDays = signals.forecastDaily > 0
+    ? Math.max(0, Math.floor((Math.max(0, input.available - safetyStock)) / signals.forecastDaily) - leadTimeDays)
+    : 0;
+  const orderByDate = signals.forecastDaily > 0 ? isoDateFromOffset(todayIso, reorderCoverageDays) : null;
+
+  const minimumTarget = safetyStock;
+  const recommendedTarget = Math.max(input.target_stock, Math.ceil(signals.forecastDaily * 28) + safetyStock);
+  const maximumTarget = Math.max(recommendedTarget, Math.ceil(signals.forecastDaily * 42) + safetyStock);
+  const minimum = Math.max(0, minimumTarget - projectedAtLead);
+  const recommended = Math.max(minimum, recommendedTarget - projectedAtLead);
+  const maximum = Math.max(recommended, maximumTarget - projectedAtLead);
+
+  const stockoutWithinLead = daysOfCover !== null && daysOfCover <= leadTimeDays;
+  const stockoutWithin30 = daysOfCover !== null && daysOfCover <= 30;
+  const risk: OperatingIntelligenceRow["risk"] = input.available <= 0 || stockoutWithinLead
+    ? "critical"
+    : stockoutWithin30 || projectedAtLead <= safetyStock
+      ? "warning"
+      : daysOfCover !== null && daysOfCover <= 60
+        ? "watch"
+        : "healthy";
+
+  const explanation = [
+    `${input.fulfilled_30d} units fulfilled in the last 30 days and ${input.fulfilled_prev_60d} in the prior 60 days.`,
+    `Forecast demand is ${round2(signals.forecastDaily)} units/day after weighting recent demand, trend and the active planning context.`,
+    `${leadTimeDays} days effective lead time with ${bufferDays} days of demand buffer produces ${safetyStock} units of safety stock.`,
+    `Current available + incoming stock projects to ${projectedAtLead} units when replacement stock is due.`,
+  ];
+
+  if (demandAdjustmentPercent) explanation.push(`Planning scenario adjusts demand by ${demandAdjustmentPercent > 0 ? "+" : ""}${demandAdjustmentPercent}%.`);
+  if (extraLeadTimeDays) explanation.push(`Planning scenario adds ${extraLeadTimeDays} days of supplier delay.`);
+
+  return {
+    ...input,
+    effective_lead_time_days: leadTimeDays,
+    average_daily_demand: round2(signals.recentDaily),
+    prior_daily_demand: round2(signals.priorDaily),
+    forecast_daily_demand: round2(signals.forecastDaily),
+    trend_percent: signals.trendPercent,
+    trend_label: signals.trendLabel,
+    safety_stock: safetyStock,
+    buffer_days: bufferDays,
+    projected_at_lead_time: projectedAtLead,
+    days_of_cover: daysOfCover,
+    stockout_date: stockoutDate,
+    order_by_date: orderByDate,
+    recommended_quantity: recommended,
+    scenarios: { minimum, recommended, maximum },
+    forecast_12_weeks: forecastCurve(input, signals.forecastDaily, leadTimeDays),
+    risk,
+    abc_class: abcClass,
+    explanation,
+  };
+}
+
+export function buildOperatingIntelligence(
+  inputs: IntelligenceInput[],
+  options: { defaultThreshold: number; todayIso?: string; context?: PlanningContext } = { defaultThreshold: 0 },
+): OperatingIntelligenceResponse {
+  const todayIso = options.todayIso || new Date().toISOString().slice(0, 10);
+  const classes = abcClasses(inputs);
+  const positions = inputs.map(input => applyPlanningContext(input, classes.get(input.id) || "C", todayIso, options.context));
+  const riskRank = { critical: 0, warning: 1, watch: 2, healthy: 3 } as const;
+  positions.sort((a, b) => riskRank[a.risk] - riskRank[b.risk]
+    || (a.days_of_cover ?? Number.MAX_SAFE_INTEGER) - (b.days_of_cover ?? Number.MAX_SAFE_INTEGER)
+    || b.scenarios.recommended - a.scenarios.recommended
+    || a.product_name.localeCompare(b.product_name));
+
+  const suggestions = positions.filter(row => row.risk !== "healthy" && row.scenarios.recommended > 0);
+  return {
+    generated_at: new Date().toISOString(),
+    history_window_days: 90,
+    forecast_horizon_weeks: 12,
+    default_threshold: options.defaultThreshold,
+    summary: {
+      tracked_positions: positions.length,
+      at_risk: suggestions.length,
+      critical: positions.filter(row => row.risk === "critical").length,
+      projected_stockouts_30d: positions.filter(row => row.days_of_cover !== null && row.days_of_cover <= 30).length,
+      a_class_positions: positions.filter(row => row.abc_class === "A").length,
+    },
+    positions,
+    suggestions: suggestions.slice(0, 100),
+  };
+}
+
+export function dayDifference(fromIso: string, toIso: string) {
+  return Math.round((new Date(`${toIso}T00:00:00Z`).getTime() - new Date(`${fromIso}T00:00:00Z`).getTime()) / DAY_MS);
+}
