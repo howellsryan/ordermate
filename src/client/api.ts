@@ -1,8 +1,9 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
-import type { AttentionResponse, InventoryRow, Product, ReplenishmentResponse } from "./model";
+import type { AttentionResponse, InventoryRow, Product } from "./model";
 import { demoControlApi } from "./demo-acceptance";
 import { demoOpsApi } from "./demo-attention";
 import { demoCsv } from "./demo-export";
+import { demoOperatingIntelligence } from "./demo-operating-intelligence";
 import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
 import { demoTenantApi } from "./demo-stocktake";
 
@@ -17,9 +18,6 @@ export async function errorFrom(response: Response) {
 export async function getSession(): Promise<SessionPayload | null> {
   if (isDemoMode()) return demoSession();
 
-  // Better Auth deliberately returns 200 + null for an anonymous visitor. Probe
-  // that lightweight endpoint first so the public landing page does not create
-  // an expected 401 network error before we ask for the richer Operating Layer session.
   const authResponse = await fetch("/api/auth/get-session", { credentials: "include" });
   if (!authResponse.ok) throw await errorFrom(authResponse);
   const authSession: unknown = await authResponse.json();
@@ -63,14 +61,11 @@ async function activeDemoVariantIds() {
 
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
-    const result = await demoTenantApi<unknown>(path, init);
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
-    if (method === "GET" && pathname === "/replenishment") {
-      const activeVariants = await activeDemoVariantIds();
-      const data = result as ReplenishmentResponse;
-      return { ...data, suggestions: data.suggestions.filter(item => activeVariants.has(item.variant_id)) } as T;
-    }
+    if (method === "GET" && pathname === "/replenishment") return await demoOperatingIntelligence() as T;
+
+    const result = await demoTenantApi<unknown>(path, init);
     if (method === "GET" && pathname === "/dashboard") {
       const activeVariants = await activeDemoVariantIds();
       const inventory = await demoTenantApi<InventoryRow[]>("/inventory");
@@ -173,4 +168,10 @@ export function todayUtcIsoDate() {
 
 export function isOverdueDate(value: string | null | undefined) {
   return !!value && value < todayUtcIsoDate();
+}
+
+export function pounds(value: string | number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(parsed * 100);
 }
