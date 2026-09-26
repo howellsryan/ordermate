@@ -9,6 +9,7 @@ import "./landing-hardening.css";
 import "./brand.css";
 import "./demo.css";
 import "./flow-plan.css";
+import "./smart-buy.css";
 
 function activateDemoDeepLink() {
   const url = new URL(window.location.href);
