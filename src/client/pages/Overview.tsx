@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Archive, Sparkles, Warehouse } from "lucide-react";
 import type { OrganizationSummary, DashboardSummary } from "../../shared/types";
 import { money, tenantApi, tenantOpsApi } from "../api";
+import { isDemoTenant } from "../demo-store";
 import type { AttentionResponse, SearchResult } from "../model";
 import { DataState, PageHeader } from "../ui";
 
 export default function Overview({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+  const demo = isDemoTenant(tenant.id);
   const query = useQuery({
     queryKey: ["tenant", tenant.id, "dashboard"],
     queryFn: () => tenantApi<DashboardSummary>(tenant.id, "/dashboard"),
@@ -18,7 +20,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
   const attentionPage = (item: AttentionResponse["items"][number]): SearchResult["page"] => item.type === "Awaiting fulfilment" ? "warehouse" : item.page;
 
   return <>
-    <PageHeader eyebrow="Today" title={tenant.name} description="The work that needs attention, without hunting for it." />
+    <PageHeader eyebrow="Today" title={tenant.name} description={demo ? "A fully interactive sample operation, stored only in this browser." : "The work that needs attention, without hunting for it."} />
     <section className="metric-grid">
       <Metric label="Open orders" value={data?.ordersOpen ?? "—"} helper="Draft + confirmed" tone="ink" />
       <Metric label="Awaiting fulfilment" value={data?.ordersAwaitingFulfilment ?? "—"} helper="Ready to pick in Warehouse" tone="amber" />
@@ -38,7 +40,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
         <div className="panel-heading"><div><p className="eyebrow">Inventory position</p><h2>{money(data?.inventoryValueMinor, data?.currency)}</h2></div><Warehouse size={24} /></div>
         <p>Current on-hand inventory valued at recorded variant cost.</p>
         <div className="soft-rule" />
-        <div className="automation-callout"><Sparkles size={18} /><div><strong>Automation with a human checkpoint</strong><span>Replenishment rules, supplier-document extraction and delivery-note matching all produce reviewable operational suggestions; the audited order and inventory transactions remain the only source of business truth.</span></div></div>
+        <div className="automation-callout"><Sparkles size={18} /><div><strong>{demo ? "Explainable planning, locally" : "Automation with a human checkpoint"}</strong><span>{demo ? "Replenishment, order planning and purchasing suggestions use the sample operational records in this browser. File-based document extraction stays disabled in guest mode so demo data never leaves the browser." : "Replenishment rules, supplier-document extraction and delivery-note matching all produce reviewable operational suggestions; the audited order and inventory transactions remain the only source of business truth."}</span></div></div>
       </div>
       <div className="panel">
         <div className="panel-heading"><div><p className="eyebrow">Operating model</p><h3>One source of stock truth</h3></div><Archive size={21} /></div>
