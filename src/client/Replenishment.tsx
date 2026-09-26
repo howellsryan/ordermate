@@ -41,7 +41,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
       <div><p className="eyebrow">Replenishment</p><h3>What looks likely to run short?</h3></div>
       <div className="replenishment-heading-actions"><ReplenishmentPolicies tenant={tenant} defaultThreshold={query.data?.default_threshold ?? 5} /><BrainCircuit size={21} /></div>
     </div>
-    <p>OrderMate uses fulfilled demand, reservations, incoming POs and mapped supplier lead times. Most stock positions use the workspace defaults; you can add a SKU/location rule when a product needs a different reorder point, target stock or preferred supplier.</p>
+    <p>Operating Layer uses fulfilled demand, reservations, incoming POs and mapped supplier lead times. Most stock positions use the workspace defaults; you can add a SKU/location rule when a product needs a different reorder point, target stock or preferred supplier.</p>
     <DataState loading={query.isLoading} error={query.error} empty={!query.data?.suggestions.length} emptyText="No tracked stock currently needs replenishment under its effective reorder rules.">
       <div className="replenishment-list">
         {query.data?.suggestions.map(suggestion => {
@@ -68,7 +68,7 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
         })}
       </div>
     </DataState>
-    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Explainable, not autonomous.</strong> Projected stock accounts for current availability, incoming POs and demand during the effective supplier lead time. Custom rules use their configured reorder point and target; everything else keeps OrderMate's demand-based target and workspace threshold. Every suggested PO remains a draft for human review.</span></div>
+    <div className="replenishment-method"><BrainCircuit size={15} /><span><strong>Explainable, not autonomous.</strong> Projected stock accounts for current availability, incoming POs and demand during the effective supplier lead time. Custom rules use their configured reorder point and target; everything else keeps Operating Layer's demand-based target and workspace threshold. Every suggested PO remains a draft for human review.</span></div>
   </section>;
 }
 

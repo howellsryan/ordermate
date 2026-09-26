@@ -119,7 +119,7 @@ export function PurchaseOrderDetailModal({ tenant, purchaseOrderId, onClose }: {
       </div>
       <div className="record-status-row"><span>Status <Status value={po.status} /></span>{overdue && <span className="po-overdue-flag">Expected {calendarDate(po.expected_delivery_date)} · overdue</span>}</div>
       {canEditDue && <div className="po-due-editor">
-        <div><strong>Expected delivery</strong><small>{po.status === "draft" ? "Set a supplier-confirmed date now, or leave blank and OrderMate will derive it on submission when every line has a known supplier lead time." : "Update this when the supplier confirms a revised arrival date."}</small></div>
+        <div><strong>Expected delivery</strong><small>{po.status === "draft" ? "Set a supplier-confirmed date now, or leave blank and Operating Layer will derive it on submission when every line has a known supplier lead time." : "Update this when the supplier confirms a revised arrival date."}</small></div>
         <input aria-label="Expected delivery date" type="date" value={expectedDeliveryDate} onChange={event => setExpectedDeliveryDate(event.target.value)} />
         <button className="secondary" disabled={saveExpected.isPending || expectedDeliveryDate === (po.expected_delivery_date || "")} onClick={() => saveExpected.mutate()}>{saveExpected.isPending ? "Saving…" : expectedDeliveryDate ? "Save expected date" : "Clear expected date"}</button>
       </div>}

@@ -99,7 +99,7 @@ function ProposalModal({ tenant, proposalKey, onClose }: { tenant: OrganizationS
     queryFn: () => controlApi<PurchaseProposal>(`/documents/proposal?key=${encodeURIComponent(proposalKey)}`, { headers: { "x-ordermate-tenant": tenant.id } }),
   });
 
-  return <Modal title="Review extracted purchase order" subtitle="AI extracted the document; exact OrderMate matching is deterministic. Nothing below changes purchasing or inventory until you create the draft." onClose={onClose} wide>
+  return <Modal title="Review extracted purchase order" subtitle="AI extracted the document; exact Operating Layer matching is deterministic. Nothing below changes purchasing or inventory until you create the draft." onClose={onClose} wide>
     {proposal.isLoading ? <div className="detail-loading"><div className="loader" /></div> : proposal.error ? <ErrorText error={proposal.error} /> : proposal.data ? <ProposalReview tenant={tenant} proposalKey={proposalKey} proposal={proposal.data} onClose={onClose} /> : null}
   </Modal>;
 }
@@ -212,7 +212,7 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
 
   if (created) return <div className="proposal-created">
     <span className="proposal-created-icon"><FileCheck2 size={26} /></span>
-    <div><p className="eyebrow">Draft created</p><h3>{created.number}</h3><p>The reviewed extraction is now a normal OrderMate draft purchase order. Stock has not changed; submit and receive it through the standard workflow.</p>{created.learnedMappings ? <p>{created.learnedMappings} reviewed supplier SKU mapping{created.learnedMappings === 1 ? " was" : "s were"} remembered for future document matching.</p> : null}{created.learningWarnings?.map((warning, index) => <div className="proposal-sidecar-warning" key={`learning-${index}`}><AlertTriangle size={15} /><span><strong>The PO was created successfully.</strong> Supplier SKU learning warning: {warning}</span></div>)}{created.completionError && <div className="proposal-sidecar-warning"><AlertTriangle size={15} /><span><strong>The PO was created successfully.</strong> The proposal sidecar could not be marked accepted: {created.completionError}. Do not create the PO again from this proposal.</span></div>}</div>
+    <div><p className="eyebrow">Draft created</p><h3>{created.number}</h3><p>The reviewed extraction is now a normal Operating Layer draft purchase order. Stock has not changed; submit and receive it through the standard workflow.</p>{created.learnedMappings ? <p>{created.learnedMappings} reviewed supplier SKU mapping{created.learnedMappings === 1 ? " was" : "s were"} remembered for future document matching.</p> : null}{created.learningWarnings?.map((warning, index) => <div className="proposal-sidecar-warning" key={`learning-${index}`}><AlertTriangle size={15} /><span><strong>The PO was created successfully.</strong> Supplier SKU learning warning: {warning}</span></div>)}{created.completionError && <div className="proposal-sidecar-warning"><AlertTriangle size={15} /><span><strong>The PO was created successfully.</strong> The proposal sidecar could not be marked accepted: {created.completionError}. Do not create the PO again from this proposal.</span></div>}</div>
     <div className="modal-actions"><button className="primary" onClick={onClose}>Close</button></div>
   </div>;
 
@@ -233,7 +233,7 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
 
     {mappings.error && <div className="proposal-sidecar-warning"><AlertTriangle size={15} /><span><strong>Supplier SKU learning is temporarily unavailable.</strong> You can still create the reviewed draft PO; add mappings later from Supplier catalogue.</span></div>}
 
-    <div className="proposal-lines"><div className="proposal-lines-head"><span>Extracted evidence</span><span>OrderMate variant</span><span>Qty</span><span>Net unit cost</span><span>Tax %</span></div>{proposal.lines.map(sourceLine => {
+    <div className="proposal-lines"><div className="proposal-lines-head"><span>Extracted evidence</span><span>Operating Layer variant</span><span>Qty</span><span>Net unit cost</span><span>Tax %</span></div>{proposal.lines.map(sourceLine => {
       const line = reviewLines.find(item => item.index === sourceLine.index)!;
       const patch = (value: Partial<ReviewLine>) => setReviewLines(current => current.map(item => item.index === line.index ? { ...item, ...value } : item));
       const reviewedConflict = reviewedSkuConflicts.has(normalizeSupplierSku(sourceLine.supplierSku));
@@ -248,7 +248,7 @@ function ProposalReview({ tenant, proposalKey, proposal, onClose }: { tenant: Or
       </div>;
     })}</div>
 
-    {currencyMismatch && <div className="proposal-block"><AlertTriangle size={16} /><span>OrderMate will not create this AI-assisted draft because the extracted document currency differs from the workspace currency. Create a manual PO after converting/reviewing the costs.</span></div>}
+    {currencyMismatch && <div className="proposal-block"><AlertTriangle size={16} /><span>Operating Layer will not create this AI-assisted draft because the extracted document currency differs from the workspace currency. Create a manual PO after converting/reviewing the costs.</span></div>}
     {create.error && <ErrorText error={create.error} />}
     <div className="modal-actions"><button className="secondary" onClick={onClose}>Close</button>{canCreate && <button className="primary" disabled={create.isPending || mappings.isLoading || currencyMismatch || !supplierId || !locationId || !allLinesValid} onClick={() => create.mutate()}><FileCheck2 size={16} /> Create reviewed draft PO</button>}</div>
   </div>;

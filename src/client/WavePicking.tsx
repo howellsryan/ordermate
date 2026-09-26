@@ -140,7 +140,7 @@ function WavePickModal({ tenant, orders, barcodeByVariant, onClose, onCommitted 
   const sameLocation = !details.data || new Set(details.data.map(order => order.location_id)).size <= 1;
   const unallocated = Object.values(plan.unallocated).reduce((sum, quantity) => sum + quantity, 0);
 
-  return <Modal title={`Wave pick · ${orders.length} orders`} subtitle="Scan aggregate quantities once. Before commit, OrderMate expands the picked units back into exact order lines in the urgency order shown in Warehouse." onClose={onClose} wide>
+  return <Modal title={`Wave pick · ${orders.length} orders`} subtitle="Scan aggregate quantities once. Before commit, Operating Layer expands the picked units back into exact order lines in the urgency order shown in Warehouse." onClose={onClose} wide>
     {details.isLoading ? <div className="wave-loading" role="status" aria-live="polite"><div className="loader" /><span>Loading selected order reservations…</span></div> : details.error ? <ErrorText error={details.error} /> : !sameLocation ? <div className="wave-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>Selected orders no longer share one stock location. Close the wave and rebuild the selection.</span></div> : <div className="wave-session">
       <div className="wave-summary">
         <span><small>Orders</small><strong>{orders.length}</strong></span><span><small>Unique SKUs</small><strong>{targets.length}</strong></span><span><small>Staged</small><strong>{staged}</strong></span><span><small>Orders affected</small><strong>{plan.orders.length}</strong></span>

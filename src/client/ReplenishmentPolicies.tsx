@@ -96,9 +96,9 @@ export default function ReplenishmentPolicies({ tenant, defaultThreshold = 5 }: 
 
   return <>
     <button type="button" className="table-action" onClick={() => setOpen(true)}><Settings2 size={14} /> Replenishment rules</button>
-    {open && <Modal title="Replenishment rules" subtitle="Override OrderMate's workspace-wide defaults only where a SKU/location needs its own minimum, arrival target or preferred mapped supplier." onClose={() => { setOpen(false); setEditing(null); setDraft(blankPolicy(defaultThreshold)); }} wide>
+    {open && <Modal title="Replenishment rules" subtitle="Override Operating Layer's workspace-wide defaults only where a SKU/location needs its own minimum, arrival target or preferred mapped supplier." onClose={() => { setOpen(false); setEditing(null); setDraft(blankPolicy(defaultThreshold)); }} wide>
       <div className="policy-workspace">
-        <div className="policy-list-head"><div><p className="eyebrow">Custom rules</p><h3>Sparse overrides</h3><p>No rule means OrderMate keeps using demand, lead time and the workspace low-stock threshold automatically. Target stock is the quantity you want available when the replenishment is expected to arrive.</p></div>{canWrite && <button type="button" className="secondary" onClick={newPolicy}><Plus size={15} /> Add rule</button>}</div>
+        <div className="policy-list-head"><div><p className="eyebrow">Custom rules</p><h3>Sparse overrides</h3><p>No rule means Operating Layer keeps using demand, lead time and the workspace low-stock threshold automatically. Target stock is the quantity you want available when the replenishment is expected to arrive.</p></div>{canWrite && <button type="button" className="secondary" onClick={newPolicy}><Plus size={15} /> Add rule</button>}</div>
         <DataState loading={policies.isLoading} error={policies.error} empty={!policies.data?.length} emptyText="No custom replenishment rules. Every SKU/location is using the workspace defaults.">
           <div className="policy-list">{policies.data?.map(policy => <div className={`policy-row ${editing === `${policy.variant_id}:${policy.location_id}` ? "active" : ""}`} key={`${policy.variant_id}:${policy.location_id}`}>
             <div><strong>{policy.product_name} · {policy.variant_name}</strong><small className="mono">{policy.sku} · {policy.location_name}</small></div>

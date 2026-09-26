@@ -65,7 +65,7 @@ function BulkProductStatusModal({ tenant, products, status, onClose, onSaved }: 
     onSuccess: onSaved,
   });
 
-  return <Modal title={`${restoring ? "Restore" : "Archive"} ${products.length} selected product${products.length === 1 ? "" : "s"}?`} subtitle="OrderMate verifies the complete selection first, then applies the status change to every selected product in one tenant transaction." onClose={onClose}>
+  return <Modal title={`${restoring ? "Restore" : "Archive"} ${products.length} selected product${products.length === 1 ? "" : "s"}?`} subtitle="Operating Layer verifies the complete selection first, then applies the status change to every selected product in one tenant transaction." onClose={onClose}>
     <div className="confirm-stack">
       <div className="confirm-facts"><span><small>Selected</small><strong>{products.length} product{products.length === 1 ? "" : "s"}</strong></span><span><small>Transaction</small><strong>All selected or none</strong></span></div>
       <p>{restoring ? "Existing product and variant identities become commercially active again. Historical records are unchanged." : "Selected products stop appearing in new orders, purchase orders and replenishment. Tracked physical stock, movements and historical snapshots remain intact."}</p>
@@ -139,7 +139,7 @@ function ProductModal({ tenant, modifiers, onClose, onCreated }: { tenant: Organ
   const updateOption = (optionId: string, patch: Partial<OptionDefinition>) => setOptions(current => current.map(option => option.id === optionId ? { ...option, ...patch } : option));
   const removeOption = (optionId: string) => setOptions(current => current.filter(option => option.id !== optionId));
 
-  return <Modal title="Add product" subtitle="Define option dimensions once; OrderMate generates the sellable combinations. Every variant gets its own SKU, barcode, price, cost and inventory identity." onClose={onClose} wide>
+  return <Modal title="Add product" subtitle="Define option dimensions once; Operating Layer generates the sellable combinations. Every variant gets its own SKU, barcode, price, cost and inventory identity." onClose={onClose} wide>
     <form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
       <Field label="Product name"><input required value={name} onChange={event => setName(event.target.value)} placeholder="Classic T-shirt" /></Field>
       <Field label="Category"><input value={category} onChange={event => setCategory(event.target.value)} placeholder="Apparel" /></Field>

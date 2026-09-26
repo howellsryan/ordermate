@@ -16,8 +16,8 @@ export default function Reports({ tenant }: { tenant: OrganizationSummary }) {
   });
 
   return <>
-    <PageHeader eyebrow="Reporting" title="Operations report" description="Understand stock, fulfilment and purchasing from the same canonical records that run OrderMate. Order values are operational values, not payment or cash-receipt reporting." actions={<div className="report-window" aria-label="Report window">{windows.map(value => <button key={value} type="button" className={days === value ? "active" : ""} onClick={() => setDays(value)}>{value}d</button>)}</div>} />
-    <DataState loading={report.isLoading} error={report.error} empty={!report.data} emptyText="Operational activity will appear here as you use OrderMate.">
+    <PageHeader eyebrow="Reporting" title="Operations report" description="Understand stock, fulfilment and purchasing from the same canonical records that run Operating Layer. Order values are operational values, not payment or cash-receipt reporting." actions={<div className="report-window" aria-label="Report window">{windows.map(value => <button key={value} type="button" className={days === value ? "active" : ""} onClick={() => setDays(value)}>{value}d</button>)}</div>} />
+    <DataState loading={report.isLoading} error={report.error} empty={!report.data} emptyText="Operational activity will appear here as you use Operating Layer.">
       {report.data && <ReportBody report={report.data} />}
     </DataState>
   </>;

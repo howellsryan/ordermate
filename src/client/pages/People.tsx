@@ -33,7 +33,7 @@ export function Customers({ tenant }: { tenant: OrganizationSummary }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ["tenant", tenant.id] });
 
   return <>
-    <PageHeader eyebrow="Orders" title="Customers" description="Simple customer records for order history and contact details without turning OrderMate into a CRM." actions={canWrite ? <button className="primary" onClick={() => setOpen(true)}><Plus size={17} /> Add customer</button> : undefined} />
+    <PageHeader eyebrow="Orders" title="Customers" description="Simple customer records for order history and contact details without turning Operating Layer into a CRM." actions={canWrite ? <button className="primary" onClick={() => setOpen(true)}><Plus size={17} /> Add customer</button> : undefined} />
     {query.error ? <section className="panel people-error"><ErrorText error={query.error} /></section> : <CardList items={query.data || []} loading={query.isLoading} empty="No customers yet." render={customer => <><div className="list-icon"><CircleUserRound size={19} /></div><div><strong>{customer.name}</strong><small>{customer.email || customer.phone || "No contact details"}</small></div>{canWrite && <button className="table-action person-edit" onClick={() => setEditing(customer)}><Pencil size={13} /> Edit</button>}</>} />}
     {open && canWrite && <PersonModal kind="customer" tenant={tenant} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); refresh(); }} />}
     {editing && canWrite && <PersonModal kind="customer" tenant={tenant} existing={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />}

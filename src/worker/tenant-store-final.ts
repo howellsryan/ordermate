@@ -84,7 +84,7 @@ function addUtcDays(isoTimestamp: string, days: number) {
  * Final canonical runtime guards and reviewed operational batch mutations.
  *
  * - Supplier SKU matching is only deterministic when one supplier's code maps
- *   to one OrderMate variant.
+ *   to one Operating Layer variant.
  * - Cycle counts compare against the stock position the operator reviewed and
  *   commit all accepted variances in one SQLite transaction.
  * - Purchase-order submission snapshots a reviewable expected delivery date.

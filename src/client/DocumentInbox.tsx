@@ -79,7 +79,7 @@ export default function DocumentInbox({ tenant }: { tenant: OrganizationSummary 
 
   return <section className="panel document-inbox">
     <div className="panel-heading"><div><p className="eyebrow">Source documents</p><h3>Purchasing inbox</h3></div><FileUp size={21} /></div>
-    <p>{extractionEnabled ? "Upload a supplier PDF or image. OrderMate stores the original in tenant-scoped EU R2, extracts it with Cloudflare Workers AI, then presents a proposal for human review. AI never creates or receives stock directly." : "Supplier PDFs and images are stored in tenant-scoped EU R2. AI extraction is disabled in this deployment until its global Workers AI processing posture is explicitly accepted for your compliance requirements."}</p>
+    <p>{extractionEnabled ? "Upload a supplier PDF or image. Operating Layer stores the original in tenant-scoped EU R2, extracts it with Cloudflare Workers AI, then presents a proposal for human review. AI never creates or receives stock directly." : "Supplier PDFs and images are stored in tenant-scoped EU R2. AI extraction is disabled in this deployment until its global Workers AI processing posture is explicitly accepted for your compliance requirements."}</p>
 
     {!capabilities.isLoading && !extractionEnabled && <div className="document-compliance"><LockKeyhole size={17} /><div><strong>AI extraction disabled by default</strong><span>Source storage remains EU-jurisdictional. Set the Wrangler variable AI_DOCUMENT_EXTRACTION_ENABLED to true only after accepting that Workers AI currently cannot be restricted with Regional Services. Documents stored now can be selectively extracted later if the flag is enabled.</span></div></div>}
     {capabilities.error && <ErrorText error={capabilities.error} />}

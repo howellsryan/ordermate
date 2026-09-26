@@ -236,7 +236,7 @@ function ReceiveSession({ tenant, purchaseOrderId, barcodeByVariant }: { tenant:
       setFeedback(result.completionError
         ? { tone: "warning", message: `Stock was received successfully, but the delivery-note proposal/discrepancy record could not be completed: ${result.completionError}. Do not receive these units again.` }
         : result.discrepancyId
-          ? { tone: "warning", message: "Stock was received successfully. OrderMate opened a delivery discrepancy for the reviewed document/physical differences so purchasing can resolve it separately." }
+          ? { tone: "warning", message: "Stock was received successfully. Operating Layer opened a delivery discrepancy for the reviewed document/physical differences so purchasing can resolve it separately." }
           : { tone: "success", message: "Scanned delivery received and written to stock history." });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] }),

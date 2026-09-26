@@ -123,11 +123,11 @@ export async function buildCatalogueImportPlan(rows: CatalogueImportRow[], exist
     if (!variantName) addIssue(errors, row.rowNumber, "variant_name_required", "Variant name is required.");
     if (!sku) addIssue(errors, row.rowNumber, "sku_required", "SKU is required.");
     if (sku && duplicateSkus.has(sku)) addIssue(errors, row.rowNumber, "duplicate_sku_in_file", `SKU ${row.sku.trim()} appears more than once in this CSV.`);
-    if (sku && existingSkus.has(sku)) addIssue(errors, row.rowNumber, "sku_exists", `SKU ${row.sku.trim()} already exists in OrderMate.`);
+    if (sku && existingSkus.has(sku)) addIssue(errors, row.rowNumber, "sku_exists", `SKU ${row.sku.trim()} already exists in Operating Layer.`);
     if (barcode && duplicateBarcodes.has(barcode)) addIssue(errors, row.rowNumber, "duplicate_barcode_in_file", `Barcode ${barcode} appears more than once in this CSV.`);
-    if (barcode && existingBarcodes.has(barcode)) addIssue(errors, row.rowNumber, "barcode_exists", `Barcode ${barcode} already exists in OrderMate.`);
+    if (barcode && existingBarcodes.has(barcode)) addIssue(errors, row.rowNumber, "barcode_exists", `Barcode ${barcode} already exists in Operating Layer.`);
     if (supplierKey && duplicateSupplierSkus.has(supplierKey)) addIssue(errors, row.rowNumber, "duplicate_supplier_sku_in_file", `Supplier SKU ${row.supplierSku.trim()} appears more than once for ${row.supplierName.trim()} in this CSV.`);
-    if (supplierKey && existingSupplierSkus.has(supplierKey)) addIssue(errors, row.rowNumber, "supplier_sku_exists", `Supplier SKU ${row.supplierSku.trim()} is already mapped for ${row.supplierName.trim()} in OrderMate.`);
+    if (supplierKey && existingSupplierSkus.has(supplierKey)) addIssue(errors, row.rowNumber, "supplier_sku_exists", `Supplier SKU ${row.supplierSku.trim()} is already mapped for ${row.supplierName.trim()} in Operating Layer.`);
 
     const priceMinor = parseMinor(row.price);
     const costMinor = parseMinor(row.cost);

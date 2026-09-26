@@ -281,7 +281,7 @@ export default {
   async queue(batch: MessageBatch, _env: Env) {
     for (const message of batch.messages) {
       try {
-        console.log("OrderMate event", message.id, message.body);
+        console.log("Operating Layer event", message.id, message.body);
         message.ack();
       } catch (cause) {
         console.error("Queue event failed", cause);

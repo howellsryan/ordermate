@@ -67,7 +67,7 @@ export default function Team({ tenant }: { tenant: OrganizationSummary }) {
   };
 
   return <>
-    <PageHeader eyebrow="Access" title="Team & roles" description="One Google identity can belong to multiple OrderMate businesses. Membership is verified before any tenant datastore can be reached." />
+    <PageHeader eyebrow="Access" title="Team & roles" description="One Google identity can belong to multiple Operating Layer businesses. Membership is verified before any tenant datastore can be reached." />
     {query.data?.canManage && <section className="panel invite-panel">
       <div className="panel-heading"><div><p className="eyebrow">Invite member</p><h3>Share an email-bound link</h3></div><UserPlus size={21} /></div>
       <p>The link expires after seven days and only works when the recipient signs in with the Google account matching the invited email.</p>

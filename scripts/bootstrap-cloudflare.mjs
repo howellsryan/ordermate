@@ -21,7 +21,7 @@ const assertD1Configured = () => {
   }
 };
 
-console.log("OrderMate Cloudflare bootstrap");
+console.log("Operating Layer Cloudflare bootstrap");
 console.log("Using the Wrangler version pinned in this repository.\n");
 
 console.log("1) Creating the EU-jurisdiction control-plane D1 database and writing its CONTROL_DB binding...");

@@ -57,7 +57,7 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
           <Field label="Currency"><select value={currency} disabled={!canEdit} onChange={event => setCurrency(event.target.value)}><option value="GBP">GBP — Pound sterling</option><option value="EUR">EUR — Euro</option><option value="USD">USD — US dollar</option></select></Field>
           <Field label="Default tax / VAT rate (%)"><input type="number" min="0" step="0.01" value={tax} disabled={!canEdit} onChange={event => setTax(event.target.value)} /></Field>
           <Field label="Low-stock threshold"><input type="number" min="0" step="1" value={lowStock} disabled={!canEdit} onChange={event => setLowStock(event.target.value)} /></Field>
-          <label className="toggle-row"><input type="checkbox" checked={includeTax} disabled={!canEdit} onChange={event => setIncludeTax(event.target.checked)} /><span><strong>Catalogue prices include tax</strong><small>OrderMate derives net/tax/gross snapshots from the entered selling price.</small></span></label>
+          <label className="toggle-row"><input type="checkbox" checked={includeTax} disabled={!canEdit} onChange={event => setIncludeTax(event.target.checked)} /><span><strong>Catalogue prices include tax</strong><small>Operating Layer derives net/tax/gross snapshots from the entered selling price.</small></span></label>
           {save.error && <ErrorText error={save.error} />}
           {canEdit && <button className="primary" disabled={save.isPending}><Save size={16} /> Save defaults</button>}
         </form>}

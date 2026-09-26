@@ -128,14 +128,14 @@ export default function Stocktake({ tenant }: { tenant: OrganizationSummary }) {
   const locked = commit.isPending || !!commit.error;
 
   return <>
-    <PageHeader eyebrow="Inventory control" title="Cycle count" description="Count only the SKUs you physically check. Blank rows are untouched; zero is an explicit reviewed count. OrderMate compares your count with the stock position you started from before applying any variance." />
+    <PageHeader eyebrow="Inventory control" title="Cycle count" description="Count only the SKUs you physically check. Blank rows are untouched; zero is an explicit reviewed count. Operating Layer compares your count with the stock position you started from before applying any variance." />
 
     <section className="panel stocktake-controls">
       <div className="stocktake-fields">
         <Field label="Stock location"><select disabled={locked} value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}</select></Field>
         <Field label="Count reason" hint="Optional; written onto any variance movements."><input disabled={locked} value={reason} onChange={event => setReason(event.target.value)} maxLength={500} placeholder="Aisle A weekly count" /></Field>
       </div>
-      <div className="stocktake-rule"><ClipboardCheck size={18} /><div><strong>Partial count, by design</strong><span>Only rows with a counted quantity are submitted. OrderMate never assumes an uncounted item is zero.</span></div></div>
+      <div className="stocktake-rule"><ClipboardCheck size={18} /><div><strong>Partial count, by design</strong><span>Only rows with a counted quantity are submitted. Operating Layer never assumes an uncounted item is zero.</span></div></div>
     </section>
 
     {locationId && <section className="panel stocktake-scan">

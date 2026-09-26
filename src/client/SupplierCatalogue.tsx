@@ -31,7 +31,7 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
     <p>Supplier SKU, latest known cost and lead time give receiving, document matching and replenishment a reliable deterministic anchor.</p>
     <DataState loading={mappings.isLoading} error={mappings.error || unlink.error} empty={!mappings.data?.length} emptyText="No supplier variants are linked yet. Add a mapping to unlock better PO matching and replenishment suggestions.">
       <div className="supplier-map-list">
-        <div className="supplier-map-head"><span>Supplier</span><span>OrderMate variant</span><span>Supplier SKU</span><span>Last cost</span><span>Lead time</span><span /></div>
+        <div className="supplier-map-head"><span>Supplier</span><span>Operating Layer variant</span><span>Supplier SKU</span><span>Last cost</span><span>Lead time</span><span /></div>
         {mappings.data?.map(mapping => <div className="supplier-map-row" key={`${mapping.supplier_id}:${mapping.variant_id}`}>
           <div><strong>{mapping.supplier_name}</strong></div>
           <div><strong>{mapping.product_name} · {mapping.variant_name}</strong><small className="mono">{mapping.sku}</small></div>
@@ -75,10 +75,10 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
     onSuccess: onSaved,
   });
 
-  return <Modal title="Link supplier variant" subtitle="This is operational metadata only. It never changes the OrderMate SKU or historical purchase orders." onClose={onClose} wide>
+  return <Modal title="Link supplier variant" subtitle="This is operational metadata only. It never changes the Operating Layer SKU or historical purchase orders." onClose={onClose} wide>
     <form className="form-grid" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-      <Field label="OrderMate variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
+      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
       <Field label="Supplier SKU"><input value={supplierSku} onChange={event => setSupplierSku(event.target.value)} placeholder="Their code for this item" /></Field>
       <Field label="Last known unit cost (£)"><input type="number" min="0" step="0.01" value={lastCost} onChange={event => setLastCost(event.target.value)} /></Field>
       <Field label="Typical lead time (days)"><input type="number" min="0" max="3650" step="1" value={leadTime} onChange={event => setLeadTime(event.target.value)} /></Field>
