@@ -1,0 +1,65 @@
+@layer components {
+  .demo-launcher {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 80;
+    width: min(390px, calc(100vw - 28px));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 14px 14px 17px;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 16px;
+    background: #17201d;
+    color: #fff;
+    box-shadow: 0 18px 54px rgba(12, 18, 15, .24);
+  }
+
+  .demo-launcher > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .demo-launcher > div > span { color: #c6e36c; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+  .demo-launcher strong { font-size: 13px; }
+  .demo-launcher small { color: #aeb9b2; font-size: 9px; line-height: 1.4; }
+  .demo-launcher button {
+    flex: 0 0 auto;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 13px;
+    border: 0;
+    border-radius: 10px;
+    background: #c6e36c;
+    color: #25300d;
+    font-weight: 800;
+    font-size: 11px;
+  }
+
+  .demo-workspace-banner {
+    margin: -10px 0 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 15px 16px;
+    border: 1px solid #d9e4b5;
+    border-radius: 14px;
+    background: #f0f5df;
+    color: #445124;
+  }
+
+  .demo-workspace-banner > div:first-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .demo-workspace-banner strong { font-size: 12px; }
+  .demo-workspace-banner span { max-width: 760px; color: #687649; font-size: 10px; line-height: 1.5; }
+  .demo-workspace-banner > div:last-child { display: flex; gap: 8px; flex: 0 0 auto; }
+  .demo-workspace-banner button.secondary { background: rgba(255,255,255,.7); border-color: #d4ddba; }
+
+  @media (max-width: 720px) {
+    .demo-launcher { right: 14px; bottom: 14px; left: 14px; width: auto; }
+    .demo-workspace-banner { align-items: flex-start; flex-direction: column; }
+    .demo-workspace-banner > div:last-child { width: 100%; }
+    .demo-workspace-banner > div:last-child button { flex: 1; }
+  }
+}
