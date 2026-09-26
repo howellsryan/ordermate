@@ -33,6 +33,10 @@ function mappingKey(supplierId: string, variantId: string) {
   return `${supplierId}:${variantId}`;
 }
 
+function normalizeSupplierSku(value: string) {
+  return value.trim().normalize("NFKC").toUpperCase();
+}
+
 function currentDemoSeedToken() {
   const raw = window.localStorage.getItem(DEMO_DATA_KEY);
   if (!raw) return null;
@@ -97,6 +101,19 @@ export async function demoSupplierVariants(): Promise<SupplierVariant[]> {
 
 export async function demoSaveSupplierVariant(init?: RequestInit): Promise<SupplierVariant> {
   const input = parseBody(init);
+  const mappings = await demoTenantApi<SupplierVariant[]>("/supplier-variants");
+  const supplierSku = input.supplierSku?.trim() || "";
+  if (supplierSku) {
+    const normalized = normalizeSupplierSku(supplierSku);
+    const conflict = mappings.find(mapping => mapping.supplier_id === input.supplierId
+      && mapping.variant_id !== input.variantId
+      && mapping.supplier_sku
+      && normalizeSupplierSku(mapping.supplier_sku) === normalized);
+    if (conflict) {
+      throw new Error(`Supplier SKU ${supplierSku} is already mapped to ${conflict.product_name} · ${conflict.variant_name} (${conflict.sku})`);
+    }
+  }
+
   const result = await demoTenantApi<SupplierVariant>("/supplier-variants", init);
   const terms = readTerms();
   const key = mappingKey(input.supplierId, input.variantId);
