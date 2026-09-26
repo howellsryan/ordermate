@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WorkspaceFeatureKey } from "../shared/features";
 import { tenantApi } from "./api";
+import { demoFeatures, demoFeaturesApi } from "./demo-features";
+import { isDemoTenant } from "./demo-store";
 
 export type WorkspaceFeatureState = {
   key: WorkspaceFeatureKey;
@@ -17,10 +19,24 @@ export type WorkspaceFeatureState = {
 
 export type FeaturesResponse = { features: WorkspaceFeatureState[] };
 
+export async function getWorkspaceFeatures(tenantId: string): Promise<FeaturesResponse> {
+  return isDemoTenant(tenantId) ? demoFeatures() : tenantApi<FeaturesResponse>(tenantId, "/features");
+}
+
+export async function updateWorkspaceFeature(tenantId: string, key: WorkspaceFeatureKey, enabled: boolean): Promise<FeaturesResponse> {
+  if (isDemoTenant(tenantId)) {
+    return demoFeaturesApi(`/features/${key}`, { method: "PATCH", body: JSON.stringify({ enabled }) }) as Promise<FeaturesResponse>;
+  }
+  return tenantApi<FeaturesResponse>(tenantId, `/features/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export function useWorkspaceFeatures(tenantId: string) {
   const query = useQuery({
     queryKey: ["tenant", tenantId, "features"],
-    queryFn: () => tenantApi<FeaturesResponse>(tenantId, "/features"),
+    queryFn: () => getWorkspaceFeatures(tenantId),
   });
   const enabled = useMemo(
     () => new Set(query.data?.features.filter(feature => feature.enabled).map(feature => feature.key) || []),
