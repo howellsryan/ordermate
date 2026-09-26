@@ -3,6 +3,7 @@ import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can } from "./permissions";
 import type { TenantStore } from "./tenant-store-runtime";
+import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 type Env = AuthEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
@@ -46,6 +47,9 @@ movementHistoryApp.get("/", async c => {
   if (!can(membership.role, "inventory", "read")) return c.json({ error: "Insufficient permission" }, 403);
 
   const stub = c.env.TENANT_STORES.jurisdiction("eu").getByName(tenantId);
+  const featureEnabled = await workspaceFeatureEnabled(stub, "inventory_history", { id: session.user.id, role: membership.role, name: session.user.name });
+  if (!featureEnabled) return c.json({ error: "Inventory history is disabled or unavailable for this workspace." }, 404);
+
   const headers = new Headers({
     "x-ordermate-actor-id": session.user.id,
     "x-ordermate-actor-role": membership.role,
