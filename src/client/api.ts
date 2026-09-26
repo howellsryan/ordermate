@@ -9,6 +9,14 @@ export async function errorFrom(response: Response) {
 }
 
 export async function getSession(): Promise<SessionPayload | null> {
+  // Better Auth deliberately returns 200 + null for an anonymous visitor. Probe
+  // that lightweight endpoint first so the public landing page does not create
+  // an expected 401 network error before we ask for the richer OrderMate session.
+  const authResponse = await fetch("/api/auth/get-session", { credentials: "include" });
+  if (!authResponse.ok) throw await errorFrom(authResponse);
+  const authSession: unknown = await authResponse.json();
+  if (!authSession) return null;
+
   const response = await fetch("/api/session", { credentials: "include" });
   if (response.status === 401) return null;
   if (!response.ok) throw await errorFrom(response);
