@@ -79,8 +79,9 @@ describe("tenant schema evolution", () => {
       expect(supplierVariantColumns.some(column => column.name === "order_multiple")).toBe(true);
       expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='crm_contacts'").toArray()).toHaveLength(1);
       expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='service_invoices'").toArray()).toHaveLength(1);
-      const settingsColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(tenant_settings)").toArray();
-      expect(settingsColumns.some(column => column.name === "invoice_address_json")).toBe(true);
+      expect(state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='business_profile'").toArray()).toHaveLength(1);
+      const profileColumns = state.storage.sql.exec<{ name: string }>("PRAGMA table_info(business_profile)").toArray().map(column => column.name);
+      expect(profileColumns).toEqual(expect.arrayContaining(["address_json", "email", "phone", "vat_number", "company_number"]));
     });
   });
 
