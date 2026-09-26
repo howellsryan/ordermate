@@ -56,40 +56,22 @@
   .demo-workspace-banner > div:last-child { display: flex; gap: 8px; flex: 0 0 auto; }
   .demo-workspace-banner button.secondary { background: rgba(255,255,255,.7); border-color: #d4ddba; }
 
-  /* Demo data must never imply that browser-only content is stored in R2 or processed by AI. */
-  .workspace:has(> .demo-workspace-banner) .document-inbox > *,
+  .demo-document-local { display: grid; gap: 14px; }
+  .demo-document-local .document-state { min-height: 150px; }
+
+  /* Delivery-note extraction requires a real file pipeline, so the guest demo
+     presents a clear local-only boundary instead of a button that can fail. */
   .workspace:has(> .demo-workspace-banner) .delivery-assist > * {
     display: none;
   }
 
-  .workspace:has(> .demo-workspace-banner) .document-inbox::before,
   .workspace:has(> .demo-workspace-banner) .delivery-assist::before {
     display: block;
     padding: 2px;
     color: #687649;
     font-size: 12px;
     line-height: 1.6;
-  }
-
-  .workspace:has(> .demo-workspace-banner) .document-inbox::before {
-    content: "Local demo: source-document upload and AI extraction are disabled so no file can leave this browser. Purchasing, receiving and stock workflows remain fully interactive with the seeded demo data.";
-  }
-
-  .workspace:has(> .demo-workspace-banner) .delivery-assist::before {
-    content: "Local demo: delivery-note file upload and AI extraction are disabled. Receive the seeded purchase orders manually to exercise the normal audited warehouse flow.";
-  }
-
-  .workspace:has(> .demo-workspace-banner) .settings-grid .settings-card:nth-child(2) > * {
-    display: none;
-  }
-
-  .workspace:has(> .demo-workspace-banner) .settings-grid .settings-card:nth-child(2)::before {
-    content: "Guest demo storage\A\AThis workspace has no cloud tenancy or Google identity. Its sample catalogue, orders, purchasing, inventory, settings and activity are stored only in this browser's localStorage. Reset demo restores the original seed; Exit demo returns to the public site.";
-    white-space: pre-line;
-    display: block;
-    color: #536057;
-    font-size: 12px;
-    line-height: 1.65;
+    content: "Local demo: delivery-note file upload and AI extraction are unavailable because files never leave this browser. Receive the seeded purchase orders manually to exercise the normal audited warehouse flow.";
   }
 
   @media (max-width: 720px) {
