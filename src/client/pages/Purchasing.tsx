@@ -1,0 +1,174 @@
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PackageCheck, Plus, Search, Trash2, XCircle } from "lucide-react";
+import type { OrganizationSummary } from "../../shared/types";
+import type { PurchasingSavedViewConfig } from "../../shared/saved-views";
+import DeliveryDiscrepancies from "../DeliveryDiscrepancies";
+import DocumentInbox from "../DocumentInbox";
+import Replenishment, { type PurchaseOrderSeed } from "../Replenishment";
+import { PurchaseOrderDetailModal } from "../RecordDetails";
+import SavedViews from "../SavedViews";
+import { calendarDate, date, isOverdueDate, money, tenantApi } from "../api";
+import type { Location, Product, PurchaseOrder, PurchaseOrderDetail, Supplier } from "../model";
+import { DataState, ErrorText, Field, Modal, PageHeader, Status, pounds } from "../ui";
+
+type DraftLine = { id: string; variantId: string; quantity: string; cost: string; tax: string };
+
+const DEFAULT_VIEW: PurchasingSavedViewConfig = { query: "", supplierId: null, status: "all", due: "all" };
+
+function purchaseOrderOverdue(po: PurchaseOrder) {
+  return ["ordered", "partially_received"].includes(po.status) && isOverdueDate(po.expected_delivery_date);
+}
+
+function utcDateOnly(offsetDays = 0) {
+  const value = new Date();
+  value.setUTCDate(value.getUTCDate() + offsetDays);
+  return value.toISOString().slice(0, 10);
+}
+
+function purchaseOrderMatchesDue(po: PurchaseOrder, due: PurchasingSavedViewConfig["due"]) {
+  if (due === "all") return true;
+  const open = ["ordered", "partially_received"].includes(po.status);
+  if (!open) return false;
+  if (due === "overdue") return purchaseOrderOverdue(po);
+  if (due === "no_date") return !po.expected_delivery_date;
+  if (!po.expected_delivery_date) return false;
+  const today = utcDateOnly();
+  const end = utcDateOnly(7);
+  return po.expected_delivery_date >= today && po.expected_delivery_date <= end;
+}
+
+export default function Purchasing({ tenant }: { tenant: OrganizationSummary }) {
+  const qc = useQueryClient();
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [poSeed, setPoSeed] = useState<PurchaseOrderSeed | null>(null);
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [view, setView] = useState<PurchasingSavedViewConfig>(DEFAULT_VIEW);
+  const canWrite = tenant.role !== "viewer";
+  const purchaseOrders = useQuery({ queryKey: ["tenant", tenant.id, "purchase-orders"], queryFn: () => tenantApi<PurchaseOrder[]>(tenant.id, "/purchase-orders") });
+  const suppliers = useQuery({ queryKey: ["tenant", tenant.id, "suppliers"], queryFn: () => tenantApi<Supplier[]>(tenant.id, "/suppliers") });
+  const filtered = useMemo(() => {
+    const needle = view.query.trim().toLocaleLowerCase();
+    return (purchaseOrders.data || []).filter(po => {
+      if (view.supplierId && po.supplier_id !== view.supplierId) return false;
+      if (view.status !== "all" && po.status !== view.status) return false;
+      if (!purchaseOrderMatchesDue(po, view.due)) return false;
+      if (needle && ![po.number, po.supplier_name, po.location_name, po.status].some(value => String(value || "").toLocaleLowerCase().includes(needle))) return false;
+      return true;
+    });
+  }, [purchaseOrders.data, view]);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-orders"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "inventory"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "dashboard"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "attention"] });
+    if (viewId) qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "purchase-order", viewId] });
+  };
+  const submit = useMutation({ mutationFn: (poId: string) => tenantApi(tenant.id, `/purchase-orders/${poId}/submit`, { method: "POST", body: JSON.stringify({}) }), onSuccess: refresh });
+  const openBlankPo = () => { setPoSeed(null); setCreateOpen(true); };
+  const openSuggestedPo = (seed: PurchaseOrderSeed) => { setPoSeed(seed); setCreateOpen(true); };
+
+  useEffect(() => setView(DEFAULT_VIEW), [tenant.id]);
+
+  return <>
+    <PageHeader eyebrow="Incoming" title="Purchase orders" description="Plan incoming stock, preserve supplier costs and tax, then receive partially or in full into the selected location." actions={canWrite ? <button className="primary" onClick={openBlankPo}><Plus size={17} /> New purchase order</button> : undefined} />
+    <Replenishment tenant={tenant} onCreatePurchaseOrder={openSuggestedPo} />
+    <DocumentInbox tenant={tenant} />
+    <DeliveryDiscrepancies tenant={tenant} />
+    <section className="panel view-toolbar">
+      <div className="view-filters">
+        <label className="filter-search"><Search size={15} /><input aria-label="Search purchase orders" value={view.query} onChange={event => setView(current => ({ ...current, query: event.target.value }))} placeholder="PO, supplier, destination or status…" /></label>
+        <select aria-label="Filter purchase orders by supplier" value={view.supplierId || ""} onChange={event => setView(current => ({ ...current, supplierId: event.target.value || null }))}><option value="">All suppliers</option>{suppliers.data?.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select>
+        <select aria-label="Filter purchase orders by status" value={view.status} onChange={event => setView(current => ({ ...current, status: event.target.value as PurchasingSavedViewConfig["status"] }))}><option value="all">All statuses</option><option value="draft">Draft</option><option value="ordered">Ordered</option><option value="partially_received">Partially received</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select>
+        <select aria-label="Filter purchase orders by expected delivery" value={view.due} onChange={event => setView(current => ({ ...current, due: event.target.value as PurchasingSavedViewConfig["due"] }))}><option value="all">All due dates</option><option value="overdue">Overdue</option><option value="due_7_days">Due in 7 days</option><option value="no_date">No expected date</option></select>
+        <button type="button" className="table-action quiet" disabled={JSON.stringify(view) === JSON.stringify(DEFAULT_VIEW)} onClick={() => setView(DEFAULT_VIEW)}>Clear</button>
+      </div>
+      <SavedViews tenant={tenant} page="purchasing" config={view} onApply={setView} />
+    </section>
+    <div className="panel table-panel"><DataState loading={purchaseOrders.isLoading} error={purchaseOrders.error} empty={!filtered.length} emptyText={purchaseOrders.data?.length ? "No purchase orders match the current view." : "Create your first purchase order to start tracking incoming inventory."}><table><thead><tr><th>PO</th><th>Supplier</th><th>Destination</th><th>Expected</th><th>Lines</th><th>Total</th><th>Status</th><th /></tr></thead><tbody>{filtered.map(po => { const overdue = purchaseOrderOverdue(po); return <tr key={po.id} className={overdue ? "po-row-overdue" : ""}><td><button className="record-link" onClick={() => setViewId(po.id)}>{po.number}</button><small>{date(po.created_at)}</small></td><td>{po.supplier_name}</td><td>{po.location_name}</td><td><span className={`po-due-cell ${overdue ? "overdue" : ""}`}><strong>{po.expected_delivery_date ? calendarDate(po.expected_delivery_date) : "—"}</strong><small>{overdue ? "Overdue" : po.status === "draft" && !po.expected_delivery_date ? "Set manually or on submit" : po.expected_delivery_date ? "Expected arrival" : "No lead-time estimate"}</small></span></td><td>{po.line_count}</td><td>{money(po.total_minor, po.currency)}</td><td><Status value={po.status} /></td><td className="row-actions">{canWrite && po.status === "draft" && <button className="table-action" onClick={() => submit.mutate(po.id)} disabled={submit.isPending}>Submit</button>}{canWrite && ["ordered", "partially_received"].includes(po.status) && <button className="table-action" onClick={() => setReceivingId(po.id)}><PackageCheck size={14} /> Receive</button>}{canWrite && ["draft", "ordered", "partially_received"].includes(po.status) && <button className="table-action quiet" onClick={() => setCancelId(po.id)}><XCircle size={14} /> Cancel</button>}</td></tr>; })}</tbody></table></DataState></div>
+    {viewId && <PurchaseOrderDetailModal tenant={tenant} purchaseOrderId={viewId} onClose={() => setViewId(null)} />}
+    {createOpen && canWrite && <PurchaseOrderModal tenant={tenant} seed={poSeed || undefined} onClose={() => { setCreateOpen(false); setPoSeed(null); }} onCreated={() => { setCreateOpen(false); setPoSeed(null); refresh(); }} />}
+    {receivingId && canWrite && <ReceiveModal tenant={tenant} purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} onDone={() => { setReceivingId(null); refresh(); }} />}
+    {cancelId && canWrite && <CancelPurchaseOrderModal tenant={tenant} purchaseOrderId={cancelId} onClose={() => setCancelId(null)} onDone={() => { setCancelId(null); refresh(); }} />}
+  </>;
+}
+
+function PurchaseOrderModal({ tenant, seed, onClose, onCreated }: { tenant: OrganizationSummary; seed?: PurchaseOrderSeed; onClose: () => void; onCreated: () => void }) {
+  const suppliers = useQuery({ queryKey: ["tenant", tenant.id, "suppliers"], queryFn: () => tenantApi<Supplier[]>(tenant.id, "/suppliers") });
+  const locations = useQuery({ queryKey: ["tenant", tenant.id, "locations"], queryFn: () => tenantApi<Location[]>(tenant.id, "/locations") });
+  const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
+  const variants = useMemo(() => (products.data || [])
+    .filter(product => product.status === "active")
+    .flatMap(product => product.variants
+      .filter(variant => variant.active !== 0)
+      .map(variant => ({ ...variant, productName: product.name }))), [products.data]);
+  const [supplierId, setSupplierId] = useState(seed?.supplierId || "");
+  const [locationId, setLocationId] = useState(seed?.locationId || "");
+  const [notes, setNotes] = useState(seed ? `Replenishment suggestion for ${seed.sourceLabel} — review before submitting.` : "");
+  const [lines, setLines] = useState<DraftLine[]>(seed ? [{
+    id: crypto.randomUUID(),
+    variantId: seed.variantId,
+    quantity: String(seed.quantity),
+    cost: seed.costMinor == null ? "" : (seed.costMinor / 100).toFixed(2),
+    tax: "",
+  }] : [{ id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }]);
+
+  useEffect(() => {
+    if (!seed || !variants.length) return;
+    const variant = variants.find(item => item.id === seed.variantId);
+    if (!variant) return;
+    setLines(current => current.map(line => line.variantId === seed.variantId ? {
+      ...line,
+      cost: line.cost || (variant.cost_minor / 100).toFixed(2),
+      tax: line.tax || (variant.tax_rate_bps / 100).toString(),
+    } : line));
+  }, [seed?.variantId, variants.length]);
+
+  const patchLine = (lineId: string, patch: Partial<DraftLine>) => setLines(current => current.map(line => line.id === lineId ? { ...line, ...patch } : line));
+  const selectVariant = (lineId: string, variantId: string) => {
+    const variant = variants.find(item => item.id === variantId);
+    patchLine(lineId, { variantId, cost: variant ? (variant.cost_minor / 100).toFixed(2) : "", tax: variant ? (variant.tax_rate_bps / 100).toString() : "20" });
+  };
+  const mutation = useMutation({
+    mutationFn: () => tenantApi(tenant.id, "/purchase-orders", {
+      method: "POST",
+      body: JSON.stringify({ supplierId, locationId, notes: notes || undefined, lines: lines.map(line => ({ variantId: line.variantId, quantity: Number(line.quantity), unitCostMinor: pounds(line.cost), taxRateBps: Math.round((Number(line.tax) || 0) * 100) })) }),
+    }),
+    onSuccess: onCreated,
+  });
+  const invalidLine = lines.some(line => !line.variantId || !Number.isInteger(Number(line.quantity)) || Number(line.quantity) <= 0 || line.cost === "" || Number(line.cost) < 0 || line.tax === "" || Number(line.tax) < 0 || Number(line.tax) > 100);
+
+  return <Modal title={seed ? "Review suggested purchase order" : "New purchase order"} subtitle={seed ? "Operating Layer has pre-filled the supplier, destination and suggested quantity. Review every commercial value before creating the draft." : "Costs and tax are snapshotted now. Receiving later creates the actual stock movements."} onClose={onClose} wide><form className="form-grid" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.data?.map(supplier => <option value={supplier.id} key={supplier.id}>{supplier.name}</option>)}</select></Field><Field label="Receive into"><select required value={locationId} onChange={event => setLocationId(event.target.value)}><option value="">Select location</option>{locations.data?.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field><Field label="Notes"><input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Supplier reference, delivery note…" /></Field><div />
+      {seed && <div className="suggestion-review full-span"><strong>Suggested, not automatic</strong><span>The recommendation only pre-fills this draft. Nothing affects incoming or on-hand stock until you create, submit and later receive the PO.</span></div>}
+      <div className="form-section full-span"><div><p className="eyebrow">Lines</p><h3>What are you ordering?</h3></div><button type="button" className="secondary" onClick={() => setLines(current => [...current, { id: crypto.randomUUID(), variantId: "", quantity: "1", cost: "", tax: "20" }])}><Plus size={15} /> Add line</button></div>
+      <div className="line-editor full-span"><div className="line-editor-head"><span>Variant</span><span>Qty</span><span>Unit cost</span><span>Tax %</span><span /></div>{lines.map(line => <div className="line-editor-row" key={line.id}><select required value={line.variantId} onChange={event => selectVariant(line.id, event.target.value)}><option value="">Choose active product variant</option>{variants.map(variant => <option value={variant.id} key={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select><input required type="number" min="1" step="1" value={line.quantity} onChange={event => patchLine(line.id, { quantity: event.target.value })} /><input required type="number" min="0" step="0.01" value={line.cost} onChange={event => patchLine(line.id, { cost: event.target.value })} /><input required type="number" min="0" max="100" step="0.01" value={line.tax} onChange={event => patchLine(line.id, { tax: event.target.value })} /><button type="button" className="icon-button" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines(current => current.filter(item => item.id !== line.id))}><Trash2 size={16} /></button></div>)}</div>
+      {(!suppliers.data?.length || !locations.data?.length || !variants.length) && <p className="form-note full-span">A purchase order needs at least one supplier, location and active product variant. Archived products remain visible in Inventory and history but cannot be newly purchased.</p>}
+      {mutation.error && <ErrorText error={mutation.error} />}
+      <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !supplierId || !locationId || invalidLine}>Create draft PO</button></div>
+    </form></Modal>;
+}
+
+function ReceiveModal({ tenant, purchaseOrderId, onClose, onDone }: { tenant: OrganizationSummary; purchaseOrderId: string; onClose: () => void; onDone: () => void }) {
+  const detail = useQuery({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId], queryFn: () => tenantApi<PurchaseOrderDetail>(tenant.id, `/purchase-orders/${purchaseOrderId}`) });
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const mutation = useMutation({
+    mutationFn: () => {
+      const lines = detail.data!.lines.map(line => ({ lineId: line.id, quantity: Number(quantities[line.id] ?? (line.quantity_ordered - line.quantity_received)) })).filter(line => line.quantity > 0);
+      return tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/receive`, { method: "POST", body: JSON.stringify({ lines }) });
+    },
+    onSuccess: onDone,
+  });
+
+  return <Modal title={detail.data ? `Receive ${detail.data.number}` : "Receive purchase order"} subtitle="Receive exactly what arrived. Outstanding quantities remain incoming until a later receipt." onClose={onClose} wide>{detail.isLoading ? <div className="empty-state"><div className="loader" /></div> : detail.error ? <ErrorText error={detail.error} /> : <form className="form-grid one" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><div className="receive-list">{detail.data?.lines.map(line => { const remaining = line.quantity_ordered - line.quantity_received; return <div className="receive-row" key={line.id}><div><strong>{line.description_snapshot}</strong><small className="mono">{line.sku_snapshot}</small></div><span>{line.quantity_received} received / {line.quantity_ordered} ordered</span><input aria-label={`Receive ${line.description_snapshot}`} type="number" min="0" max={remaining} step="1" disabled={remaining === 0} value={quantities[line.id] ?? String(remaining)} onChange={event => setQuantities(current => ({ ...current, [line.id]: event.target.value }))} /></div>; })}</div>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={mutation.isPending || !detail.data?.lines.some(line => Number(quantities[line.id] ?? (line.quantity_ordered - line.quantity_received)) > 0)}>Receive selected stock</button></div></form>}</Modal>;
+}
+
+function CancelPurchaseOrderModal({ tenant, purchaseOrderId, onClose, onDone }: { tenant: OrganizationSummary; purchaseOrderId: string; onClose: () => void; onDone: () => void }) {
+  const detail = useQuery({ queryKey: ["tenant", tenant.id, "purchase-order", purchaseOrderId], queryFn: () => tenantApi<PurchaseOrderDetail>(tenant.id, `/purchase-orders/${purchaseOrderId}`) });
+  const mutation = useMutation({ mutationFn: () => tenantApi(tenant.id, `/purchase-orders/${purchaseOrderId}/cancel`, { method: "POST", body: JSON.stringify({}) }), onSuccess: onDone });
+  const received = detail.data?.lines.reduce((sum, line) => sum + line.quantity_received, 0) ?? 0;
+  const outstanding = detail.data?.lines.reduce((sum, line) => sum + (line.quantity_ordered - line.quantity_received), 0) ?? 0;
+  return <Modal title={detail.data ? `Cancel ${detail.data.number}?` : "Cancel purchase order?"} subtitle="Cancellation stops the remaining supplier commitment; it never rewrites stock that has physically been received." onClose={onClose}>{detail.isLoading ? <div className="detail-loading"><div className="loader" /></div> : detail.error ? <ErrorText error={detail.error} /> : <div className="confirm-stack"><div className="confirm-facts"><span><small>Already received</small><strong>{received} units stay on hand</strong></span><span><small>Outstanding</small><strong>{outstanding} units stop showing as incoming</strong></span></div><p>No inventory movement is created for cancellation because no physical stock moves.</p>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button className="secondary" onClick={onClose}>Keep purchase order</button><button className="danger-button" disabled={mutation.isPending} onClick={() => mutation.mutate()}><XCircle size={16} /> Cancel purchase order</button></div></div>}</Modal>;
+}

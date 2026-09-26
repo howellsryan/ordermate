@@ -1,0 +1,16 @@
+@layer components {
+  .camera-scan-button { white-space: nowrap; }
+  .camera-scanner { display: flex; flex-direction: column; gap: 11px; }
+  .camera-preview { position: relative; min-height: 280px; border-radius: 13px; overflow: hidden; background: #171b18; display: grid; place-items: center; }
+  .camera-preview video { width: 100%; min-height: 280px; max-height: 62vh; object-fit: cover; display: block; }
+  .camera-target { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%,-50%); width: min(76%, 340px); aspect-ratio: 2.15 / 1; border: 2px solid rgba(255,255,255,.88); border-radius: 14px; display: grid; place-items: center; color: rgba(255,255,255,.86); box-shadow: 0 0 0 999px rgba(0,0,0,.28); pointer-events: none; }
+  .camera-loading { position: absolute; inset: auto auto 12px 12px; min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 8px; background: rgba(21,25,22,.78); color: #fff; font-size: 8.5px; font-weight: 700; backdrop-filter: blur(5px); }
+  .camera-help { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 9px; background: #f4f5f0; color: var(--muted); }
+  .camera-help strong { color: var(--ink-2); font-size: 9px; }
+  .camera-help span { font-size: 8px; line-height: 1.45; }
+
+  @media (max-width: 620px) {
+    .camera-preview, .camera-preview video { min-height: 340px; }
+    .camera-scan-button { flex: 1; justify-content: center; }
+  }
+}

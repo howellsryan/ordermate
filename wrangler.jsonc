@@ -1,0 +1,123 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ordermate",
+  "main": "src/worker/main.ts",
+  "compatibility_date": "2026-09-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/", "/robots.txt", "/sitemap.xml"]
+  },
+  "vars": {
+    "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+    "APP_ENV": "production"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "CONTROL_DB",
+      "database_name": "ordermate-control",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations/control"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TENANT_STORES",
+        "class_name": "TenantStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TenantStore"]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "ordermate-documents",
+      "jurisdiction": "eu"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "EVENTS_QUEUE",
+        "queue": "ordermate-events"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "ordermate-events",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "dead_letter_queue": "ordermate-events-dead"
+      }
+    ]
+  },
+  "env": {
+    "staging": {
+      "name": "ordermate-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+        "APP_ENV": "staging"
+      },
+      "ai": {
+        "binding": "AI"
+      },
+      "d1_databases": [
+        {
+          "binding": "CONTROL_DB",
+          "database_name": "ordermate-staging-control",
+          "database_id": "dfd9cfd8-c33e-469d-9ce2-1fd6e6996c24",
+          "migrations_dir": "migrations/control"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "TENANT_STORES",
+            "class_name": "TenantStore"
+          }
+        ]
+      },
+      "r2_buckets": [
+        {
+          "binding": "DOCUMENTS",
+          "bucket_name": "ordermate-staging-documents",
+          "jurisdiction": "eu"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "EVENTS_QUEUE",
+            "queue": "ordermate-staging-events"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "ordermate-staging-events",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "retry_delay": 30,
+            "dead_letter_queue": "ordermate-staging-events-dead"
+          }
+        ]
+      }
+    }
+  }
+}

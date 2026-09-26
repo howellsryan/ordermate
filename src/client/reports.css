@@ -1,0 +1,48 @@
+@layer components {
+  .report-window { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #fffefa; }
+  .report-window button { min-width: 43px; min-height: 31px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 10px; font-weight: 800; }
+  .report-window button.active { background: var(--ink); color: white; }
+  .reports-stack { display: grid; gap: 14px; }
+  .report-kpis { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+  .report-metric { min-height: 105px; padding: 14px; display: flex; gap: 12px; align-items: center; }
+  .report-metric-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #eff2e7; color: var(--ink); flex: 0 0 auto; }
+  .report-metric > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .report-metric small { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+  .report-metric strong { color: var(--ink); font-size: clamp(17px, 2vw, 24px); letter-spacing: -.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .report-metric span { color: var(--muted); font-size: 10px; }
+  .report-grid.two { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .report-card { padding: 14px; min-width: 0; }
+  .report-card .panel-heading > div > span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+  .report-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+  .report-facts.compact { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .report-facts > div { min-height: 74px; padding: 11px; display: flex; flex-direction: column; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 10px; background: #fffefa; }
+  .report-facts > div.warning { border-color: #e3c5b2; background: #fff8f3; }
+  .report-facts small { color: var(--muted); font-size: 9px; }
+  .report-facts strong { color: var(--ink); font-size: 18px; }
+  .report-facts strong em { margin-left: 4px; color: var(--muted); font-size: 9px; font-style: normal; font-weight: 700; }
+  .trend-bars { height: 165px; margin-top: 14px; display: flex; align-items: end; gap: 3px; border-bottom: 1px solid var(--line); overflow-x: auto; padding-top: 10px; }
+  .trend-column { min-width: 8px; flex: 1 0 8px; height: 100%; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 5px; }
+  .trend-column > span { min-height: 0; border-radius: 4px 4px 0 0; background: #65745e; }
+  .trend-bars.movement .trend-column > span { background: #788582; }
+  .trend-column small { height: 13px; color: var(--muted); font-size: 7px; text-align: center; writing-mode: vertical-rl; display: none; }
+  .trend-column:nth-child(5n + 1) small, .trend-column:last-child small { display: block; }
+  .report-list { display: grid; margin-top: 10px; border-top: 1px solid var(--line); }
+  .report-list > div { min-height: 54px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+  .report-list > div > span { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .report-list strong { color: var(--ink); font-size: 11px; }
+  .report-list small { color: var(--muted); font-size: 9px; }
+  .report-list.ranked b { width: 24px; color: var(--muted); font-size: 10px; text-align: center; }
+  .report-empty { margin: 14px 0 0; color: var(--muted); font-size: 10px; }
+  .report-generated { margin: 0; color: var(--muted); font-size: 9px; text-align: right; }
+
+  @media (max-width: 1050px) {
+    .report-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  }
+  @media (max-width: 720px) {
+    .report-grid.two, .report-kpis { grid-template-columns: 1fr; }
+    .report-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .report-window { width: 100%; }
+    .report-window button { flex: 1; }
+    .trend-bars { height: 140px; }
+  }
+}

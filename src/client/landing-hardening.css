@@ -1,0 +1,39 @@
+@layer landing {
+  /* Keep the 3D hero alive without creating a perpetual-motion accessibility burden. */
+  .hero-product-card {
+    animation: hero-float 3.6s cubic-bezier(.2,.8,.2,1) 1 alternate both;
+  }
+
+  .hero-float {
+    animation: float-card 3.1s cubic-bezier(.2,.8,.2,1) 1 alternate both;
+  }
+
+  .landing-nav a {
+    min-height: 40px;
+    padding-inline: 2px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .landing-footer > a {
+    min-height: 40px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .feature-stock-visual > div {
+    align-items: center;
+  }
+
+  .feature-stock-visual i:nth-child(1) { width: 72% !important; }
+  .feature-stock-visual i:nth-child(2) { width: 44% !important; }
+  .feature-stock-visual i:nth-child(3) { width: 88% !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-product-card,
+    .hero-float {
+      animation: none !important;
+    }
+  }
+}

@@ -1,0 +1,51 @@
+@layer components {
+  .record-detail { display: flex; flex-direction: column; gap: 15px; }
+  .record-summary { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .summary-cell { min-height: 72px; padding: 13px; display: flex; flex-direction: column; justify-content: center; gap: 5px; border-left: 1px solid var(--line); background: #fffefa; }
+  .summary-cell:first-child { border-left: 0; }
+  .summary-cell small { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+  .summary-cell strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-cell.summary-strong { background: #eff2e7; }
+  .summary-cell.summary-strong strong { font-size: 17px; letter-spacing: -.03em; }
+  .record-status-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 10px; }
+  .record-status-row > span { display: inline-flex; gap: 7px; align-items: center; }
+  .po-overdue-flag { padding: 5px 8px; border-radius: 8px; background: #f8e9e6; color: #985047; font-weight: 800; }
+  .po-due-editor { display: grid; grid-template-columns: minmax(0,1fr) minmax(155px, 190px) auto; gap: 10px; align-items: center; padding: 12px; border: 1px solid #dfe2d7; border-radius: 11px; background: #f8f9f4; }
+  .po-due-editor > div { display: flex; flex-direction: column; gap: 3px; }
+  .po-due-editor > div strong { font-size: 11px; }
+  .po-due-editor > div small { max-width: 640px; font-size: 9px; line-height: 1.45; }
+  .po-due-editor input { width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: #fffefa; color: var(--ink); font-size: 11px; }
+  .po-due-cell { display: flex; flex-direction: column; gap: 3px; min-width: 115px; }
+  .po-due-cell strong { font-size: 11px; }
+  .po-due-cell small { font-size: 9px; }
+  .po-due-cell.overdue strong, .po-due-cell.overdue small { color: #985047; }
+  .po-row-overdue { background: #fffaf8; }
+  .detail-lines { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .detail-lines-head, .detail-line { display: grid; grid-template-columns: minmax(230px,1fr) 72px 82px 82px 96px; gap: 10px; align-items: center; }
+  .detail-lines-head { min-height: 34px; padding: 0 12px; background: var(--paper-2); color: #7b847e; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+  .detail-line { min-height: 61px; padding: 9px 12px; border-top: 1px solid #e7e5de; color: #465049; font-size: 10px; }
+  .detail-line:first-of-type { border-top: 0; }
+  .detail-line > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .detail-line strong { color: var(--ink); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail-line small { font-size: 8px; }
+  .line-modifiers { color: #7a817b; font-size: 8px; }
+  .record-totals { margin-left: auto; width: min(100%, 430px); display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+  .record-totals > span { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; border-left: 1px solid var(--line); background: #fffefa; }
+  .record-totals > span:first-child { border-left: 0; }
+  .record-totals > span:last-child { background: #eff2e7; }
+  .record-totals small { font-size: 8px; text-transform: uppercase; letter-spacing: .07em; }
+  .record-totals strong { font-size: 12px; }
+  .detail-loading { min-height: 220px; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; color: var(--muted); font-size: 10px; }
+  .record-link { border: 0; padding: 0; background: transparent; color: var(--ink); font-weight: 800; font-size: 12px; text-decoration: underline; text-decoration-color: #c8cdc5; text-underline-offset: 3px; }
+  .record-link:hover { text-decoration-color: #7e8a80; }
+
+  @media (max-width: 760px) {
+    .record-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .summary-cell:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
+    .summary-cell:nth-child(4) { border-top: 1px solid var(--line); }
+    .po-due-editor { grid-template-columns: 1fr; align-items: stretch; }
+    .detail-lines { overflow-x: auto; }
+    .detail-lines-head, .detail-line { min-width: 690px; }
+    .record-totals { width: 100%; }
+  }
+}

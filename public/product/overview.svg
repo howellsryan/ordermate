@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" fill="none">
+  <rect width="1200" height="760" fill="#F2EDDF"/>
+  <rect width="218" height="760" fill="#111714"/>
+  <g transform="translate(22 24) scale(.5625)"><rect width="64" height="64" rx="17" fill="#FFF9ED"/><path d="M13 18.5 32 9l19 9.5L32 28 13 18.5Z" fill="#F25F3A"/><path d="m13 31.8 19 9.5 19-9.5v8.7L32 50 13 40.5v-8.7Z" fill="#111714"/><path d="m13 45.4 19 9.5 19-9.5v4.8L32 59.7 13 50.2v-4.8Z" fill="#D9FF72"/><circle cx="51" cy="18.5" r="3.4" fill="#D9FF72"/></g>
+  <text x="72" y="39" fill="#F7F4ED" font-family="Arial,sans-serif" font-size="14" font-weight="700">Operating Layer</text>
+  <text x="72" y="53" fill="#829089" font-family="Arial,sans-serif" font-size="7">ORDER → OUTCOME</text>
+  <rect x="18" y="91" width="182" height="51" rx="12" fill="#1D2722" stroke="#35423C"/>
+  <rect x="29" y="101" width="31" height="31" rx="9" fill="#0C120F"/>
+  <path d="M38 118h13M44.5 111v14" stroke="#D9FF72" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="70" y="111" fill="#8FA097" font-family="Arial,sans-serif" font-size="7">BUSINESS</text>
+  <text x="70" y="126" fill="#F2F5F3" font-family="Arial,sans-serif" font-size="10" font-weight="700">Northstar Supply Co.</text>
+  <g fill="#9BA8A0" font-family="Arial,sans-serif" font-size="9">
+    <rect x="19" y="163" width="181" height="34" rx="9" fill="#29352F"/><rect x="19" y="163" width="3" height="34" rx="1.5" fill="#F25F3A"/>
+    <text x="54" y="184" fill="#FFFFFF" font-weight="700">Overview</text>
+    <text x="54" y="224">Orders</text><text x="54" y="264">Warehouse</text><text x="54" y="304">Wave picking</text><text x="54" y="344">Cycle count</text><text x="54" y="384">Products</text><text x="54" y="424">Inventory</text><text x="54" y="464">Purchase orders</text><text x="54" y="504">Suppliers</text><text x="54" y="544">Reports</text>
+  </g>
+  <g stroke="#607168" stroke-width="1.5" opacity=".8"><path d="M32 177h10v10H32z"/><path d="M32 217h10v10H32z"/><path d="M32 257h10v10H32z"/><path d="M32 297h10v10H32z"/><path d="M32 337h10v10H32z"/><path d="M32 377h10v10H32z"/><path d="M32 417h10v10H32z"/><path d="M32 457h10v10H32z"/><path d="M32 497h10v10H32z"/><path d="M32 537h10v10H32z"/></g>
+  <rect x="218" width="982" height="64" fill="#F7F4ED" stroke="#E2E0D9"/>
+  <rect x="248" y="15" width="348" height="34" rx="10" fill="#FCFBF8" stroke="#DDDDD6"/>
+  <circle cx="268" cy="32" r="5" stroke="#839087"/><path d="m272 36 5 5" stroke="#839087"/>
+  <text x="285" y="36" fill="#89938D" font-family="Arial,sans-serif" font-size="9">Search products, orders, SKUs…</text>
+  <text x="1112" y="35" fill="#68746E" font-family="Arial,sans-serif" font-size="9">Cloudflare EU</text>
+  <text x="260" y="116" fill="#7A847E" font-family="Arial,sans-serif" font-size="8" font-weight="700" letter-spacing="1.4">OPERATIONS OVERVIEW</text>
+  <text x="260" y="161" fill="#17211C" font-family="Arial,sans-serif" font-size="38" font-weight="750" letter-spacing="-1.6">Good morning.</text>
+  <text x="260" y="185" fill="#7A847E" font-family="Arial,sans-serif" font-size="11">Here’s what needs attention across the operation.</text>
+  <g>
+    <rect x="260" y="221" width="208" height="128" rx="17" fill="#FFF9ED" stroke="#DFDED7"/>
+    <text x="279" y="245" fill="#7B857F" font-family="Arial,sans-serif" font-size="8">AVAILABLE STOCK</text><text x="279" y="298" fill="#17211C" font-family="Arial,sans-serif" font-size="31" font-weight="750">4,286</text><text x="279" y="328" fill="#89928D" font-family="Arial,sans-serif" font-size="8">12 active locations</text><circle cx="445" cy="242" r="30" fill="#DDE9BE"/>
+    <rect x="484" y="221" width="208" height="128" rx="17" fill="#FFF9ED" stroke="#DFDED7"/>
+    <text x="503" y="245" fill="#7B857F" font-family="Arial,sans-serif" font-size="8">ORDERS TO FULFIL</text><text x="503" y="298" fill="#17211C" font-family="Arial,sans-serif" font-size="31" font-weight="750">38</text><text x="503" y="328" fill="#89928D" font-family="Arial,sans-serif" font-size="8">7 urgent · 12 due today</text><circle cx="669" cy="242" r="30" fill="#D8E6F1"/>
+    <rect x="708" y="221" width="208" height="128" rx="17" fill="#FFF9ED" stroke="#DFDED7"/>
+    <text x="727" y="245" fill="#7B857F" font-family="Arial,sans-serif" font-size="8">INCOMING UNITS</text><text x="727" y="298" fill="#17211C" font-family="Arial,sans-serif" font-size="31" font-weight="750">1,240</text><text x="727" y="328" fill="#89928D" font-family="Arial,sans-serif" font-size="8">9 open purchase orders</text><circle cx="893" cy="242" r="30" fill="#F4DDAE"/>
+    <rect x="932" y="221" width="208" height="128" rx="17" fill="#FFF9ED" stroke="#DFDED7"/>
+    <text x="951" y="245" fill="#7B857F" font-family="Arial,sans-serif" font-size="8">NEEDS ATTENTION</text><text x="951" y="298" fill="#17211C" font-family="Arial,sans-serif" font-size="31" font-weight="750">6</text><text x="951" y="328" fill="#89928D" font-family="Arial,sans-serif" font-size="8">Surfaced automatically</text><circle cx="1117" cy="242" r="30" fill="#EFC9C2"/>
+  </g>
+  <rect x="260" y="367" width="570" height="315" rx="18" fill="#FFF9ED" stroke="#DFDED7"/>
+  <text x="282" y="397" fill="#7B857F" font-family="Arial,sans-serif" font-size="8" font-weight="700">FULFILMENT THIS WEEK</text>
+  <text x="282" y="432" fill="#17211C" font-family="Arial,sans-serif" font-size="25" font-weight="750">184 orders completed</text>
+  <line x1="285" y1="620" x2="802" y2="620" stroke="#E5E4DE"/>
+  <g fill="#D9FF72"><rect x="306" y="544" width="44" height="76" rx="6 6 0 0"/><rect x="372" y="512" width="44" height="108" rx="6 6 0 0"/><rect x="438" y="528" width="44" height="92" rx="6 6 0 0"/><rect x="504" y="475" width="44" height="145" rx="6 6 0 0"/><rect x="570" y="493" width="44" height="127" rx="6 6 0 0"/><rect x="636" y="451" width="44" height="169" rx="6 6 0 0"/><rect x="702" y="465" width="44" height="155" rx="6 6 0 0"/></g>
+  <rect x="846" y="367" width="294" height="315" rx="18" fill="#FFF9ED" stroke="#DFDED7"/>
+  <text x="868" y="397" fill="#7B857F" font-family="Arial,sans-serif" font-size="8" font-weight="700">WHAT NEEDS YOU</text>
+  <g font-family="Arial,sans-serif"><rect x="868" y="420" width="250" height="54" rx="11" fill="#F3F0E8"/><circle cx="891" cy="447" r="9" fill="#F25F3A" opacity=".55"/><text x="910" y="443" fill="#28332D" font-size="9" font-weight="700">Late purchase order</text><text x="910" y="458" fill="#849087" font-size="7">PO-1092 · 2 days overdue</text>
+  <rect x="868" y="485" width="250" height="54" rx="11" fill="#F3F0E8"/><circle cx="891" cy="512" r="9" fill="#D9FF72"/><text x="910" y="508" fill="#28332D" font-size="9" font-weight="700">Low stock risk</text><text x="910" y="523" fill="#849087" font-size="7">SKU-1048 · 14 available</text>
+  <rect x="868" y="550" width="250" height="54" rx="11" fill="#F3F0E8"/><circle cx="891" cy="577" r="9" fill="#D5E3EE"/><text x="910" y="573" fill="#28332D" font-size="9" font-weight="700">Urgent order queue</text><text x="910" y="588" fill="#849087" font-size="7">3 orders need picking</text></g>
+</svg>

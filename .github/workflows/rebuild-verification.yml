@@ -1,0 +1,71 @@
+name: Rebuild verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-verification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set +e
+          npm install --no-audit --no-fund --verbose
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "--- npm debug log ---"
+            latest_log="$(ls -1t "$HOME"/.npm/_logs/*-debug-0.log 2>/dev/null | head -n 1)"
+            if [ -n "$latest_log" ]; then
+              cat "$latest_log"
+            fi
+            exit "$status"
+          fi
+
+      - name: Commit generated lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- package-lock.json && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
+            echo "package-lock.json already tracked and unchanged"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: lock npm dependencies"
+          git push origin HEAD:rebuild/cloudflare-saas
+
+      - name: Verify Operating Layer brand sweep
+        run: node scripts/rebrand-operating-layer.mjs
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build production configuration
+        run: npm run build
+
+      - name: Build staging configuration
+        run: npm run build:staging

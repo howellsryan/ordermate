@@ -1,0 +1,87 @@
+@layer components {
+  .warehouse-mode { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; border: 1px solid #dddcd5; border-radius: 11px; background: #f4f5f0; }
+  .warehouse-mode button { min-height: 34px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; font-size: 10px; font-weight: 800; cursor: pointer; }
+  .warehouse-mode button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(34,40,35,.08); }
+  .warehouse-layout { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(0, 1.65fr); gap: 14px; align-items: start; }
+  .warehouse-queue, .warehouse-session { min-height: 520px; }
+  .warehouse-queue { padding: 0; overflow: hidden; }
+  .warehouse-queue .panel-heading { padding: 15px 16px 12px; border-bottom: 1px solid #ebe9e2; }
+  .queue-count { min-width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center; background: #ebefe3; color: #5d6d49; font-size: 9px; font-weight: 900; }
+  .warehouse-documents { display: flex; flex-direction: column; }
+  .warehouse-document { width: 100%; min-height: 70px; border: 0; border-bottom: 1px solid #eeece5; background: transparent; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 11px 14px; text-align: left; color: var(--ink-2); cursor: pointer; }
+  .warehouse-document:hover { background: #f8f8f4; }
+  .warehouse-document.active { background: #f0f4e7; box-shadow: inset 3px 0 0 #82935e; }
+  .warehouse-document > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .warehouse-document > span:last-child { align-items: flex-end; }
+  .warehouse-document strong { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .warehouse-document small { font-size: 8.5px; color: var(--muted); }
+  .warehouse-session { padding: 16px; }
+  .warehouse-placeholder { min-height: 455px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; color: var(--muted); }
+  .warehouse-placeholder > span:first-child { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; background: #edf1e5; color: #6a7b4e; }
+  .warehouse-placeholder strong { color: var(--ink); font-size: 12px; }
+  .warehouse-placeholder p { max-width: 430px; margin: 0; font-size: 9.5px; line-height: 1.55; }
+  .scan-session { display: flex; flex-direction: column; gap: 14px; }
+  .scan-session-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 12px; border-bottom: 1px solid #ebe9e2; }
+  .scan-session-head h2 { margin: 2px 0 5px; font-size: clamp(18px, 2vw, 24px); }
+  .scan-session-head p { margin: 0; color: var(--muted); font-size: 9.5px; }
+  .scan-progress { min-width: 78px; border-radius: 12px; background: #f0f4e7; padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-end; }
+  .scan-progress strong { font-size: 22px; line-height: 1; color: #556a36; }
+  .scan-progress span { margin-top: 4px; color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .barcode-capture { display: flex; flex-direction: column; gap: 7px; }
+  .barcode-capture > form { margin: 0; }
+  .barcode-input-wrap { display: grid; grid-template-columns: 26px minmax(0,1fr) auto; gap: 10px; align-items: center; min-height: 68px; border: 1px solid #ccd3bd; border-radius: 13px; background: #f7f9f2; padding: 10px 11px; color: #617145; }
+  .barcode-input-wrap label { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .barcode-input-wrap label > span { color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+  .barcode-input-wrap input { width: 100%; border: 0; outline: 0; background: transparent; padding: 0; min-height: 25px; color: var(--ink); font: inherit; font-size: 15px; font-weight: 700; }
+  .barcode-input-wrap input::placeholder { color: #adb4a5; font-weight: 500; }
+  .barcode-capture-tools { display: flex; align-items: center; justify-content: flex-end; }
+  .scan-feedback { min-height: 30px; display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 8px; font-size: 9px; font-weight: 700; }
+  .scan-feedback.idle { background: #f4f4f1; color: var(--muted); }
+  .scan-feedback.success { background: #edf6e7; color: #4f703d; }
+  .scan-feedback.warning { background: #faf4df; color: #806b25; }
+  .scan-feedback.error { background: #faece9; color: #9a493f; }
+  .scan-lines { display: flex; flex-direction: column; border: 1px solid #e5e3dc; border-radius: 12px; overflow: hidden; }
+  .scan-line { display: grid; grid-template-columns: minmax(0,1fr) minmax(105px, auto) 118px; gap: 14px; align-items: center; min-height: 82px; padding: 11px 12px; border-bottom: 1px solid #ebe9e2; background: #fff; }
+  .scan-line:last-child { border-bottom: 0; }
+  .scan-line.complete { background: #f7faf3; }
+  .scan-line-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .scan-line-copy strong { font-size: 10.5px; }
+  .scan-line-copy span, .scan-line-copy small { font-size: 8.5px; color: var(--muted); }
+  .scan-line-required { display: flex; flex-direction: column; gap: 3px; text-align: right; }
+  .scan-line-required small { font-size: 8px; color: var(--muted); }
+  .scan-line-required strong { font-size: 11px; }
+  .line-counter { display: grid; grid-template-columns: 30px 1fr 30px; gap: 5px; align-items: center; }
+  .line-counter .icon-button { width: 30px; height: 30px; }
+  .line-counter > span { min-height: 30px; border: 1px solid #deddd7; border-radius: 8px; display: flex; align-items: baseline; justify-content: center; padding: 6px 5px; background: #fafaf7; }
+  .line-counter strong { font-size: 13px; }
+  .line-counter small { font-size: 8px; color: var(--muted); }
+  .warehouse-commit { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding-top: 3px; }
+  .warehouse-commit > div { display: flex; flex-direction: column; gap: 3px; }
+  .warehouse-commit strong { font-size: 10.5px; }
+  .warehouse-commit span { color: var(--muted); font-size: 8.5px; }
+
+  @media (max-width: 900px) {
+    .warehouse-layout { grid-template-columns: 1fr; }
+    .warehouse-queue, .warehouse-session { min-height: 0; }
+    .warehouse-documents { max-height: 265px; overflow: auto; }
+    .warehouse-placeholder { min-height: 260px; }
+  }
+
+  @media (max-width: 620px) {
+    .warehouse-mode { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); }
+    .warehouse-mode button { justify-content: center; }
+    .warehouse-session { padding: 12px; }
+    .scan-session-head { align-items: center; }
+    .scan-progress { min-width: 66px; }
+    .barcode-input-wrap { grid-template-columns: 24px minmax(0,1fr); }
+    .barcode-input-wrap > button { grid-column: 1 / -1; }
+    .barcode-capture-tools { justify-content: stretch; }
+    .barcode-capture-tools > * { width: 100%; }
+    .barcode-capture-tools .camera-scan-button { width: 100%; justify-content: center; }
+    .scan-line { grid-template-columns: minmax(0,1fr) auto; gap: 9px; }
+    .scan-line-required { grid-column: 1 / 2; text-align: left; flex-direction: row; align-items: baseline; gap: 6px; }
+    .line-counter { grid-column: 2 / 3; grid-row: 1 / span 2; align-self: center; }
+    .warehouse-commit { align-items: stretch; flex-direction: column; }
+    .warehouse-commit > button { width: 100%; justify-content: center; }
+  }
+}

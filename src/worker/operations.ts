@@ -1,0 +1,349 @@
+import { Hono } from "hono";
+import type { DeliveryDiscrepancyRecord } from "../shared/delivery-discrepancy";
+import type { Role } from "../shared/types";
+import { createAuth, type AuthEnv } from "./auth";
+import { can } from "./permissions";
+import type { TenantStore } from "./tenant-store-order-planning";
+
+type Env = AuthEnv & {
+  TENANT_STORES: DurableObjectNamespace<TenantStore>;
+};
+
+type Membership = { id: string; role: Role };
+type Page = "orders" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "activity";
+type SearchResult = { id: string; type: string; title: string; subtitle: string; page: Page; badge?: string };
+type AttentionItem = { id: string; severity: "critical" | "warning" | "info"; type: string; title: string; detail: string; page: Page };
+
+type Product = {
+  id: string;
+  name: string;
+  category_name?: string | null;
+  status: string;
+  variants: Array<{
+    id: string;
+    name: string;
+    sku: string;
+    barcode?: string | null;
+    price_minor: number;
+    cost_minor: number;
+    tax_rate_bps: number;
+    active?: number;
+    options?: Record<string, string>;
+  }>;
+};
+
+type InventoryRow = {
+  variant_id: string;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  barcode?: string | null;
+  location_id: string;
+  location_name: string;
+  on_hand: number;
+  reserved: number;
+  available: number;
+  incoming: number;
+  tracked?: number;
+};
+
+type Order = {
+  id: string;
+  number: string;
+  customer_name?: string | null;
+  location_name: string;
+  status: string;
+  fulfilment_status: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  required_by_date?: string | null;
+  subtotal_minor: number;
+  tax_minor: number;
+  total_minor: number;
+  currency: string;
+  line_count: number;
+  created_at: string;
+};
+
+type PurchaseOrder = {
+  id: string;
+  number: string;
+  supplier_name: string;
+  location_name: string;
+  status: string;
+  subtotal_minor: number;
+  tax_minor: number;
+  total_minor: number;
+  currency: string;
+  line_count: number;
+  expected_delivery_date?: string | null;
+  ordered_at?: string | null;
+  created_at: string;
+};
+
+type Person = { id: string; name: string; email?: string | null; phone?: string | null };
+type AuditEvent = { id: string; actor_id: string; actor_role: string; action: string; entity_type: string; entity_id?: string | null; metadata_json?: string | null; created_at: string };
+type Settings = { low_stock_threshold: number };
+
+export const operationsApp = new Hono<{ Bindings: Env }>();
+
+async function tenantContext(request: Request, env: Env) {
+  const auth = createAuth(env, request);
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) return { error: Response.json({ error: "Unauthorized" }, { status: 401 }) } as const;
+
+  const tenantId = request.headers.get("x-ordermate-tenant");
+  if (!tenantId) return { error: Response.json({ error: "Select a business first" }, { status: 400 }) } as const;
+
+  const membership = await env.CONTROL_DB.prepare(
+    "SELECT id, role FROM member WHERE userId = ? AND organizationId = ?",
+  ).bind(session.user.id, tenantId).first<Membership>();
+  if (!membership) return { error: Response.json({ error: "Forbidden" }, { status: 403 }) } as const;
+
+  const stub = env.TENANT_STORES.jurisdiction("eu").getByName(tenantId);
+  return { session, tenantId, membership, stub } as const;
+}
+
+async function tenantJson<T>(stub: DurableObjectStub<TenantStore>, path: string, actor: { id: string; role: Role; name: string }) {
+  const headers = new Headers({
+    "x-ordermate-actor-id": actor.id,
+    "x-ordermate-actor-role": actor.role,
+    "x-ordermate-actor-name": actor.name,
+  });
+  const response = await stub.fetch(new Request(`https://tenant.internal${path}`, { headers }));
+  if (!response.ok) {
+    const payload = await response.json<{ error?: string }>().catch((): { error?: string } => ({}));
+    throw new Error(payload.error || `Tenant read failed (${response.status})`);
+  }
+  return response.json<T>();
+}
+
+function includes(value: unknown, query: string) {
+  if (value === null || value === undefined) return false;
+  return String(value).toLocaleLowerCase().includes(query);
+}
+
+function pushLimited(results: SearchResult[], values: SearchResult[], limit = 8) {
+  results.push(...values.slice(0, limit));
+}
+
+function orderPriorityLabel(priority: Order["priority"] | undefined) {
+  if (!priority || priority === "normal") return "normal";
+  return priority;
+}
+
+operationsApp.get("/search", async c => {
+  const context = await tenantContext(c.req.raw, c.env);
+  if ("error" in context) return context.error;
+  const query = (c.req.query("q") || "").trim().toLocaleLowerCase();
+  if (query.length < 2) return c.json({ results: [] });
+
+  const actor = { id: context.session.user.id, role: context.membership.role, name: context.session.user.name };
+  const results: SearchResult[] = [];
+
+  const [products, orders, purchaseOrders, customers, suppliers] = await Promise.all([
+    can(context.membership.role, "catalogue", "read") ? tenantJson<Product[]>(context.stub, "/products", actor) : Promise.resolve([]),
+    can(context.membership.role, "orders", "read") ? tenantJson<Order[]>(context.stub, "/orders", actor) : Promise.resolve([]),
+    can(context.membership.role, "purchasing", "read") ? tenantJson<PurchaseOrder[]>(context.stub, "/purchase-orders", actor) : Promise.resolve([]),
+    can(context.membership.role, "customers", "read") ? tenantJson<Person[]>(context.stub, "/customers", actor) : Promise.resolve([]),
+    can(context.membership.role, "purchasing", "read") ? tenantJson<Person[]>(context.stub, "/suppliers", actor) : Promise.resolve([]),
+  ]);
+
+  const productMatches: SearchResult[] = [];
+  for (const product of products) {
+    const productMatch = [product.name, product.category_name].some(value => includes(value, query));
+    const state = product.status === "archived" ? "Archived · " : "";
+    if (productMatch) productMatches.push({ id: product.id, type: "Product", title: product.name, subtitle: `${state}${product.category_name || `${product.variants.length} variant${product.variants.length === 1 ? "" : "s"}`}`, page: "products" });
+    for (const variant of product.variants) {
+      const optionText = Object.values(variant.options || {}).join(" ");
+      if ([product.name, variant.name, variant.sku, variant.barcode, optionText].some(value => includes(value, query))) {
+        productMatches.push({ id: variant.id, type: "Variant", title: `${product.name} · ${variant.name}`, subtitle: `${state}${[variant.sku, variant.barcode].filter(Boolean).join(" · ")}`, page: "products", badge: variant.sku });
+      }
+    }
+  }
+  pushLimited(results, productMatches);
+
+  pushLimited(results, orders.filter(order => [order.number, order.customer_name, order.location_name, order.status, order.fulfilment_status, order.priority, order.required_by_date].some(value => includes(value, query))).map(order => ({
+    id: order.id,
+    type: "Order",
+    title: order.number,
+    subtitle: `${order.customer_name || "Guest"} · ${order.fulfilment_status.replaceAll("_", " ")} · ${orderPriorityLabel(order.priority)}${order.required_by_date ? ` · required ${order.required_by_date}` : ""}`,
+    page: "orders",
+    badge: order.status,
+  })));
+
+  pushLimited(results, purchaseOrders.filter(po => [po.number, po.supplier_name, po.location_name, po.status, po.expected_delivery_date].some(value => includes(value, query))).map(po => ({
+    id: po.id, type: "Purchase order", title: po.number, subtitle: `${po.supplier_name} · ${po.location_name}${po.expected_delivery_date ? ` · expected ${po.expected_delivery_date}` : ""}`, page: "purchasing", badge: po.status,
+  })));
+
+  pushLimited(results, customers.filter(person => [person.name, person.email, person.phone].some(value => includes(value, query))).map(person => ({
+    id: person.id, type: "Customer", title: person.name, subtitle: person.email || person.phone || "Saved customer", page: "customers",
+  })));
+
+  pushLimited(results, suppliers.filter(person => [person.name, person.email, person.phone].some(value => includes(value, query))).map(person => ({
+    id: person.id, type: "Supplier", title: person.name, subtitle: person.email || person.phone || "Saved supplier", page: "suppliers",
+  })));
+
+  return c.json({ results: results.slice(0, 30) });
+});
+
+operationsApp.get("/attention", async c => {
+  const context = await tenantContext(c.req.raw, c.env);
+  if ("error" in context) return context.error;
+  const actor = { id: context.session.user.id, role: context.membership.role, name: context.session.user.name };
+  const items: AttentionItem[] = [];
+
+  if (can(context.membership.role, "inventory", "read")) {
+    const [inventory, settings, products] = await Promise.all([
+      tenantJson<InventoryRow[]>(context.stub, "/inventory", actor),
+      tenantJson<Settings>(context.stub, "/settings", actor),
+      tenantJson<Product[]>(context.stub, "/products", actor),
+    ]);
+    const activeVariantIds = new Set(products
+      .filter(product => product.status === "active")
+      .flatMap(product => product.variants.filter(variant => variant.active !== 0).map(variant => variant.id)));
+    for (const row of inventory.filter(row => activeVariantIds.has(row.variant_id) && row.tracked !== 0 && row.available <= settings.low_stock_threshold).slice(0, 12)) {
+      items.push({
+        id: `stock:${row.variant_id}:${row.location_id}`,
+        severity: row.available <= 0 ? "critical" : "warning",
+        type: row.available <= 0 ? "Stockout" : "Low stock",
+        title: `${row.product_name} · ${row.variant_name}`,
+        detail: `${row.available} available at ${row.location_name}${row.incoming ? ` · ${row.incoming} incoming` : ""}`,
+        page: "inventory",
+      });
+    }
+  }
+
+  if (can(context.membership.role, "orders", "read")) {
+    const orders = await tenantJson<Order[]>(context.stub, "/orders", actor);
+    const today = new Date().toISOString().slice(0, 10);
+    const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
+    const confirmed = orders
+      .filter(order => order.status === "confirmed")
+      .sort((a, b) => {
+        const overdueA = !!a.required_by_date && a.required_by_date < today;
+        const overdueB = !!b.required_by_date && b.required_by_date < today;
+        if (overdueA !== overdueB) return overdueA ? -1 : 1;
+        const priority = priorityRank[a.priority || "normal"] - priorityRank[b.priority || "normal"];
+        if (priority !== 0) return priority;
+        return (a.required_by_date || "9999-12-31").localeCompare(b.required_by_date || "9999-12-31") || a.created_at.localeCompare(b.created_at);
+      });
+    for (const order of confirmed.slice(0, 10)) {
+      const overdue = !!order.required_by_date && order.required_by_date < today;
+      const urgent = order.priority === "urgent";
+      items.push({
+        id: `order:${order.id}`,
+        severity: overdue ? "critical" : "warning",
+        type: overdue ? "Required-by overdue" : urgent ? "Urgent fulfilment" : "Awaiting fulfilment",
+        title: order.number,
+        detail: `${order.customer_name || "Guest"} · ${order.location_name} · ${order.line_count} line${order.line_count === 1 ? "" : "s"} · ${orderPriorityLabel(order.priority)} priority${order.required_by_date ? ` · required ${order.required_by_date}` : ""}`,
+        page: "orders",
+      });
+    }
+  }
+
+  if (can(context.membership.role, "purchasing", "read")) {
+    const [purchaseOrders, discrepancies] = await Promise.all([
+      tenantJson<PurchaseOrder[]>(context.stub, "/purchase-orders", actor),
+      tenantJson<DeliveryDiscrepancyRecord[]>(context.stub, "/delivery-discrepancies?status=open", actor),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    for (const po of purchaseOrders.filter(po => po.status === "partially_received" || po.status === "ordered").slice(0, 12)) {
+      const overdue = !!po.expected_delivery_date && po.expected_delivery_date < today;
+      items.push({
+        id: `po:${po.id}`,
+        severity: overdue ? "critical" : po.status === "partially_received" ? "warning" : "info",
+        type: overdue ? "Overdue purchase order" : po.status === "partially_received" ? "Partial receipt" : "Incoming stock",
+        title: po.number,
+        detail: `${po.supplier_name} · ${po.location_name} · ${po.line_count} line${po.line_count === 1 ? "" : "s"}${po.expected_delivery_date ? ` · expected ${po.expected_delivery_date}` : " · expected date not set"}`,
+        page: "purchasing",
+      });
+    }
+    for (const discrepancy of discrepancies.slice(0, 10)) {
+      items.push({
+        id: `delivery-discrepancy:${discrepancy.id}`,
+        severity: "warning",
+        type: "Open delivery discrepancy",
+        title: discrepancy.purchase_order_number,
+        detail: `${discrepancy.supplier_name} · ${discrepancy.issue_count} issue${discrepancy.issue_count === 1 ? "" : "s"} · ${discrepancy.location_name}`,
+        page: "purchasing",
+      });
+    }
+  }
+
+  const rank = { critical: 0, warning: 1, info: 2 } as const;
+  items.sort((a, b) => rank[a.severity] - rank[b.severity] || a.title.localeCompare(b.title));
+  return c.json({ total: items.length, items: items.slice(0, 20) });
+});
+
+const exportDefinitions = {
+  products: { resource: "catalogue", path: "/products" },
+  inventory: { resource: "inventory", path: "/inventory" },
+  orders: { resource: "orders", path: "/orders" },
+  "purchase-orders": { resource: "purchasing", path: "/purchase-orders" },
+  "delivery-discrepancies": { resource: "purchasing", path: "/delivery-discrepancies" },
+  customers: { resource: "customers", path: "/customers" },
+  suppliers: { resource: "purchasing", path: "/suppliers" },
+  audit: { resource: "reports", path: "/audit" },
+} as const;
+
+type ExportKind = keyof typeof exportDefinitions;
+
+function csvCell(value: unknown) {
+  if (value === null || value === undefined) return "";
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function csv(headers: string[], rows: unknown[][]) {
+  return [headers.map(csvCell).join(","), ...rows.map(row => row.map(csvCell).join(","))].join("\r\n");
+}
+
+function exportRows(kind: ExportKind, data: unknown): { headers: string[]; rows: unknown[][] } {
+  if (kind === "products") {
+    const rows = (data as Product[]).flatMap(product => product.variants.map(variant => [product.name, product.category_name, product.status, variant.name, variant.sku, variant.barcode, variant.options || {}, variant.price_minor, variant.cost_minor, variant.tax_rate_bps]));
+    return { headers: ["product", "category", "status", "variant", "sku", "barcode", "options", "price_minor", "cost_minor", "tax_rate_bps"], rows };
+  }
+  if (kind === "inventory") {
+    const rows = (data as InventoryRow[]).map(row => [row.product_name, row.variant_name, row.sku, row.barcode, row.location_name, row.on_hand, row.reserved, row.available, row.incoming, row.tracked ?? 1]);
+    return { headers: ["product", "variant", "sku", "barcode", "location", "on_hand", "reserved", "available", "incoming", "tracked"], rows };
+  }
+  if (kind === "orders") {
+    const rows = (data as Order[]).map(row => [row.number, row.customer_name, row.location_name, row.status, row.fulfilment_status, row.priority, row.required_by_date, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
+    return { headers: ["order_number", "customer", "location", "status", "fulfilment_status", "priority", "required_by_date", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
+  }
+  if (kind === "purchase-orders") {
+    const rows = (data as PurchaseOrder[]).map(row => [row.number, row.supplier_name, row.location_name, row.status, row.expected_delivery_date, row.ordered_at, row.line_count, row.subtotal_minor, row.tax_minor, row.total_minor, row.currency, row.created_at]);
+    return { headers: ["purchase_order_number", "supplier", "location", "status", "expected_delivery_date", "ordered_at", "line_count", "subtotal_minor", "tax_minor", "total_minor", "currency", "created_at"], rows };
+  }
+  if (kind === "delivery-discrepancies") {
+    const rows = (data as DeliveryDiscrepancyRecord[]).map(row => [row.purchase_order_number, row.supplier_name, row.location_name, row.status, row.issue_count, row.proposal_event_id, row.created_at, row.resolution_code, row.resolution_note, row.resolved_at, row.evidence_json]);
+    return { headers: ["purchase_order_number", "supplier", "location", "status", "issue_count", "proposal_event_id", "created_at", "resolution_code", "resolution_note", "resolved_at", "evidence_json"], rows };
+  }
+  if (kind === "audit") {
+    const rows = (data as AuditEvent[]).map(row => [row.created_at, row.actor_id, row.actor_role, row.action, row.entity_type, row.entity_id, row.metadata_json]);
+    return { headers: ["created_at", "actor_id", "actor_role", "action", "entity_type", "entity_id", "metadata_json"], rows };
+  }
+  const rows = (data as Person[]).map(row => [row.name, row.email, row.phone]);
+  return { headers: ["name", "email", "phone"], rows };
+}
+
+operationsApp.get("/export/:kind", async c => {
+  const context = await tenantContext(c.req.raw, c.env);
+  if ("error" in context) return context.error;
+  const kind = c.req.param("kind") as ExportKind;
+  const definition = exportDefinitions[kind];
+  if (!definition) return c.json({ error: "Unknown export" }, 404);
+  if (!can(context.membership.role, definition.resource, "read")) return c.json({ error: "Insufficient permission" }, 403);
+
+  const actor = { id: context.session.user.id, role: context.membership.role, name: context.session.user.name };
+  const data = await tenantJson<unknown>(context.stub, definition.path, actor);
+  const exported = exportRows(kind, data);
+  const filename = `ordermate-${kind}-${new Date().toISOString().slice(0, 10)}.csv`;
+  return new Response(csv(exported.headers, exported.rows), {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="${filename}"`,
+      "cache-control": "no-store",
+    },
+  });
+});

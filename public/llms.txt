@@ -1,0 +1,39 @@
+# Operating Layer
+
+Operating Layer is inventory, order, purchasing and warehouse operations software for growing product businesses.
+
+It connects multi-location inventory, customer orders, purchasing, suppliers, warehouse execution, cycle counts, wave picking, replenishment, reporting and human-reviewed automation in one auditable workspace.
+
+## Core capabilities
+
+- Multi-location inventory management with on-hand, reserved, available and incoming stock.
+- Immutable stock movement history for adjustments, transfers, receipts, fulfilment, returns and stocktakes.
+- Order management with stock reservation, oversell prevention, fulfilment priority, required-by dates, partial fulfilment and returns.
+- Purchase-order management with suppliers, expected delivery dates, partial receiving, cancellation and discrepancy handling.
+- Warehouse workflows for manual barcode entry, hardware scanners and mobile-camera scanning.
+- Wave picking for 2–10 same-location orders with deterministic allocation back to exact order lines.
+- Cycle counting with stale-snapshot and reservation protection.
+- Deterministic inventory replenishment suggestions using stock, incoming supply, demand and supplier lead time.
+- Operations and inventory reports over canonical stock, order and purchasing records.
+- Reviewed document extraction and matching workflows. AI may propose information for human review but does not autonomously mutate canonical inventory, fulfil orders or commit purchase orders.
+- Role-based access for owners, administrators, managers, inventory, fulfilment and viewer users.
+- Tenant-isolated operational storage and audited mutation paths.
+
+## Audience
+
+Operating Layer is aimed at SMEs and growing product businesses that have outgrown disconnected spreadsheets and manual inventory/order reconciliation but do not want an unnecessarily heavy enterprise ERP implementation.
+
+## Product principle
+
+The system between order and outcome: keep inventory, orders, purchasing and warehouse work in one controlled operating loop, automate repetitive evidence work and keep important business decisions explicit, reviewable and attributable to people.
+
+## Public product guide
+
+- [Platform overview](/#platform) — inventory and operations platform value.
+- [Product previews](/#product) — real product UI and connected workflows.
+- [Automation](/#automation) — reviewed automation and human-control model.
+- [Trust and controls](/#trust) — isolation, audit and role controls.
+- [Common questions](/#faq) — product and workflow FAQs.
+- [Agent resource catalog](/.well-known/ai-catalog.json) — machine-readable declaration of public agentic resources.
+
+Authentication uses Google sign-in from the public landing page.
