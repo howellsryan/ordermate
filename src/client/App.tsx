@@ -265,14 +265,14 @@ function LandingWithDemo({ inviteToken }: { inviteToken: string | null }) {
   };
 
   return <>
-    <LandingPage inviteToken={inviteToken} />
+    <LandingPage inviteToken={inviteToken} onChooseDemo={() => setChooserOpen(true)} />
     {!inviteToken && <aside className="demo-launcher" aria-label="Guest demos">
-      <div><span>NO ACCOUNT NEEDED</span><strong>Explore real business workstreams</strong><small>Six local demo profiles · browser storage only · reset anytime</small></div>
-      <button type="button" onClick={() => setChooserOpen(true)}><PlayCircle size={17} /> Choose demo</button>
+      <div><span>NO ACCOUNT NEEDED</span><strong>See how it handles a day like yours</strong><small>Choose the closest business · make changes locally · reset anytime</small></div>
+      <button type="button" onClick={() => setChooserOpen(true)}><PlayCircle size={17} /> Try a demo</button>
     </aside>}
-    {chooserOpen && <Modal title="Choose a business demo" subtitle="Each profile enables only the modules that business needs. Electrician and salon include a playable CRM + request-to-invoice service lifecycle." onClose={() => setChooserOpen(false)} wide>
+    {chooserOpen && <Modal title="Choose the business closest to yours" subtitle="Follow a realistic problem-to-outcome workstream. No account is needed, nothing touches live customer data, and you can reset or switch at any time." onClose={() => setChooserOpen(false)} wide>
       <div className="demo-profile-grid">{DEMO_PROFILES.map(profile => <button type="button" className="demo-profile-card" key={profile.key} onClick={() => startDemo(profile.key)}>
-        <span className="demo-profile-kicker">{profile.name}</span><strong>{profile.businessName.replace(" — Demo", "")}</strong><p>{profile.description}</p><small>{profile.workstream}</small><span className="demo-profile-open">Open demo →</span>
+        <span className="demo-profile-kicker">{profile.name}</span><strong>{profile.businessName.replace(" — Demo", "")}</strong><p>{profile.description}</p><small>{profile.workstream}</small><span className="demo-profile-open">See this business →</span>
       </button>)}</div>
     </Modal>}
   </>;
@@ -298,11 +298,11 @@ function CreateBusiness({ session, onCreated }: { session: SessionPayload; onCre
 function BusinessForm({ greeting, onCreated }: { greeting?: string; onCreated: () => void }) {
   const [name, setName] = useState("");
   const mutation = useMutation({ mutationFn: () => createOrganization(name), onSuccess: onCreated });
-  return <div className="onboarding-card"><div className="step-dot">1</div><p className="eyebrow">{greeting || "New workspace"}</p><h1>What should we call the business?</h1><p>Each business gets its own physically isolated operational datastore. Membership determines who can route into it.</p><form onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><label>Business name<input autoFocus name="business-name" autoComplete="organization" value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Acme Supply Co.…" /></label>{mutation.error && <ErrorText error={mutation.error} />}<button type="submit" className="primary" disabled={!name.trim() || mutation.isPending}>Create workspace <PackagePlus size={18} /></button></form></div>;
+  return <div className="onboarding-card"><div className="step-dot">1</div><p className="eyebrow">{greeting || "New workspace"}</p><h1>What should we call the business?</h1><p>This creates a private workspace for your team. You can turn on the parts of Operating Layer you need and invite people when you are ready.</p><form onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><label>Business name<input autoFocus name="business-name" autoComplete="organization" value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Acme Supply Co.…" /></label>{mutation.error && <ErrorText error={mutation.error} />}<button type="submit" className="primary" disabled={!name.trim() || mutation.isPending}>Create workspace <PackagePlus size={18} /></button></form></div>;
 }
 
 function NewBusinessModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const mutation = useMutation({ mutationFn: () => createOrganization(name), onSuccess: onCreated });
-  return <Modal title="Create another business" subtitle="Your user can belong to multiple businesses; operational data remains isolated per business." onClose={onClose}><form className="form-grid one" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Business name"><input autoFocus required name="business-name" autoComplete="organization" value={name} onChange={event => setName(event.target.value)} /></Field>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={mutation.isPending}>Create business</button></div></form></Modal>;
+  return <Modal title="Create another business" subtitle="Create a separate workspace for another business. Its operational data and team access stay separate." onClose={onClose}><form className="form-grid one" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}><Field label="Business name"><input autoFocus required name="business-name" autoComplete="organization" value={name} onChange={event => setName(event.target.value)} /></Field>{mutation.error && <ErrorText error={mutation.error} />}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={mutation.isPending}>Create business</button></div></form></Modal>;
 }
