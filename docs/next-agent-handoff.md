@@ -7,108 +7,132 @@
 - Draft PR: #3 — `Rebuild OrderMate as a Cloudflare-native multi-tenant SaaS`
 - Base: `main`
 - Keep the PR draft for now.
+- Live staging: `https://ordermate-staging.rlh.workers.dev`
 
-Resolve the latest branch/PR head before acting and treat the repository as authoritative. Read `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/delivery-plan.md` and `docs/implementation-status.md` before changes.
+Resolve the latest branch/PR head before acting and treat the repository as authoritative. Read `AGENTS.md`, `README.md`, `docs/architecture.md`, `docs/delivery-plan.md`, `docs/implementation-status.md` and `docs/staging.md` before changes.
 
 ## Current verification state
 
-The rebuild verification/hardening pass is complete for application commit `ce7ee30be57f9d989b3a63c5668b38b29746037f`:
+Both verification layers are green:
 
 ```text
-Node              24.21.0
-npm               11.19.0
-npm install       PASS — package-lock.json tracked and unchanged
-npm run typecheck PASS
-npm test          PASS — 29 test files, 112/112 tests
-npm run build     PASS
+Repository/GitHub gate
+npm install            PASS — lockfile unchanged
+npm run typecheck      PASS
+npm test               PASS — 29 files, 112/112 tests
+npm run build          PASS
+npm run build:staging  PASS
+
+Cloudflare staging gate
+npm run typecheck      PASS
+npm run test:cloudflare PASS — 29 files, 112/112 tests
+npm run build:staging  PASS
+D1 migrations          PASS
+staging deploy         PASS
 ```
 
-Commits after that application SHA only return the verification workflow to manual-only and update documentation. `.github/workflows/rebuild-verification.yml` is intentionally `workflow_dispatch` only so normal commits do not consume Actions minutes.
+`.github/workflows/rebuild-verification.yml` is intentionally manual-only so normal commits do not consume GitHub Actions minutes. Cloudflare Builds independently watches `rebuild/cloudflare-saas`, verifies runtime/config pushes and deploys the isolated staging Worker. `docs/**` is excluded.
 
-Do not rerun broad verification merely out of habit; run it after material runtime changes or before final review/deployment. Do not weaken security/domain tests to make them pass.
+Cloudflare's shared build hosts make several Durable Object integration tests take 5–9 seconds, so `test:cloudflare` has a 15-second per-test ceiling. Normal `npm test` retains Vitest's stricter default timeout. No assertion is removed or weakened.
+
+## Staging environment
+
+Staging is provisioned and deployed separately from future production:
+
+- Worker: `ordermate-staging`
+- URL: `https://ordermate-staging.rlh.workers.dev`
+- EU D1: `ordermate-staging-control` (`dfd9cfd8-c33e-469d-9ce2-1fd6e6996c24`)
+- staging-only `TenantStore` Durable Object namespace
+- explicit EU R2: `ordermate-staging-documents`
+- queue: `ordermate-staging-events`
+- DLQ: `ordermate-staging-events-dead`
+- AI extraction disabled
+- preview URLs disabled
+
+The staging D1 has `0001_auth.sql` and `0002_workspace_invites.sql` applied. Its Better Auth/workspace tables were queried directly after deployment.
+
+Future staging deploys run only idempotent D1 migrations followed by `wrangler deploy --env staging`; R2 provisioning is a completed one-time operation.
+
+## Remaining OAuth prerequisite
+
+`BETTER_AUTH_SECRET` is a real generated staging secret. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` currently exist only as non-credential placeholders.
+
+Before interactive testing, configure a Google OAuth Web client with this exact callback:
+
+```text
+https://ordermate-staging.rlh.workers.dev/api/auth/callback/google
+```
+
+Then replace the two staging placeholder secrets. Never commit the values and do not add a staging auth bypass.
 
 ## What verification fixed
 
-The hardening pass found and properly resolved:
+The hardening pass properly resolved:
 
 - npm/Cloudflare toolchain compatibility and the committed lockfile;
 - Node 24 runtime requirement;
 - TypeScript contract/narrowing failures across client and Durable Object layers;
-- Vitest accidentally requiring a remote Workers AI binding instead of staying local;
+- Vitest accidentally requiring a remote Workers AI binding instead of remaining local;
 - async Durable Object handler failures escaping the request error boundary;
 - missing real v1 -> v6 tenant migration preservation coverage;
 - Wave Picking continuing after a mid-wave fulfilment failure;
-- Wave Picking commit-in-flight/accessibility issues identified by the Agent-Template/Vercel UI review.
-
-## Current architecture
-
-OrderMate is a Cloudflare-native TypeScript modular monolith:
-
-- React + Vite frontend on Cloudflare Workers Static Assets;
-- Hono Worker API;
-- Better Auth + Google OAuth;
-- EU-jurisdiction D1 control plane;
-- one EU-jurisdiction SQLite `TenantStore` Durable Object per business;
-- EU R2 for source documents/proposal sidecars;
-- Cloudflare Queues + DLQ;
-- optional Workers AI extraction, disabled by default;
-- no Neon/AWS/Vercel/Supabase runtime/database dependency.
-
-Tenant schema is v6: baseline -> inventory policies -> PO expected delivery -> delivery discrepancies -> actor-private saved views -> order required-by/priority/planning index.
+- Wave Picking commit-in-flight/accessibility issues identified by the Agent-Template/Vercel review;
+- creation of a production-separated staging deployment for real browser/device testing.
 
 ## Critical security/domain boundaries verified
 
-- Tenant ID is a selector only; membership is checked in D1 before tenant Durable Object routing.
-- The Worker overwrites internal actor headers.
+- Tenant ID is a selector only; D1 membership is checked before tenant Durable Object routing.
+- Worker overwrites internal actor headers.
 - Unknown tenant routes fail closed.
 - Operational data is physically isolated per tenant Durable Object.
 - `stocktake:create`, `order_planning:update` and `analytics:read` remain separate permission boundaries.
-- Fulfilment can fulfil but cannot edit order planning metadata and has no purchasing analytics grant.
+- Fulfilment can fulfil but cannot edit planning metadata and has no purchasing analytics grant.
 - Same-tenant users cannot list/delete another actor's saved views.
 - Inventory/order mutations remain canonical and audited.
-- Workers AI remains proposal/review based and never autonomously changes stock, fulfils orders or commits a PO.
+- Workers AI remains proposal/review based and cannot autonomously mutate stock, fulfil orders or commit POs.
 - Tenant migration is in-place/versioned and newer-than-runtime storage fails closed.
 
-## Latest hardened slice: Wave Picking
-
-Wave Picking is a separate Owner/Admin/Manager/Fulfilment workspace.
+## Wave Picking contract
 
 - 2–10 confirmed orders.
 - One stock location per wave; first selection locks location.
-- Orders enter allocation in priority -> required-by -> order-age order.
-- Outstanding quantities aggregate by variant for scanning.
-- Allocation back to exact order lines is deterministic and visible before commit.
-- Existing partial fulfilments and partial wave quantities are supported.
-- Every selected order must have at least one staged unit.
+- Priority -> required-by -> order age allocation order.
+- Aggregate scan counts by variant, deterministic allocation back to exact order lines.
+- Existing partial fulfilments and partial wave quantities supported.
+- Every selected order requires at least one staged unit.
 - Excess/unallocatable quantities block commit.
-- Every order commits through `/orders/:id/fulfil`; no separate wave stock endpoint exists.
-- Wave commit is intentionally non-atomic.
-- Processing stops on the first failed order. Earlier successes remain committed and are removed; later orders are not attempted. Remaining work must be refreshed/re-scanned. Never retry a previously successful order automatically.
-- Automated tests cover successful commit and stop-on-first-failure/no-retry behavior in addition to allocator cases.
+- Per-order allocation visible before commit.
+- Every mutation uses `/orders/:id/fulfil`.
+- Wave is intentionally not globally atomic.
+- Processing stops on the first failed order. Earlier successes remain committed and are removed; later orders are not attempted. Remaining work must refresh/re-scan. Never auto-retry a previously successful order.
 
 ## Remaining blocker before PR #3 is ready for review
 
-A real browser/device smoke pass is still outstanding. The verification environment cannot physically operate a camera or USB/Bluetooth scanner, so this was not falsely marked complete.
+The infrastructure and automated gates are complete. The remaining gate is **real interactive browser/device evidence**.
 
-Exercise at minimum:
+After replacing the placeholder Google OAuth credentials, test the live staging site at minimum:
 
-1. same-location locking and max 10 orders;
-2. manual barcode entry;
-3. real USB/Bluetooth keyboard-wedge scanner input;
-4. camera permission/start/decode/close path;
-5. repeated SKU across several orders;
-6. partial quantities and already-partially-fulfilled orders;
-7. per-order allocation preview;
-8. complete successful wave;
-9. earlier order succeeds then a later order fails;
-10. refresh confirms successful orders are not offered for duplicate fulfilment and the remaining wave must be re-scanned.
+1. Google sign-in and business creation/tenant switching.
+2. Create location/product/barcode and stock needed for orders.
+3. Same-location Wave Picking lock and max 10 orders.
+4. Manual barcode entry.
+5. Real USB/Bluetooth keyboard-wedge scanner input.
+6. Mobile camera permission/start/decode/one-scan-close path.
+7. Repeated SKU across orders.
+8. Partial quantities and already-partially-fulfilled orders.
+9. Per-order allocation preview.
+10. Complete successful wave.
+11. Earlier order succeeds then a later order fails.
+12. Refresh confirms successful orders cannot be duplicate-fulfilled and remainder requires re-scan.
+13. Single-order fulfilment, cycle count, PO receive and delivery-note review.
+14. Responsive/focus/accessibility spot checks on phone and desktop.
 
-If the smoke pass finds an issue, fix it and rerun the affected tests plus the full manual verification workflow if runtime code changes materially. Update PR #3 with the result.
+If smoke testing finds a defect, fix it and rerun the affected suite plus the full manual verification workflow when runtime code changes materially. Cloudflare staging should then auto-deploy the branch fix.
 
 ## Review readiness
 
-PR #3 has been updated with the actual verification evidence and remains draft. The critical security/tenancy/inventory/migration review found no known high-severity regression in the reviewed boundaries. The automated gate is green.
+PR #3 remains draft. There is no known high-severity regression in the reviewed security/tenancy/inventory/migration boundaries, and automated verification plus staging deployment are green.
 
-Do not add another broad subsystem yet. The next milestone is to complete the physical browser/device smoke, address any findings, then decide whether to mark PR #3 ready for review.
+Do not add another broad subsystem yet. Complete OAuth + the real device/browser smoke pass, record evidence in PR #3, then decide whether to mark it ready for review.
 
-Later follow-up work can include exception workflows, onboarding improvements, richer replenishment forecasting, integrations/storefront, shipping and further reviewed automation. Lots/batches/serial/manufacturing, autonomous AI mutations and destructive catalogue bulk-upserts still require a fresh architecture/plan gate.
+Later work may include exception workflows, onboarding improvements, richer replenishment forecasting, integrations/storefront, shipping and further reviewed automation. Lots/batches/serial/manufacturing, autonomous AI mutations and destructive catalogue bulk-upserts still require a fresh architecture/plan gate.
