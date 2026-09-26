@@ -1,65 +1,68 @@
 # OrderMate staging
 
-OrderMate staging is intentionally isolated from future production resources.
+OrderMate staging is the disposable browser/device test environment for Draft PR #3. It is intentionally isolated from future production resources.
 
-## Target
+## Live environment
 
 - Worker: `ordermate-staging`
-- URL after first deploy: `https://ordermate-staging.rlh.workers.dev`
+- URL: `https://ordermate-staging.rlh.workers.dev`
 - D1: `ordermate-staging-control` (`dfd9cfd8-c33e-469d-9ce2-1fd6e6996c24`), EU jurisdiction
-- Durable Objects: environment-specific `TenantStore` namespace/storage created by the staging Worker migration
-- R2: `ordermate-staging-documents`, EU jurisdiction
+- Durable Objects: staging-specific `TenantStore` namespace/storage
+- R2: `ordermate-staging-documents`, explicit EU jurisdiction
 - Queue: `ordermate-staging-events`
 - DLQ: `ordermate-staging-events-dead`
-- Workers AI extraction: disabled by default
+- Workers AI extraction: disabled (`AI_DOCUMENT_EXTRACTION_ENABLED=false`)
+- Worker preview URLs: disabled; use the stable staging URL above
 
-The staging Durable Objects are not bound back to the top-level Worker, so staging tenant data cannot share the future production Durable Object namespace.
+The staging Durable Object binding has its own namespace and cannot share tenant operational data with the future production Worker.
 
-## One-time external setup
+## Deployment state
 
-The D1 database and queues are already provisioned. Before the first staging deploy, create the R2 bucket with the explicit EU jurisdiction guarantee:
+The first staging deployment completed successfully on 26 September 2026. The control-plane D1 contains both migrations:
+
+- `0001_auth.sql`
+- `0002_workspace_invites.sql`
+
+The EU R2 bucket, staging queue/DLQ, Worker bindings and static assets are provisioned. Cloudflare Builds is connected to `rebuild/cloudflare-saas` and automatically verifies/deploys staging branch pushes. Documentation-only changes under `docs/**` are excluded.
+
+The Cloudflare build gate runs:
 
 ```sh
-npx wrangler r2 bucket create ordermate-staging-documents --jurisdiction eu
+npm run typecheck
+npm run test:cloudflare
+npm run build:staging
+npm run db:migrate:staging
+npx wrangler deploy --env staging
 ```
 
-Do not substitute a default-jurisdiction bucket, even if Cloudflare physically places it in Western Europe.
+`test:cloudflare` retains every normal assertion but allows a 15-second per-test ceiling because Durable Object integration tests can take 5–9 seconds on Cloudflare's shared build host. The normal `npm test` / GitHub verification gate retains Vitest's stricter default timeout.
 
-Create or choose a Google OAuth Web application and add this exact authorised redirect URI:
+GitHub's rebuild verification workflow remains manual-only to avoid consuming Actions minutes on every staging push.
+
+## Google OAuth — still required for full interactive testing
+
+`BETTER_AUTH_SECRET` is configured as a real generated staging secret. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` currently exist only as non-credential placeholders so no OAuth credential was invented or committed.
+
+Create or choose a Google OAuth **Web application** and add this exact authorised redirect URI:
 
 ```text
 https://ordermate-staging.rlh.workers.dev/api/auth/callback/google
 ```
 
-Set the three staging Worker secrets. Never commit their values:
+Then replace the two placeholder staging secrets:
 
 ```sh
 npx wrangler secret put GOOGLE_CLIENT_ID --env staging
 npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
-npx wrangler secret put BETTER_AUTH_SECRET --env staging
 ```
 
-Use a high-entropy random value for `BETTER_AUTH_SECRET`.
+Do not replace `BETTER_AUTH_SECRET` unless intentionally rotating staging sessions, and never commit any of these values.
 
-## First deploy
+No staging authentication bypass should be added. The manual smoke pass must exercise the same Google/Better Auth path intended for production.
 
-Apply the control-plane migrations to the staging D1:
+## Manual browser/device smoke pass
 
-```sh
-npm run db:migrate:staging
-```
-
-Then build with the staging Cloudflare environment and deploy only that environment:
-
-```sh
-npm run deploy:staging
-```
-
-`build:staging` sets `CLOUDFLARE_ENV=staging` for the Cloudflare Vite plugin. `deploy:staging` then deploys with `wrangler --env staging`, so the generated client/Worker build and the deploy command use the same bindings.
-
-## Smoke pass
-
-Use staging for the manual browser/device gate before PR #3 leaves draft:
+Once real Google OAuth credentials are attached, use the live staging URL for the final PR gate:
 
 1. Google sign-in and first-business creation.
 2. Create a stock location, product/variant and barcode.
@@ -72,12 +75,15 @@ Use staging for the manual browser/device gate before PR #3 leaves draft:
 9. Partial wave quantities and existing partial fulfilments.
 10. Per-order allocation preview.
 11. Full successful wave.
-12. A later order failure after an earlier success: successful orders remain fulfilled, later orders are not attempted, and the remainder must be refreshed/re-scanned.
+12. Force a later-order failure after an earlier success: successful orders must remain fulfilled, later orders must be not attempted, and the remainder must require refresh/re-scan.
 13. Confirm previously successful orders are not offered for duplicate fulfilment.
-14. Verify the responsive layout on phone and desktop widths.
+14. Verify responsive layout and focus/keyboard behavior on phone and desktop widths.
+15. Smoke the surrounding critical flows: single-order fulfilment, cycle count, PO receive, delivery-note review and tenant switching.
 
-Staging data is disposable, but destructive tests must remain inside the staging tenant/environment.
+Staging data is disposable, but destructive testing must remain inside the staging tenant/environment.
 
 ## Production separation
 
-Do not run the top-level `npm run deploy`, `npm run db:migrate:remote`, or `npm run cf:bootstrap` while performing staging verification. Those commands are reserved for the eventual production configuration and intentionally remain separate from the staging scripts.
+Do not run top-level `npm run deploy`, `npm run db:migrate:remote`, or `npm run cf:bootstrap` while testing staging. Those commands remain reserved for the eventual production configuration.
+
+The top-level production D1 ID remains intentionally unprovisioned/placeholder; staging deployment does not make the rebuild production-ready.
