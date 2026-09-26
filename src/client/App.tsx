@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { Role, SessionPayload } from "../shared/types";
 import { controlApi, createOrganization, getSession } from "./api";
+import { BrandLockup, BrandMark } from "./Brand";
 import GlobalSearch from "./GlobalSearch";
 import LandingPage from "./LandingPage";
 import { ErrorText, Field, Modal } from "./ui";
@@ -47,6 +48,9 @@ const Suppliers = lazy(() => import("./pages/People").then(module => ({ default:
 
 type Page = "overview" | "orders" | "warehouse" | "wave-pick" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "customers" | "reports" | "activity" | "team" | "settings";
 type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard };
+
+const TENANT_STORAGE_KEY = "operating-layer:tenant";
+const LEGACY_TENANT_STORAGE_KEY = "ordermate:tenant";
 
 const nav: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -85,7 +89,7 @@ async function signOut() {
 export default function App() {
   const qc = useQueryClient();
   const sessionQuery = useQuery({ queryKey: ["session"], queryFn: getSession, retry: false });
-  const [activeTenantId, setActiveTenantId] = useState(() => localStorage.getItem("ordermate:tenant") || "");
+  const [activeTenantId, setActiveTenantId] = useState(() => localStorage.getItem(TENANT_STORAGE_KEY) || localStorage.getItem(LEGACY_TENANT_STORAGE_KEY) || "");
   const [page, setPage] = useState<Page>("overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [newBusinessOpen, setNewBusinessOpen] = useState(false);
@@ -101,7 +105,8 @@ export default function App() {
     }),
     onSuccess: async data => {
       setActiveTenantId(data.organizationId);
-      localStorage.setItem("ordermate:tenant", data.organizationId);
+      localStorage.setItem(TENANT_STORAGE_KEY, data.organizationId);
+      localStorage.removeItem(LEGACY_TENANT_STORAGE_KEY);
       window.history.replaceState({}, "", window.location.pathname);
       await qc.invalidateQueries({ queryKey: ["session"] });
     },
@@ -119,7 +124,10 @@ export default function App() {
   }, [activeTenant?.id]);
 
   useEffect(() => {
-    if (activeTenantId) localStorage.setItem("ordermate:tenant", activeTenantId);
+    if (activeTenantId) {
+      localStorage.setItem(TENANT_STORAGE_KEY, activeTenantId);
+      localStorage.removeItem(LEGACY_TENANT_STORAGE_KEY);
+    }
   }, [activeTenantId]);
 
   useEffect(() => {
@@ -152,7 +160,7 @@ export default function App() {
     <WorkspaceStyles />
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-        <div className="brand"><div className="brand-mark">OM</div><div><strong>OrderMate</strong><span>Operations, in order.</span></div></div>
+        <BrandLockup inverse />
         <div className="tenant-stack">
           <button type="button" className="tenant-switcher" aria-label="Current business">
             <span className="tenant-avatar"><Building2 size={18} /></span>
@@ -194,7 +202,7 @@ export default function App() {
 }
 
 function LoadingScreen() {
-  return <div className="splash"><div className="brand-mark large">OM</div><div className="loader" /></div>;
+  return <div className="splash"><BrandMark title="Operating Layer" /><div className="loader" /></div>;
 }
 
 function WorkspaceLoading() {
@@ -202,12 +210,12 @@ function WorkspaceLoading() {
 }
 
 function InviteGate({ pending, error }: { pending: boolean; error: unknown }) {
-  if (pending) return <div className="splash"><div className="brand-mark large">OM</div><div className="loader" /><small>Joining your OrderMate workspace…</small></div>;
-  return <div className="invite-gate"><div className="brand"><div className="brand-mark">OM</div><strong>OrderMate</strong></div><div className="invite-gate-card"><p className="eyebrow">Invite couldn’t be accepted</p><h1>Check the Google account you used.</h1><ErrorText error={error} /><p>Invite links are email-bound and expire after seven days. Sign out if you need to use a different Google account.</p><div><button type="button" className="secondary" onClick={() => void signOut()}>Sign out</button><button type="button" className="primary" onClick={() => { window.history.replaceState({}, "", window.location.pathname); location.reload(); }}>Open OrderMate</button></div></div></div>;
+  if (pending) return <div className="splash"><BrandMark title="Operating Layer" /><div className="loader" /><small>Joining your Operating Layer workspace…</small></div>;
+  return <div className="invite-gate"><BrandLockup /><div className="invite-gate-card"><p className="eyebrow">Invite couldn’t be accepted</p><h1>Check the Google account you used.</h1><ErrorText error={error} /><p>Invite links are email-bound and expire after seven days. Sign out if you need to use a different Google account.</p><div><button type="button" className="secondary" onClick={() => void signOut()}>Sign out</button><button type="button" className="primary" onClick={() => { window.history.replaceState({}, "", window.location.pathname); location.reload(); }}>Open Operating Layer</button></div></div></div>;
 }
 
 function CreateBusiness({ session, onCreated }: { session: SessionPayload; onCreated: () => void }) {
-  return <div className="onboarding"><div className="brand"><div className="brand-mark">OM</div><strong>OrderMate</strong></div><BusinessForm greeting={`Good to meet you, ${session.user.name.split(" ")[0]}`} onCreated={onCreated} /></div>;
+  return <div className="onboarding"><BrandLockup /><BusinessForm greeting={`Good to meet you, ${session.user.name.split(" ")[0]}`} onCreated={onCreated} /></div>;
 }
 
 function BusinessForm({ greeting, onCreated }: { greeting?: string; onCreated: () => void }) {
