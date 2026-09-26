@@ -3,10 +3,16 @@ import {
   WORKSPACE_FEATURES,
   WORKSPACE_FEATURE_KEYS,
   WORKSPACE_FEATURE_BY_KEY,
+  effectiveWorkspaceFeatures,
   isWorkspaceFeatureKey,
   validateFeatureConfiguration,
   type WorkspaceFeatureKey,
 } from "../shared/features";
+import {
+  WORKSPACE_MODULE_KEYS,
+  WORKSPACE_MODULE_BY_KEY,
+  type WorkspaceModuleKey,
+} from "../shared/modules";
 
 type Actor = { id: string; role: string };
 type FeatureRow = { module_key: string; enabled: number; updated_at: string; updated_by: string };
@@ -37,17 +43,18 @@ export class FeatureRuntime {
       if (method === "PATCH" && featureMatch) return await this.updateFeature(decodeURIComponent(featureMatch[1]), request);
 
       const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
-      if (requiredFeature && !this.featureEnabled(requiredFeature)) {
+      if (requiredFeature && !this.featureAvailable(requiredFeature)) {
         // The shared attention aggregator reads the open discrepancy queue. Returning
         // an empty list keeps Overview healthy while ensuring the disabled feature
         // contributes no discrepancy work to the user's journey.
         if (requiredFeature === "delivery_discrepancies" && method === "GET") return Response.json([]);
-        return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled for this workspace.`, 404);
+        return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled or unavailable for this workspace.`, 404);
       }
 
       return null;
     } catch (cause) {
       if (cause instanceof z.ZodError) return responseError(cause.issues[0]?.message || "Invalid feature configuration", 400);
+      if (cause instanceof SyntaxError) return responseError("Invalid feature configuration", 400);
       console.error("Feature runtime request failed", cause);
       return responseError(cause instanceof Error ? cause.message : "Unexpected error", 500);
     }
@@ -72,6 +79,20 @@ export class FeatureRuntime {
       storageKey(key),
     ).toArray()[0];
     return row ? row.enabled === 1 : WORKSPACE_FEATURE_BY_KEY[key].defaultEnabled;
+  }
+
+  private moduleEnabled(key: WorkspaceModuleKey) {
+    const row = this.ctx.storage.sql.exec<{ enabled: number }>(
+      "SELECT enabled FROM workspace_modules WHERE module_key = ?",
+      key,
+    ).toArray()[0];
+    return row ? row.enabled === 1 : WORKSPACE_MODULE_BY_KEY[key].defaultEnabled;
+  }
+
+  private featureAvailable(key: WorkspaceFeatureKey) {
+    const features = Object.fromEntries(WORKSPACE_FEATURE_KEYS.map(feature => [feature, this.featureEnabled(feature)])) as Record<WorkspaceFeatureKey, boolean>;
+    const enabledModules = new Set(WORKSPACE_MODULE_KEYS.filter(module => this.moduleEnabled(module)));
+    return effectiveWorkspaceFeatures(features, enabledModules).has(key);
   }
 
   private listFeatures() {
