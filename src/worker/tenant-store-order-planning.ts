@@ -9,9 +9,12 @@ const updateSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]),
 });
 
-const supplierTermsSchema = z.object({
+const supplierMappingSchema = z.object({
   supplierId: z.string().min(1),
   variantId: z.string().min(1),
+  supplierSku: z.string().trim().max(120).optional(),
+  lastCostMinor: z.number().int().nonnegative().optional(),
+  leadTimeDays: z.number().int().min(0).max(3650).optional(),
   minimumOrderQuantity: z.number().int().min(1).max(1_000_000).nullable().optional(),
   orderMultiple: z.number().int().min(1).max(1_000_000).nullable().optional(),
 });
@@ -63,18 +66,7 @@ export class TenantStore extends ReportsTenantStore {
     }
 
     if (request.method === "POST" && path === "/supplier-variants") {
-      let input: z.infer<typeof supplierTermsSchema>;
-      try {
-        input = supplierTermsSchema.parse(await request.clone().json());
-      } catch (cause) {
-        if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message || "Invalid supplier ordering terms" }, { status: 400 });
-        throw cause;
-      }
-
-      const response = await super.fetch(request);
-      if (!response.ok) return response;
-      this.updateSupplierTerms(input, request);
-      return response;
+      return this.upsertSupplierMapping(request);
     }
 
     if (request.method === "GET" && path === "/replenishment") {
@@ -98,32 +90,60 @@ export class TenantStore extends ReportsTenantStore {
     ).toArray();
   }
 
-  private updateSupplierTerms(input: z.infer<typeof supplierTermsSchema>, request: Request) {
-    const hasMinimum = Object.prototype.hasOwnProperty.call(input, "minimumOrderQuantity");
-    const hasMultiple = Object.prototype.hasOwnProperty.call(input, "orderMultiple");
-    if (!hasMinimum && !hasMultiple) return;
-
+  private async upsertSupplierMapping(request: Request) {
     const actorId = request.headers.get("x-ordermate-actor-id") || "";
     const actorRole = request.headers.get("x-ordermate-actor-role") || "";
-    if (!actorId || !actorRole) throw new Error("Missing authenticated actor context");
+    if (!actorId || !actorRole) return Response.json({ error: "Missing authenticated actor context" }, { status: 401 });
 
+    let input: z.infer<typeof supplierMappingSchema>;
+    try {
+      input = supplierMappingSchema.parse(await request.json());
+    } catch (cause) {
+      if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message || "Invalid supplier mapping" }, { status: 400 });
+      throw cause;
+    }
+
+    const supplier = this.orderPlanningCtx.storage.sql.exec<{ id: string }>(
+      "SELECT id FROM suppliers WHERE id = ? AND active = 1",
+      input.supplierId,
+    ).toArray()[0];
+    if (!supplier) return Response.json({ error: "Supplier not found" }, { status: 404 });
+
+    const variant = this.orderPlanningCtx.storage.sql.exec<{ id: string }>(
+      "SELECT id FROM product_variants WHERE id = ? AND active = 1",
+      input.variantId,
+    ).toArray()[0];
+    if (!variant) return Response.json({ error: "Product variant not found" }, { status: 404 });
+
+    const hasMinimum = Object.prototype.hasOwnProperty.call(input, "minimumOrderQuantity");
+    const hasMultiple = Object.prototype.hasOwnProperty.call(input, "orderMultiple");
     const updatedAt = now();
+
     this.orderPlanningCtx.storage.transactionSync(() => {
       this.orderPlanningCtx.storage.sql.exec(
-        `UPDATE supplier_variants
-         SET minimum_order_quantity = CASE WHEN ? = 1 THEN ? ELSE minimum_order_quantity END,
-             order_multiple = CASE WHEN ? = 1 THEN ? ELSE order_multiple END
-         WHERE supplier_id = ? AND variant_id = ?`,
-        hasMinimum ? 1 : 0,
-        input.minimumOrderQuantity ?? null,
-        hasMultiple ? 1 : 0,
-        input.orderMultiple ?? null,
+        `INSERT INTO supplier_variants (
+           supplier_id, variant_id, supplier_sku, last_cost_minor, lead_time_days,
+           minimum_order_quantity, order_multiple
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(supplier_id, variant_id) DO UPDATE SET
+           supplier_sku = excluded.supplier_sku,
+           last_cost_minor = excluded.last_cost_minor,
+           lead_time_days = excluded.lead_time_days,
+           minimum_order_quantity = CASE WHEN ? = 1 THEN excluded.minimum_order_quantity ELSE supplier_variants.minimum_order_quantity END,
+           order_multiple = CASE WHEN ? = 1 THEN excluded.order_multiple ELSE supplier_variants.order_multiple END`,
         input.supplierId,
         input.variantId,
+        input.supplierSku?.trim() || null,
+        input.lastCostMinor ?? null,
+        input.leadTimeDays ?? null,
+        input.minimumOrderQuantity ?? null,
+        input.orderMultiple ?? null,
+        hasMinimum ? 1 : 0,
+        hasMultiple ? 1 : 0,
       );
       this.orderPlanningCtx.storage.sql.exec(
         `INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at)
-         VALUES (?, ?, ?, 'supplier_variant.ordering_terms_updated', 'supplier_variant', ?, ?, ?)`,
+         VALUES (?, ?, ?, 'supplier_variant.updated', 'supplier_variant', ?, ?, ?)`,
         crypto.randomUUID(),
         actorId,
         actorRole,
@@ -137,6 +157,8 @@ export class TenantStore extends ReportsTenantStore {
         updatedAt,
       );
     });
+
+    return Response.json({ ok: true });
   }
 
   private async updateOrderPlanning(orderId: string, request: Request) {
