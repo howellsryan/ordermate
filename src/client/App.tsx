@@ -33,12 +33,14 @@ import { BrandLockup, BrandMark } from "./Brand";
 import { chooseDemoProfile, DEMO_PROFILES, getDemoProfile, type DemoProfileKey } from "./demo-profiles";
 import { resetDemoService } from "./demo-service";
 import { enterDemoMode, exitDemoMode, isDemoTenant, resetDemoData } from "./demo-store";
+import { resetDemoWorkstream } from "./demo-workstreams";
 import GlobalSearch from "./GlobalSearch";
 import LandingPage from "./LandingPage";
 import { ErrorText, Field, Modal } from "./ui";
 
 const WorkspaceStyles = lazy(() => import("./WorkspaceStyles"));
 const Overview = lazy(() => import("./pages/Overview"));
+const DemoWorkstream = lazy(() => import("./pages/DemoWorkstream"));
 const CRM = lazy(() => import("./pages/CRM"));
 const Service = lazy(() => import("./pages/Service"));
 const Products = lazy(() => import("./pages/Products"));
@@ -54,8 +56,8 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Team = lazy(() => import("./pages/Team"));
 const Suppliers = lazy(() => import("./pages/People").then(module => ({ default: module.Suppliers })));
 
-type Page = "overview" | "crm" | "service" | "orders" | "warehouse" | "wave-pick" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "reports" | "activity" | "team" | "settings";
-type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard; module?: WorkspaceModuleKey };
+type Page = "overview" | "workstream" | "crm" | "service" | "orders" | "warehouse" | "wave-pick" | "stocktake" | "products" | "inventory" | "purchasing" | "suppliers" | "reports" | "activity" | "team" | "settings";
+type NavItem = { id: Page; label: string; icon: typeof LayoutDashboard; module?: WorkspaceModuleKey; demoOnly?: boolean };
 type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 
 const TENANT_STORAGE_KEY = "operating-layer:tenant";
@@ -63,6 +65,7 @@ const LEGACY_TENANT_STORAGE_KEY = "ordermate:tenant";
 
 const nav: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "workstream", label: "Workstream", icon: PlayCircle, demoOnly: true },
   { id: "crm", label: "CRM", icon: ContactRound, module: "crm" },
   { id: "service", label: "Service", icon: Wrench, module: "service" },
   { id: "orders", label: "Orders", icon: ShoppingCart, module: "orders" },
@@ -155,11 +158,13 @@ export default function App() {
     }
   }, [activeTenantId]);
 
-  const moduleForPage = nav.find(item => item.id === page)?.module;
+  const navForPage = nav.find(item => item.id === page);
+  const moduleForPage = navForPage?.module;
   useEffect(() => {
     if (!activeTenant) return;
-    if (!pageVisible(activeTenant.role, page) || moduleForPage && modules.data && !enabledModules.has(moduleForPage)) setPage("overview");
-  }, [activeTenant?.role, page, moduleForPage, modules.data, enabledModules]);
+    const unavailableDemoPage = !!navForPage?.demoOnly && !demo;
+    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || moduleForPage && modules.data && !enabledModules.has(moduleForPage)) setPage("overview");
+  }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, modules.data, enabledModules]);
 
   if (sessionQuery.isLoading) {
     return activeTenantId ? <LoadingScreen /> : <LandingWithDemo inviteToken={inviteToken} />;
@@ -170,9 +175,10 @@ export default function App() {
   if (!session.organizations.length) return <CreateBusiness session={session} onCreated={() => qc.invalidateQueries({ queryKey: ["session"] })} />;
   if (!activeTenant) return <LoadingScreen />;
 
-  const visibleNav = nav.filter(item => pageVisible(activeTenant.role, item.id) && (!item.module || !modules.data || enabledModules.has(item.module)));
+  const visibleNav = nav.filter(item => (!item.demoOnly || demo) && pageVisible(activeTenant.role, item.id) && (!item.module || !modules.data || enabledModules.has(item.module)));
   const navigate = (target: Page) => {
     const targetNav = nav.find(item => item.id === target);
+    if (targetNav?.demoOnly && !demo) return;
     if (!pageVisible(activeTenant.role, target)) return;
     if (targetNav?.module && modules.data && !enabledModules.has(targetNav.module)) return;
     setPage(target);
@@ -188,7 +194,10 @@ export default function App() {
   const resetDemo = () => {
     resetDemoData();
     resetDemoService();
-    if (demoProfile) chooseDemoProfile(demoProfile.key);
+    if (demoProfile) {
+      resetDemoWorkstream(demoProfile.key);
+      chooseDemoProfile(demoProfile.key);
+    }
     qc.clear();
     location.reload();
   };
@@ -219,6 +228,7 @@ export default function App() {
           {modules.error && !demo && <div className="form-error" role="alert">Module configuration could not be loaded. Navigation is showing the safe default set; refresh before changing workspace configuration.</div>}
           <Suspense fallback={<WorkspaceLoading />}>
             {page === "overview" && <Overview tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
+            {page === "workstream" && demo && <DemoWorkstream tenant={activeTenant} onNavigate={target => navigate(target as Page)} />}
             {page === "crm" && <CRM tenant={activeTenant} />}
             {page === "service" && <Service tenant={activeTenant} />}
             {page === "orders" && <Orders tenant={activeTenant} />}
@@ -247,6 +257,7 @@ function LandingWithDemo({ inviteToken }: { inviteToken: string | null }) {
     chooseDemoProfile(profileKey);
     resetDemoData();
     resetDemoService();
+    resetDemoWorkstream(profileKey);
     enterDemoMode();
     localStorage.setItem(TENANT_STORAGE_KEY, "demo-local-workspace");
     location.reload();
