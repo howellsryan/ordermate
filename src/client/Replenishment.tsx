@@ -9,6 +9,7 @@ import { calendarDate, money, tenantApi } from "./api";
 import type { ReplenishmentResponse, ReplenishmentSuggestion, ReplenishmentSupplier } from "./model";
 import ReplenishmentPolicies from "./ReplenishmentPolicies";
 import { DataState } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 export type PurchaseOrderSeedLine = {
   variantId: string;
@@ -25,7 +26,15 @@ export type PurchaseOrderSeed = {
 
 type ScenarioName = "minimum" | "recommended" | "maximum";
 
-export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenant: OrganizationSummary; onCreatePurchaseOrder: (seed: PurchaseOrderSeed) => void }) {
+type ReplenishmentProps = { tenant: OrganizationSummary; onCreatePurchaseOrder: (seed: PurchaseOrderSeed) => void };
+
+export default function Replenishment(props: ReplenishmentProps) {
+  const features = useWorkspaceFeatures(props.tenant.id);
+  if (!features.data || !features.enabled.has("operating_intelligence")) return null;
+  return <EnabledReplenishment {...props} smartBuyEnabled={features.enabled.has("smart_buy_batches")} />;
+}
+
+function EnabledReplenishment({ tenant, onCreatePurchaseOrder, smartBuyEnabled }: ReplenishmentProps & { smartBuyEnabled: boolean }) {
   const canWrite = ["owner", "admin", "manager", "inventory"].includes(tenant.role);
   const [demandAdjustment, setDemandAdjustment] = useState(0);
   const [extraLeadDays, setExtraLeadDays] = useState(0);
@@ -72,9 +81,9 @@ export default function Replenishment({ tenant, onCreatePurchaseOrder }: { tenan
   }, [query.data, demandAdjustment, extraLeadDays]);
 
   const buyBatches = useMemo(() => {
-    if (!planning || !query.data) return [];
+    if (!smartBuyEnabled || !planning || !query.data) return [];
     return buildBuyBatches(planning.suggestions, query.data.generated_at.slice(0, 10));
-  }, [planning, query.data]);
+  }, [smartBuyEnabled, planning, query.data]);
 
   const create = (suggestion: ReplenishmentSuggestion, scenario: ScenarioName) => {
     const supplier = planningSupplier(suggestion);
