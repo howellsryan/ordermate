@@ -140,6 +140,6 @@ The repository work is **not trademark or domain-name legal clearance**. Before 
 
 Customer-facing identity is **Operating Layer**.
 
-Existing `ordermate-*` Cloudflare resource names, the current staging hostname and `x-ordermate-*` internal request headers are compatibility identifiers for the already-provisioned PR #3 staging stack. They are not public brand copy and must not be renamed casually: changing them requires an explicit infrastructure migration/cutover plan.
+Existing `ordermate-*` Cloudflare resource names, the current staging hostname and `x-ordermate-*` internal request headers are compatibility identifiers for the already-provisioned PR #3 staging stack. The private repository/package slug and build artifact namespace also remain aligned to that legacy runtime identity until an explicit administrative/infrastructure cutover. They are not public brand copy and must not be renamed casually: changing them requires an explicit migration/cutover plan.
 
 The client migrates the old `ordermate:tenant` local-storage key to `operating-layer:tenant` without dropping a user’s selected workspace.
