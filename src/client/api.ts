@@ -1,6 +1,7 @@
 import type { DashboardSummary, SessionPayload } from "../shared/types";
 import type { AttentionResponse, InventoryRow, Product } from "./model";
 import { demoControlApi } from "./demo-acceptance";
+import { demoBusinessProfileApi } from "./demo-business-profile";
 import { demoOpsApi } from "./demo-attention";
 import { demoCsv } from "./demo-export";
 import { demoModulesApi } from "./demo-modules";
@@ -75,6 +76,7 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
     if (pathname === "/modules" || pathname.startsWith("/modules/")) return await demoModulesApi(path, init) as T;
+    if (pathname === "/business-profile") return await demoBusinessProfileApi<T>(path, init);
     if (pathname.startsWith("/crm/") || pathname.startsWith("/service/")) return await demoServiceApi<T>(path, init);
     if (method === "GET" && pathname === "/supplier-variants") return await demoSupplierVariants() as T;
     if (method === "POST" && pathname === "/supplier-variants") return await demoSaveSupplierVariant(init) as T;
