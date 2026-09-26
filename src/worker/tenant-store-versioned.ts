@@ -1,7 +1,7 @@
 import { TenantStore as RuntimeTenantStore } from "./tenant-store-runtime";
 import type { TenantEnv } from "./tenant-store";
 
-const CURRENT_TENANT_SCHEMA_VERSION = 8;
+const CURRENT_TENANT_SCHEMA_VERSION = 9;
 const V1_REQUIRED_TABLES = [
   "tenant_settings",
   "sequences",
@@ -422,6 +422,30 @@ export function migrateTenantSchema(storage: SqlStorage) {
       recordMigration(storage, 8);
     });
     current = 8;
+  }
+
+  if (current < 9) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS business_profile (
+          id INTEGER PRIMARY KEY CHECK(id = 1),
+          address_json TEXT,
+          email TEXT,
+          phone TEXT,
+          vat_number TEXT,
+          company_number TEXT,
+          updated_at TEXT NOT NULL,
+          updated_by TEXT NOT NULL
+        )
+      `);
+      const migrationTime = new Date().toISOString();
+      sql.exec(
+        "INSERT INTO business_profile (id, updated_at, updated_by) VALUES (1, ?, 'schema-v9') ON CONFLICT(id) DO NOTHING",
+        migrationTime,
+      );
+      recordMigration(storage, 9);
+    });
+    current = 9;
   }
 
   if (current !== CURRENT_TENANT_SCHEMA_VERSION) {
