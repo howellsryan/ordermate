@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildOperatingIntelligence, type IntelligenceInput } from "../shared/operating-intelligence";
 import { TenantStore as VersionedTenantStore } from "./tenant-store-versioned";
 import type { TenantEnv } from "./tenant-store";
 
@@ -40,6 +41,8 @@ type StockRow = {
   available: number;
   incoming: number;
   fulfilled_30d: number;
+  fulfilled_prev_60d: number;
+  cost_minor: number;
   reorder_point: number | null;
   target_stock: number | null;
   preferred_supplier_id: string | null;
@@ -270,10 +273,11 @@ export class TenantStore extends VersionedTenantStore {
        demand AS (
          SELECT variant_id,
                 location_id,
-                SUM(CASE WHEN quantity_delta < 0 THEN -quantity_delta ELSE 0 END) AS fulfilled_30d
+                SUM(CASE WHEN datetime(created_at) >= datetime('now', '-30 days') AND quantity_delta < 0 THEN -quantity_delta ELSE 0 END) AS fulfilled_30d,
+                SUM(CASE WHEN datetime(created_at) < datetime('now', '-30 days') AND datetime(created_at) >= datetime('now', '-90 days') AND quantity_delta < 0 THEN -quantity_delta ELSE 0 END) AS fulfilled_prev_60d
          FROM inventory_movements
          WHERE movement_type = 'order_fulfilment'
-           AND datetime(created_at) >= datetime('now', '-30 days')
+           AND datetime(created_at) >= datetime('now', '-90 days')
          GROUP BY variant_id, location_id
        )
        SELECT pairs.variant_id,
@@ -287,6 +291,8 @@ export class TenantStore extends VersionedTenantStore {
               COALESCE(il.on_hand, 0) - COALESCE(il.reserved, 0) AS available,
               COALESCE(inc.quantity, 0) AS incoming,
               COALESCE(d.fulfilled_30d, 0) AS fulfilled_30d,
+              COALESCE(d.fulfilled_prev_60d, 0) AS fulfilled_prev_60d,
+              v.cost_minor,
               ip.reorder_point,
               ip.target_stock,
               ip.preferred_supplier_id
@@ -313,7 +319,7 @@ export class TenantStore extends VersionedTenantStore {
        JOIN products p ON p.id = v.product_id AND p.status = 'active'`,
     ).toArray();
 
-    const suggestions = stock.flatMap(row => {
+    const inputs: IntelligenceInput[] = stock.map(row => {
       const preferredSupplierId = row.preferred_supplier_id;
       const suppliers = mappings.filter(mapping => mapping.variant_id === row.variant_id).map(mapping => ({
         supplierId: mapping.supplier_id,
@@ -330,34 +336,37 @@ export class TenantStore extends VersionedTenantStore {
       const effectiveLeadTimeDays = preferred
         ? preferred.leadTimeDays ?? 7
         : knownLeadTimes.length ? Math.min(...knownLeadTimes) : 7;
-      const averageDailyDemand = row.fulfilled_30d / 30;
-      const leadTimeDemand = Math.ceil(averageDailyDemand * effectiveLeadTimeDays);
-      const projectedAtLeadTime = row.available + row.incoming - leadTimeDemand;
+      const recentDailyDemand = row.fulfilled_30d / 30;
       const reorderPoint = row.reorder_point ?? defaultThreshold;
-      // Target stock is the desired inventory position when the new supply is expected to arrive.
-      // Automatic rules retain approximately two weeks of post-arrival cover plus the reorder point.
       const targetStock = row.target_stock ?? Math.max(
         reorderPoint * 2,
-        Math.ceil(averageDailyDemand * 14) + reorderPoint,
+        Math.ceil(recentDailyDemand * 14) + reorderPoint,
       );
-      const recommendedQuantity = Math.max(0, targetStock - projectedAtLeadTime);
-      if (projectedAtLeadTime > reorderPoint || recommendedQuantity <= 0) return [];
 
-      return [{
+      return {
         id: `${row.variant_id}:${row.location_id}`,
-        ...row,
+        variant_id: row.variant_id,
+        product_name: row.product_name,
+        variant_name: row.variant_name,
+        sku: row.sku,
+        location_id: row.location_id,
+        location_name: row.location_name,
+        on_hand: row.on_hand,
+        reserved: row.reserved,
+        available: row.available,
+        incoming: row.incoming,
+        fulfilled_30d: row.fulfilled_30d,
+        fulfilled_prev_60d: row.fulfilled_prev_60d,
+        cost_minor: row.cost_minor,
         threshold: reorderPoint,
         target_stock: targetStock,
         policy_custom: row.reorder_point !== null,
-        average_daily_demand: Number(averageDailyDemand.toFixed(2)),
+        preferred_supplier_id: preferredSupplierId,
         effective_lead_time_days: effectiveLeadTimeDays,
-        projected_at_lead_time: projectedAtLeadTime,
-        recommended_quantity: recommendedQuantity,
         suppliers,
-      }];
+      };
     });
 
-    suggestions.sort((a, b) => a.projected_at_lead_time - b.projected_at_lead_time || b.recommended_quantity - a.recommended_quantity || a.product_name.localeCompare(b.product_name));
-    return { generated_at: now(), window_days: 30, default_threshold: defaultThreshold, suggestions: suggestions.slice(0, 100) };
+    return buildOperatingIntelligence(inputs, { defaultThreshold });
   }
 }
