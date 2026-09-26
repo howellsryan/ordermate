@@ -126,6 +126,26 @@ describe("guest demo SME automation journey", () => {
     expect(afterRow.incoming).toBe(beforeRow.incoming);
   });
 
+  it("preserves supplier SKU uniqueness in the browser demo", async () => {
+    const mappings = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
+    const tape = mappings.find(item => item.supplier_id === "sup-pack" && item.variant_id === "var-tape")!;
+    const labels = mappings.find(item => item.supplier_id === "sup-pack" && item.variant_id === "var-labels")!;
+
+    await expect(tenantApi(DEMO_TENANT_ID, "/supplier-variants", {
+      method: "POST",
+      body: JSON.stringify({
+        supplierId: labels.supplier_id,
+        variantId: labels.variant_id,
+        supplierSku: ` ${tape.supplier_sku?.toLowerCase()} `,
+        lastCostMinor: labels.last_cost_minor ?? undefined,
+        leadTimeDays: labels.lead_time_days ?? undefined,
+      }),
+    })).rejects.toThrow(/already mapped/i);
+
+    const unchanged = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
+    expect(unchanged.find(item => item.variant_id === labels.variant_id)?.supplier_sku).toBe(labels.supplier_sku);
+  });
+
   it("restores seeded buying terms when the user resets the browser demo", async () => {
     const initial = await tenantApi<SupplierVariant[]>(DEMO_TENANT_ID, "/supplier-variants");
     const tape = initial.find(item => item.supplier_id === "sup-pack" && item.variant_id === "var-tape")!;
