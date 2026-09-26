@@ -43,7 +43,7 @@ For every active tracked SKU/location position, Operating Layer now builds a 90-
 - last 30 days are weighted at 70%;
 - the prior 60-day run rate is weighted at 30%;
 - recent-vs-prior trend applies a bounded adjustment rather than an unlimited extrapolation;
-- available and incoming inventory are included;
+- current availability and **dated incoming PO supply** are included, using expected delivery dates and falling back to supplier lead time when an open PO is undated;
 - supplier/preferred-supplier lead time is included;
 - safety stock scales with forecast demand and effective lead time; and
 - the existing reorder point and target-stock policy remains authoritative where configured.
@@ -78,7 +78,7 @@ A planner can temporarily simulate:
 - demand changes from -50% to +100%; and
 - supplier delays from 0 to +30 days.
 
-The plan recalculates in the browser. The scenario is intentionally non-persistent: it does not rewrite supplier lead time, inventory policies or demand history. This makes it safe for questions such as “what if the promotion lifts demand 40%?” or “what if this supplier slips two weeks?” without turning a planning thought experiment into business truth.
+The plan recalculates in the browser, including shifting dated incoming supply when a supplier delay is simulated. The scenario is intentionally non-persistent: it does not rewrite supplier lead time, inventory policies or demand history. This makes it safe for questions such as “what if the promotion lifts demand 40%?” or “what if this supplier slips two weeks?” without turning a planning thought experiment into business truth.
 
 ### ABC value/velocity segmentation
 
@@ -95,15 +95,15 @@ Overview now includes a permission-aware operations copilot that can answer ques
 The copilot has two execution layers:
 
 1. a deterministic fallback that works without an LLM; and
-2. an optional Workers AI language layer that can improve wording/reasoning when explicitly enabled.
+2. an optional Workers AI language layer that can improve answer wording/reasoning when explicitly enabled.
 
-Both receive only role-permitted data. The AI path has no write tool and no mutation endpoint. It returns an answer, concrete evidence and links into the existing workflow. If the model is disabled or fails, the deterministic path remains available.
+Both receive only role-permitted data. The AI path has no write tool and no mutation endpoint. Concrete evidence and workflow links are always produced by deterministic code rather than by the model; Workers AI may only improve the prose answer. If the model is disabled or fails, the deterministic path remains available.
 
 `AI_OPERATIONS_ASSISTANT_ENABLED` is `false` by default in production, staging and test configuration. This mirrors the existing explicit compliance gate used for document extraction rather than silently expanding AI processing scope.
 
 ### Guest-demo parity
 
-The guest demo uses the same shared forecasting/scenario engine as live tenants. Its copilot uses the same deterministic answer contract and operates entirely from browser-local demo records. Demo operations do not call the live application API or Workers AI.
+The guest demo uses the same shared forecasting/scenario engine as live tenants, including seeded PO expected dates for incoming supply. Its copilot uses the same deterministic answer contract and operates entirely from browser-local demo records. Demo operations do not call the live application API or Workers AI.
 
 ## Trust boundary retained
 
