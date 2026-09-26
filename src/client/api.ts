@@ -4,7 +4,7 @@ import { demoControlApi } from "./demo-acceptance";
 import { demoBusinessProfileApi } from "./demo-business-profile";
 import { demoOpsApi } from "./demo-attention";
 import { demoCsv } from "./demo-export";
-import { demoModulesApi } from "./demo-modules";
+import { demoModuleEnabled, demoModulesApi } from "./demo-modules";
 import { demoOperatingIntelligence } from "./demo-operating-intelligence";
 import { getDemoProfile } from "./demo-profiles";
 import { demoServiceApi } from "./demo-service";
@@ -71,12 +71,38 @@ async function activeDemoVariantIds() {
   return new Set(products.filter(product => product.status === "active").flatMap(product => product.variants.filter(variant => variant.active !== 0).map(variant => variant.id)));
 }
 
+async function validateDemoInvoiceIssue(pathname: string) {
+  const invoiceId = pathname.match(/^\/service\/invoices\/([^/]+)\/issue$/)?.[1];
+  if (!invoiceId) return;
+
+  type Invoice = { id: string; case_id: string; job_id: string | null; tax_minor: number; supply_date: string | null };
+  const invoices = await demoServiceApi<{ invoices: Invoice[] }>("/service/invoices");
+  const invoice = invoices.invoices.find(item => item.id === invoiceId);
+  if (!invoice) throw new Error("Service invoice not found");
+
+  const profile = await demoBusinessProfileApi<{ address: Record<string, unknown> | null; vatNumber: string | null }>("/business-profile");
+  if (!profile.address) throw new Error("Business name and business address are required before an invoice can be issued");
+  if (invoice.tax_minor > 0 && !profile.vatNumber) throw new Error("VAT number is required before an invoice containing VAT can be issued");
+
+  const serviceCase = await demoServiceApi<{ contact_id: string; jobs: Array<{ id: string; completed_at: string | null }> }>(`/service/cases/${invoice.case_id}`);
+  const contact = await demoServiceApi<{ address: Record<string, unknown> | null }>(`/crm/contacts/${serviceCase.contact_id}`);
+  if (!contact.address) throw new Error("Customer address is required before an invoice can be issued");
+
+  if (!invoice.supply_date) {
+    const job = invoice.job_id ? serviceCase.jobs.find(item => item.id === invoice.job_id) : null;
+    if (!job?.completed_at) throw new Error("Supply date is required before an invoice can be issued");
+  }
+}
+
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
     const method = (init?.method || "GET").toUpperCase();
     const pathname = new URL(path, "https://demo.local").pathname;
     if (pathname === "/modules" || pathname.startsWith("/modules/")) return await demoModulesApi(path, init) as T;
     if (pathname === "/business-profile") return await demoBusinessProfileApi<T>(path, init);
+    if (pathname.startsWith("/crm/") && !demoModuleEnabled("crm")) throw new Error("CRM is disabled for this workspace.");
+    if (pathname.startsWith("/service/") && !demoModuleEnabled("service")) throw new Error("Service is disabled for this workspace.");
+    if (method === "POST" && /^\/service\/invoices\/[^/]+\/issue$/.test(pathname)) await validateDemoInvoiceIssue(pathname);
     if (pathname.startsWith("/crm/") || pathname.startsWith("/service/")) return await demoServiceApi<T>(path, init);
     if (method === "GET" && pathname === "/supplier-variants") return await demoSupplierVariants() as T;
     if (method === "POST" && pathname === "/supplier-variants") return await demoSaveSupplierVariant(init) as T;
