@@ -1,0 +1,37 @@
+# OrderMate
+
+OrderMate is operations software for growing small and medium-sized businesses (SMEs).
+
+It connects inventory, customer orders, purchasing, suppliers, warehouse execution, cycle counts, wave picking, reporting and human-reviewed automation in one auditable workspace.
+
+## Core capabilities
+
+- Multi-location inventory with on-hand, reserved, available and incoming stock.
+- Immutable stock movement history for adjustments, transfers, receipts, fulfilment, returns and stocktakes.
+- Customer orders with stock reservation, oversell prevention, fulfilment priority, required-by dates, partial fulfilment and returns.
+- Purchase orders with suppliers, expected delivery dates, partial receiving, cancellation and discrepancy handling.
+- Warehouse workflows for manual barcode entry, hardware scanners and mobile-camera scanning.
+- Wave Picking for 2–10 same-location orders with deterministic allocation back to exact order lines.
+- Cycle counts with stale-snapshot and reservation protection.
+- Deterministic replenishment suggestions using stock, incoming supply, demand and lead time.
+- Operations reports over canonical stock, order and purchasing records.
+- Reviewed document extraction and matching workflows. AI may propose information for human review but does not autonomously mutate canonical stock, fulfil orders or commit purchase orders.
+- Role-based access for owners, administrators, managers, inventory, fulfilment and viewer users.
+- Tenant-isolated operational storage and audited mutation paths.
+
+## Audience
+
+OrderMate is aimed at SMEs that have outgrown disconnected spreadsheets and manual operational reconciliation but do not want an unnecessarily heavy enterprise system.
+
+## Product principle
+
+Automate repetitive operational work while keeping important business decisions explicit, reviewable and attributable to people.
+
+## Public page sections
+
+- /#platform — platform value and operational outcomes
+- /#automation — automation and human-review model
+- /#product — product previews and workflows
+- /#trust — security, isolation, audit and role controls
+
+Authentication uses Google sign-in from the public landing page.
