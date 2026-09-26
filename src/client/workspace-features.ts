@@ -33,10 +33,11 @@ export async function updateWorkspaceFeature(tenantId: string, key: WorkspaceFea
   });
 }
 
-export function useWorkspaceFeatures(tenantId: string) {
+export function useWorkspaceFeatures(tenantId?: string) {
   const query = useQuery({
     queryKey: ["tenant", tenantId, "features"],
-    queryFn: () => getWorkspaceFeatures(tenantId),
+    queryFn: () => getWorkspaceFeatures(tenantId!),
+    enabled: !!tenantId,
   });
   const enabled = useMemo(
     () => new Set(query.data?.features.filter(feature => feature.enabled).map(feature => feature.key) || []),
