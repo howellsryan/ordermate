@@ -1,4 +1,4 @@
-# OrderMate implementation status
+# Operating Layer implementation status
 
 This document records the verified state of `rebuild/cloudflare-saas` after the rebuild hardening and staging deployment pass. The repository and Draft PR #3 remain authoritative if this summary and code ever diverge.
 
