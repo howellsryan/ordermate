@@ -13,6 +13,7 @@
   },
   "vars": {
     "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+    "AI_OPERATIONS_ASSISTANT_ENABLED": "false",
     "APP_ENV": "production"
   },
   "ai": {
@@ -72,6 +73,7 @@
       "preview_urls": false,
       "vars": {
         "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
+        "AI_OPERATIONS_ASSISTANT_ENABLED": "false",
         "APP_ENV": "staging"
       },
       "ai": {
