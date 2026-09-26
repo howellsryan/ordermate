@@ -82,8 +82,6 @@ export type OperatingIntelligenceResponse = {
   suggestions: OperatingIntelligenceRow[];
 };
 
-const DAY_MS = 86_400_000;
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -111,9 +109,9 @@ function abcClasses(inputs: IntelligenceInput[]) {
 
   let cumulative = 0;
   for (const row of ranked) {
+    const shareBeforeRow = cumulative / total;
+    result.set(row.id, shareBeforeRow < 0.8 ? "A" : shareBeforeRow < 0.95 ? "B" : "C");
     cumulative += row.value;
-    const share = cumulative / total;
-    result.set(row.id, share <= 0.8 ? "A" : share <= 0.95 ? "B" : "C");
   }
   return result;
 }
@@ -163,7 +161,7 @@ export function applyPlanningContext(
   const daysOfCover = signals.forecastDaily > 0 ? Math.max(0, Math.floor(inventoryPosition / signals.forecastDaily)) : null;
   const stockoutDate = daysOfCover === null || daysOfCover > 365 ? null : isoDateFromOffset(todayIso, daysOfCover);
   const reorderCoverageDays = signals.forecastDaily > 0
-    ? Math.max(0, Math.floor((Math.max(0, input.available - safetyStock)) / signals.forecastDaily) - leadTimeDays)
+    ? Math.max(0, Math.floor(Math.max(0, input.available - safetyStock) / signals.forecastDaily) - leadTimeDays)
     : 0;
   const orderByDate = signals.forecastDaily > 0 ? isoDateFromOffset(todayIso, reorderCoverageDays) : null;
 
@@ -246,8 +244,4 @@ export function buildOperatingIntelligence(
     positions,
     suggestions: suggestions.slice(0, 100),
   };
-}
-
-export function dayDifference(fromIso: string, toIso: string) {
-  return Math.round((new Date(`${toIso}T00:00:00Z`).getTime() - new Date(`${fromIso}T00:00:00Z`).getTime()) / DAY_MS);
 }
