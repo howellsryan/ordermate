@@ -21,6 +21,7 @@ import "./bulk-actions.css";
 import "./reports.css";
 import "./order-planning.css";
 import "./wave-picking.css";
+import "./service-crm.css";
 
 export default function WorkspaceStyles() {
   return null;
