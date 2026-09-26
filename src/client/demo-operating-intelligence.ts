@@ -1,20 +1,31 @@
 import { buildOperatingIntelligence, type IntelligenceInput } from "../shared/operating-intelligence";
-import type { InventoryPolicy, InventoryRow, OrderDetail, Product, ReplenishmentResponse, SupplierVariant } from "./model";
+import type { InventoryPolicy, InventoryRow, OrderDetail, Product, PurchaseOrderDetail, ReplenishmentResponse, SupplierVariant } from "./model";
 import { demoTenantApi } from "./demo-stocktake";
 
 type DemoSettings = { low_stock_threshold: number };
+const DAY_MS = 86_400_000;
 
 function ageInDays(iso: string) {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
+}
+
+function daysFromToday(date: string | null | undefined, fallback: number) {
+  if (!date) return fallback;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const expected = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(expected)) return fallback;
+  return Math.max(0, Math.round((expected - todayUtc) / DAY_MS));
 }
 
 export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse> {
-  const [inventory, products, mappings, policies, orders, settings] = await Promise.all([
+  const [inventory, products, mappings, policies, orders, purchaseOrders, settings] = await Promise.all([
     demoTenantApi<InventoryRow[]>("/inventory"),
     demoTenantApi<Product[]>("/products"),
     demoTenantApi<SupplierVariant[]>("/supplier-variants"),
     demoTenantApi<InventoryPolicy[]>("/inventory-policies"),
     demoTenantApi<OrderDetail[]>("/orders"),
+    demoTenantApi<PurchaseOrderDetail[]>("/purchase-orders"),
     demoTenantApi<DemoSettings>("/settings"),
   ]);
 
@@ -53,6 +64,16 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
         else fulfilledPrevious60 += units;
       }
 
+      const incomingSchedule = purchaseOrders
+        .filter(po => po.location_id === row.location_id && ["ordered", "partially_received"].includes(po.status))
+        .flatMap(po => po.lines
+          .filter(line => line.variant_id === row.variant_id && line.quantity_ordered > line.quantity_received)
+          .map(line => ({
+            daysFromNow: daysFromToday(po.expected_delivery_date, leadTime),
+            quantity: line.quantity_ordered - line.quantity_received,
+          })))
+        .sort((a, b) => a.daysFromNow - b.daysFromNow);
+
       const recentDaily = fulfilled30 / 30;
       const threshold = policy?.reorder_point ?? settings.low_stock_threshold;
       const target = policy?.target_stock ?? Math.max(threshold * 2, Math.ceil(recentDaily * 14) + threshold);
@@ -69,6 +90,7 @@ export async function demoOperatingIntelligence(): Promise<ReplenishmentResponse
         reserved: row.reserved,
         available: row.available,
         incoming: row.incoming,
+        incoming_schedule: incomingSchedule,
         fulfilled_30d: fulfilled30,
         fulfilled_prev_60d: fulfilledPrevious60,
         cost_minor: indexed.variant.cost_minor,
