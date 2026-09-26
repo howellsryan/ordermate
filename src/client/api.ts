@@ -1,4 +1,5 @@
 import type { SessionPayload } from "../shared/types";
+import { demoControlApi, demoCsv, demoOpsApi, demoSession, demoTenantApi, isDemoMode, isDemoTenant } from "./demo-store";
 
 export async function errorFrom(response: Response) {
   const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
@@ -9,6 +10,8 @@ export async function errorFrom(response: Response) {
 }
 
 export async function getSession(): Promise<SessionPayload | null> {
+  if (isDemoMode()) return demoSession();
+
   // Better Auth deliberately returns 200 + null for an anonymous visitor. Probe
   // that lightweight endpoint first so the public landing page does not create
   // an expected 401 network error before we ask for the richer Operating Layer session.
@@ -31,6 +34,8 @@ export async function createOrganization(name: string) {
 }
 
 export async function controlApi<T>(path: string, init?: RequestInit): Promise<T> {
+  if (isDemoMode()) return demoControlApi<T>(path, init);
+
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
   const response = await fetch(`/api${path}`, { ...init, headers, credentials: "include" });
@@ -39,6 +44,8 @@ export async function controlApi<T>(path: string, init?: RequestInit): Promise<T
 }
 
 export async function tenantApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
+  if (isDemoTenant(tenantId)) return demoTenantApi<T>(path, init);
+
   const headers = new Headers(init?.headers);
   headers.set("x-ordermate-tenant", tenantId);
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
@@ -48,6 +55,8 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
 }
 
 export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
+  if (isDemoTenant(tenantId)) return demoOpsApi<T>(path);
+
   const headers = new Headers(init?.headers);
   headers.set("x-ordermate-tenant", tenantId);
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
@@ -57,6 +66,19 @@ export async function tenantOpsApi<T>(tenantId: string, path: string, init?: Req
 }
 
 export async function downloadTenantCsv(tenantId: string, kind: string) {
+  if (isDemoTenant(tenantId)) {
+    const demo = demoCsv(kind);
+    const url = URL.createObjectURL(new Blob([demo.content], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = demo.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    return;
+  }
+
   const response = await fetch(`/api/ops/export/${encodeURIComponent(kind)}`, {
     credentials: "include",
     headers: { "x-ordermate-tenant": tenantId },
@@ -65,7 +87,7 @@ export async function downloadTenantCsv(tenantId: string, kind: string) {
   const blob = await response.blob();
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="([^"]+)"/);
-  const filename = match?.[1] || `ordermate-${kind}.csv`;
+  const filename = match?.[1] || `operating-layer-${kind}.csv`;
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
