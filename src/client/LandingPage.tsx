@@ -162,7 +162,7 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
             <div className="hero-product-body">
               <div className="mini-sidebar"><i className="active" /><i /><i /><i /><i /><i /></div>
               <div className="mini-dashboard">
-                <div className="mini-heading"><div><span>FRIDAY, 26 SEPTEMBER</span><strong>Good morning.</strong></div><b>Everything in motion.</b></div>
+                <div className="mini-heading"><div><span>LIVE OPERATIONS OVERVIEW</span><strong>Good morning.</strong></div><b>Everything in motion.</b></div>
                 <div className="mini-metrics">
                   <div><span>Available stock</span><strong>4,286</strong><small>12 locations</small></div>
                   <div><span>Orders to fulfil</span><strong>38</strong><small>7 urgent</small></div>
