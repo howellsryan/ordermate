@@ -7,6 +7,11 @@ export type IntelligenceSupplier = {
   preferred?: boolean;
 };
 
+export type IncomingSupply = {
+  daysFromNow: number;
+  quantity: number;
+};
+
 export type IntelligenceInput = {
   id: string;
   variant_id: string;
@@ -19,6 +24,7 @@ export type IntelligenceInput = {
   reserved: number;
   available: number;
   incoming: number;
+  incoming_schedule?: IncomingSupply[];
   fulfilled_30d: number;
   fulfilled_prev_60d: number;
   cost_minor: number;
@@ -97,6 +103,15 @@ function isoDateFromOffset(todayIso: string, offsetDays: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizedIncomingSchedule(input: IntelligenceInput, fallbackLeadTimeDays: number) {
+  const supplied = (input.incoming_schedule || [])
+    .filter(item => Number.isFinite(item.daysFromNow) && Number.isFinite(item.quantity) && item.quantity > 0)
+    .map(item => ({ daysFromNow: Math.max(0, Math.round(item.daysFromNow)), quantity: Math.max(0, Math.round(item.quantity)) }))
+    .sort((a, b) => a.daysFromNow - b.daysFromNow);
+  if (supplied.length) return supplied;
+  return input.incoming > 0 ? [{ daysFromNow: fallbackLeadTimeDays, quantity: input.incoming }] : [];
+}
+
 function abcClasses(inputs: IntelligenceInput[]) {
   const ranked = inputs
     .map(input => ({ id: input.id, value: Math.max(0, input.fulfilled_30d + input.fulfilled_prev_60d) * Math.max(0, input.cost_minor) }))
@@ -133,15 +148,40 @@ function demandSignals(input: IntelligenceInput, demandAdjustmentPercent: number
 }
 
 function forecastCurve(input: IntelligenceInput, forecastDaily: number, leadTimeDays: number) {
+  const schedule = normalizedIncomingSchedule(input, leadTimeDays);
   const points: ForecastPoint[] = [];
-  const incomingWeek = Math.max(1, Math.ceil(leadTimeDays / 7));
   let projected = input.available;
+  let previousDay = 0;
   for (let week = 1; week <= 12; week++) {
-    projected -= forecastDaily * 7;
-    if (week === incomingWeek) projected += input.incoming;
+    const weekEndDay = week * 7;
+    projected -= forecastDaily * (weekEndDay - previousDay);
+    projected += schedule
+      .filter(item => item.daysFromNow > previousDay && item.daysFromNow <= weekEndDay)
+      .reduce((sum, item) => sum + item.quantity, 0);
     points.push({ week, projected: Math.round(projected) });
+    previousDay = weekEndDay;
   }
   return points;
+}
+
+function projectedStockAtDay(input: IntelligenceInput, forecastDaily: number, day: number, leadTimeDays: number) {
+  const arrivals = normalizedIncomingSchedule(input, leadTimeDays)
+    .filter(item => item.daysFromNow <= day)
+    .reduce((sum, item) => sum + item.quantity, 0);
+  return Math.round(input.available + arrivals - forecastDaily * day);
+}
+
+function daysOfCoverWithIncoming(input: IntelligenceInput, forecastDaily: number, leadTimeDays: number) {
+  if (forecastDaily <= 0) return null;
+  const schedule = normalizedIncomingSchedule(input, leadTimeDays);
+  let stock = input.available;
+  for (let day = 0; day <= 365; day++) {
+    stock += schedule.filter(item => item.daysFromNow === day).reduce((sum, item) => sum + item.quantity, 0);
+    if (stock <= 0) return day;
+    stock -= forecastDaily;
+    if (stock <= 0) return day + 1;
+  }
+  return null;
 }
 
 export function applyPlanningContext(
@@ -156,11 +196,9 @@ export function applyPlanningContext(
   const signals = demandSignals(input, demandAdjustmentPercent);
   const bufferDays = Math.max(3, Math.min(14, Math.ceil(leadTimeDays * 0.5)));
   const safetyStock = Math.max(input.threshold, Math.ceil(signals.forecastDaily * bufferDays));
-  const leadDemand = Math.ceil(signals.forecastDaily * leadTimeDays);
-  const projectedAtLead = Math.round(input.available + input.incoming - leadDemand);
-  const inventoryPosition = input.available + input.incoming;
-  const daysOfCover = signals.forecastDaily > 0 ? Math.max(0, Math.floor(inventoryPosition / signals.forecastDaily)) : null;
-  const stockoutDate = daysOfCover === null || daysOfCover > 365 ? null : isoDateFromOffset(todayIso, daysOfCover);
+  const projectedAtLead = projectedStockAtDay(input, signals.forecastDaily, leadTimeDays, leadTimeDays);
+  const daysOfCover = daysOfCoverWithIncoming(input, signals.forecastDaily, leadTimeDays);
+  const stockoutDate = daysOfCover === null ? null : isoDateFromOffset(todayIso, daysOfCover);
   const reorderCoverageDays = signals.forecastDaily > 0
     ? Math.max(0, Math.floor(Math.max(0, input.available - safetyStock) / signals.forecastDaily) - leadTimeDays)
     : 0;
@@ -183,11 +221,12 @@ export function applyPlanningContext(
         ? "watch"
         : "healthy";
 
+  const datedIncoming = normalizedIncomingSchedule(input, leadTimeDays);
   const explanation = [
     `${input.fulfilled_30d} units fulfilled in the last 30 days and ${input.fulfilled_prev_60d} in the prior 60 days.`,
     `Forecast demand is ${round2(signals.forecastDaily)} units/day after weighting recent demand, trend and the active planning context.`,
     `${leadTimeDays} days effective lead time with ${bufferDays} days of demand buffer produces ${safetyStock} units of safety stock.`,
-    `Current available + incoming stock projects to ${projectedAtLead} units when replacement stock is due.`,
+    `Current available stock plus ${datedIncoming.reduce((sum, item) => sum + item.quantity, 0)} dated incoming units projects to ${projectedAtLead} units when a new replenishment order would be expected to arrive.`,
   ];
 
   if (demandAdjustmentPercent) explanation.push(`Planning scenario adjusts demand by ${demandAdjustmentPercent > 0 ? "+" : ""}${demandAdjustmentPercent}%.`);
