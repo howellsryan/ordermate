@@ -193,11 +193,14 @@ export function applyPlanningContext(
   const demandAdjustmentPercent = clamp(context.demandAdjustmentPercent || 0, -90, 200);
   const extraLeadTimeDays = Math.round(clamp(context.extraLeadTimeDays || 0, 0, 120));
   const leadTimeDays = Math.max(1, Math.round(input.effective_lead_time_days + extraLeadTimeDays));
+  const scenarioInput: IntelligenceInput = extraLeadTimeDays > 0 && input.incoming_schedule?.length
+    ? { ...input, incoming_schedule: input.incoming_schedule.map(item => ({ ...item, daysFromNow: item.daysFromNow + extraLeadTimeDays })) }
+    : input;
   const signals = demandSignals(input, demandAdjustmentPercent);
   const bufferDays = Math.max(3, Math.min(14, Math.ceil(leadTimeDays * 0.5)));
   const safetyStock = Math.max(input.threshold, Math.ceil(signals.forecastDaily * bufferDays));
-  const projectedAtLead = projectedStockAtDay(input, signals.forecastDaily, leadTimeDays, leadTimeDays);
-  const daysOfCover = daysOfCoverWithIncoming(input, signals.forecastDaily, leadTimeDays);
+  const projectedAtLead = projectedStockAtDay(scenarioInput, signals.forecastDaily, leadTimeDays, leadTimeDays);
+  const daysOfCover = daysOfCoverWithIncoming(scenarioInput, signals.forecastDaily, leadTimeDays);
   const stockoutDate = daysOfCover === null ? null : isoDateFromOffset(todayIso, daysOfCover);
   const reorderCoverageDays = signals.forecastDaily > 0
     ? Math.max(0, Math.floor(Math.max(0, input.available - safetyStock) / signals.forecastDaily) - leadTimeDays)
@@ -221,7 +224,7 @@ export function applyPlanningContext(
         ? "watch"
         : "healthy";
 
-  const datedIncoming = normalizedIncomingSchedule(input, leadTimeDays);
+  const datedIncoming = normalizedIncomingSchedule(scenarioInput, leadTimeDays);
   const explanation = [
     `${input.fulfilled_30d} units fulfilled in the last 30 days and ${input.fulfilled_prev_60d} in the prior 60 days.`,
     `Forecast demand is ${round2(signals.forecastDaily)} units/day after weighting recent demand, trend and the active planning context.`,
@@ -230,7 +233,7 @@ export function applyPlanningContext(
   ];
 
   if (demandAdjustmentPercent) explanation.push(`Planning scenario adjusts demand by ${demandAdjustmentPercent > 0 ? "+" : ""}${demandAdjustmentPercent}%.`);
-  if (extraLeadTimeDays) explanation.push(`Planning scenario adds ${extraLeadTimeDays} days of supplier delay.`);
+  if (extraLeadTimeDays) explanation.push(`Planning scenario adds ${extraLeadTimeDays} days to supplier timing, including dated incoming supply.`);
 
   return {
     ...input,
@@ -248,7 +251,7 @@ export function applyPlanningContext(
     order_by_date: orderByDate,
     recommended_quantity: recommended,
     scenarios: { minimum, recommended, maximum },
-    forecast_12_weeks: forecastCurve(input, signals.forecastDaily, leadTimeDays),
+    forecast_12_weeks: forecastCurve(scenarioInput, signals.forecastDaily, leadTimeDays),
     risk,
     abc_class: abcClass,
     explanation,
