@@ -5,6 +5,7 @@ import App from "./App";
 import "./styles.css";
 import "./landing.css";
 import "./landing-hardening.css";
+import "./brand.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
