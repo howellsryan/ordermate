@@ -1,8 +1,10 @@
-# OrderMate
+# Operating Layer
 
-OrderMate is a Cloudflare-native multi-tenant SaaS for products, purchasing, orders and inventory.
+Operating Layer is a Cloudflare-native multi-tenant SaaS for inventory, purchasing, orders and warehouse operations.
 
 > Continuing this rebuild in a new session? Start with `docs/next-agent-handoff.md`.
+
+> **Compatibility note:** customer-facing identity is Operating Layer. Existing `ordermate-*` Cloudflare resource names, the staging hostname and `x-ordermate-*` internal headers remain legacy infrastructure identifiers until an explicit migration/cutover is approved. See `docs/brand.md`.
 
 ## Architecture
 
@@ -16,11 +18,11 @@ OrderMate is a Cloudflare-native multi-tenant SaaS for products, purchasing, ord
 - Optional Cloudflare Workers AI document extraction. It is built in but disabled by default for an explicit compliance decision.
 - Wrangler is the source of truth for deployable Cloudflare resources.
 
-See `docs/architecture.md` and `docs/delivery-plan.md`.
+See `docs/architecture.md`, `docs/delivery-plan.md`, `docs/brand.md` and `docs/seo.md`.
 
 ## Delivered product foundations
 
-OrderMate currently includes:
+Operating Layer currently includes:
 
 - Google sign-in, multiple businesses per user, invitations and role-based access;
 - products, arbitrary option dimensions, variants, SKUs, barcodes and modifiers;
@@ -65,12 +67,14 @@ OrderMate currently includes:
    npm run cf:bootstrap
    ```
 
-   The script creates:
+   The script creates the existing compatibility-named infrastructure:
 
    - `ordermate-control` as an EU-jurisdiction D1 database and writes its `CONTROL_DB` binding into `wrangler.jsonc`;
    - `ordermate-documents` as an EU-jurisdiction R2 bucket;
    - `ordermate-events` as the application queue; and
    - `ordermate-events-dead` as its extraction dead-letter queue.
+
+   These names are infrastructure identifiers, not public brand copy. Do not rename provisioned resources as part of a visual/product rebrand.
 
    The tenant SQLite Durable Object namespace is created from the Wrangler migration on deploy. The Workers AI binding is declared directly in `wrangler.jsonc` and does not require another provider credential.
 
@@ -98,7 +102,7 @@ OrderMate currently includes:
    npm run db:migrate:local
    ```
 
-7. Run OrderMate locally:
+7. Run Operating Layer locally:
 
    ```sh
    npm run dev
@@ -123,7 +127,7 @@ Cycle Count is a reviewed partial stocktake rather than a destructive full-locat
 - blank means the SKU was not counted and will not be touched;
 - zero is a real reviewed physical count;
 - hardware scanners, manual barcode entry and the mobile camera scanner are supported;
-- OrderMate snapshots on-hand/reserved quantities as each SKU enters the count;
+- Operating Layer snapshots on-hand/reserved quantities as each SKU enters the count;
 - any stale stock/reservation change rejects the whole batch before mutation; and
 - successful variances share one stocktake reference and are committed atomically with an audit event.
 
@@ -144,7 +148,7 @@ If one order fails after other orders have succeeded, successful orders are not 
 
 Inventory and Purchasing filters can be saved per signed-in user inside the tenant datastore, so operational views follow the user across devices without becoming shared workspace state. Users in the same business cannot list or delete one another's views.
 
-Products supports atomic bulk archive/restore for up to 200 selected records. OrderMate verifies the entire selection before mutation; a missing product rejects the whole action. Product/variant retirement semantics and per-product audit events match the single-record workflow.
+Products supports atomic bulk archive/restore for up to 200 selected records. Operating Layer verifies the entire selection before mutation; a missing product rejects the whole action. Product/variant retirement semantics and per-product audit events match the single-record workflow.
 
 ## Operations Reports
 
@@ -175,11 +179,11 @@ Discrepancies remain linked to the immutable R2 proposal/source evidence. Resolu
 
 The workflow is deliberately proposal-based:
 
-`EU R2 source -> Queue -> Cloudflare document conversion -> Workers AI JSON extraction -> deterministic OrderMate matching -> R2 proposal -> human review -> draft PO`
+`EU R2 source -> Queue -> Cloudflare document conversion -> Workers AI JSON extraction -> deterministic Operating Layer matching -> R2 proposal -> human review -> draft PO`
 
 AI never submits a PO, receives stock, adjusts inventory or fulfils an order.
 
-Exact matching is limited to known supplier identity, supplier SKU, barcode and OrderMate SKU. Ambiguous lines stay unmatched for human correction. Raw converted Markdown is not persisted; R2 stores the original source and the structured proposal.
+Exact matching is limited to known supplier identity, supplier SKU, barcode and Operating Layer SKU. Ambiguous lines stay unmatched for human correction. Raw converted Markdown is not persisted; R2 stores the original source and the structured proposal.
 
 Reviewed proposal lines can explicitly remember a supplier SKU for the human-confirmed supplier/variant. Replacement mappings require opt-in and conflicting mappings are rejected; this improves later exact matching without letting the model silently learn identities.
 
@@ -242,4 +246,4 @@ npm run deploy
 
 ## Cloudflare-only infrastructure rule
 
-OrderMate's application runtime and durable product/customer data stay on Cloudflare unless the architecture is explicitly changed. Do not introduce AWS, Azure, GCP, Vercel, Neon, Supabase or another hosted runtime/database as an implicit dependency. Google is used only as the OAuth identity provider.
+Operating Layer's application runtime and durable product/customer data stay on Cloudflare unless the architecture is explicitly changed. Do not introduce AWS, Azure, GCP, Vercel, Neon, Supabase or another hosted runtime/database as an implicit dependency. Google is used only as the OAuth identity provider.
