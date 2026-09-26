@@ -4,7 +4,7 @@ import type {
   DeliveryDiscrepancyResolutionCode,
 } from "../shared/delivery-discrepancy";
 import type { OperationsReport } from "../shared/operations-report";
-import type { AuditEvent, InventoryRow, OrderDetail, Product, PurchaseOrderDetail } from "./model";
+import type { AuditEvent, InventoryRow, OrderDetail, Product, PurchaseOrderDetail, SupplierVariant } from "./model";
 import {
   demoControlApi as runtimeControlApi,
   demoCsv as runtimeCsv,
@@ -33,6 +33,7 @@ type ExtendedDemoState = {
   settings: { low_stock_threshold: number; currency: string };
   products: Product[];
   inventory: InventoryRow[];
+  supplierVariants: SupplierVariant[];
   purchaseOrders: PurchaseOrderDetail[];
   orders: OrderDetail[];
   audit: AuditEvent[];
@@ -269,6 +270,62 @@ async function recordReturnEvent(path: string, init: RequestInit | undefined) {
   return result;
 }
 
+function normalizedSupplierSku(value: string) {
+  return value.trim().normalize("NFKC").toUpperCase();
+}
+
+async function validateSupplierVariant(init?: RequestInit) {
+  const body = parseBody(init);
+  const supplierId = String(body.supplierId || "");
+  const variantId = String(body.variantId || "");
+  const supplierSku = typeof body.supplierSku === "string" ? body.supplierSku.trim() : "";
+  if (!supplierId || !variantId || !supplierSku) return;
+
+  const state = await stateReady();
+  const normalized = normalizedSupplierSku(supplierSku);
+  const conflict = state.supplierVariants.find(mapping =>
+    mapping.supplier_id === supplierId
+    && mapping.variant_id !== variantId
+    && normalizedSupplierSku(mapping.supplier_sku || "") === normalized,
+  );
+  if (!conflict) return;
+
+  throw new Error(`Supplier SKU ${supplierSku} is already mapped to ${conflict.product_name} · ${conflict.variant_name} (${conflict.sku})`);
+}
+
+async function validateStocktake(init?: RequestInit) {
+  const body = parseBody(init);
+  const locationId = String(body.locationId || "");
+  const lines = Array.isArray(body.lines) ? body.lines as JsonRecord[] : [];
+  if (!locationId) throw new Error("Choose a stock location before committing the cycle count");
+  if (!lines.length) throw new Error("A cycle count needs at least one line");
+
+  const seen = new Set<string>();
+  const state = await stateReady();
+  for (const line of lines) {
+    const variantId = String(line.variantId || "");
+    if (!variantId) throw new Error("Every cycle-count line needs a product variant");
+    if (seen.has(variantId)) throw new Error("A variant can only appear once in a cycle count");
+    seen.add(variantId);
+
+    const expectedOnHand = Number(line.expectedOnHand);
+    const expectedReserved = Number(line.expectedReserved);
+    const countedOnHand = Number(line.countedOnHand);
+    if (![expectedOnHand, expectedReserved, countedOnHand].every(value => Number.isInteger(value) && value >= 0)) {
+      throw new Error("Cycle-count quantities must be non-negative whole numbers");
+    }
+
+    const row = state.inventory.find(item => item.variant_id === variantId && item.location_id === locationId);
+    if (!row) throw new Error(`Product variant ${variantId} no longer exists at this location`);
+    if (row.on_hand !== expectedOnHand || row.reserved !== expectedReserved) {
+      throw new Error(`Stock changed while you were counting ${row.product_name} · ${row.variant_name} (${row.sku}). Expected ${expectedOnHand} on hand / ${expectedReserved} reserved; it is now ${row.on_hand} on hand / ${row.reserved} reserved. Refresh the location and review the count before committing.`);
+    }
+    if (countedOnHand < row.reserved) {
+      throw new Error(`${row.product_name} · ${row.variant_name} (${row.sku}) has ${row.reserved} reserved units, so on-hand stock cannot be counted below ${row.reserved}. Resolve the outstanding reservations before applying this variance.`);
+    }
+  }
+}
+
 export async function demoTenantApi<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || "GET").toUpperCase();
   const url = new URL(path, "https://demo.local");
@@ -311,6 +368,14 @@ export async function demoTenantApi<T>(path: string, init?: RequestInit): Promis
     });
     writeState(state);
     return { ok: true } as T;
+  }
+
+  if (method === "POST" && url.pathname === "/inventory/stocktake") {
+    await validateStocktake(init);
+  }
+
+  if (method === "POST" && url.pathname === "/supplier-variants") {
+    await validateSupplierVariant(init);
   }
 
   if (method === "POST" && /^\/orders\/[^/]+\/return$/.test(url.pathname)) {
