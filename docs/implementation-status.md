@@ -1,37 +1,81 @@
 # OrderMate implementation status
 
-This document records the verified state of `rebuild/cloudflare-saas` after the rebuild hardening pass on 25 September 2026. The repository and Draft PR #3 remain authoritative if this summary and code ever diverge.
+This document records the verified state of `rebuild/cloudflare-saas` after the rebuild hardening and staging deployment pass. The repository and Draft PR #3 remain authoritative if this summary and code ever diverge.
 
 ## Verification status
 
-The full rebuild gate was run successfully on application commit `ce7ee30be57f9d989b3a63c5668b38b29746037f` with Node 24.21.0 / npm 11.19.0:
+The rebuild is green through both the repository gate and the Cloudflare staging deployment gate.
+
+Repository verification has passed with Node 24 and the pinned lockfile:
 
 ```text
 npm install       PASS — package-lock.json tracked and unchanged
 npm run typecheck PASS
 npm test          PASS — 29 test files, 112/112 tests
 npm run build     PASS
+npm run build:staging PASS
 ```
 
-The following branch commits after that application SHA only return the verification workflow to manual-only and update documentation; they do not alter runtime application behavior.
+Cloudflare Builds independently ran the staging gate against the branch and passed:
 
-The production build is green. It currently emits non-fatal upstream annotation and bundle/chunk-size warnings; these are performance/packaging follow-up opportunities, not build failures.
+```text
+npm run typecheck     PASS
+npm run test:cloudflare PASS — 29 test files, 112/112 tests
+npm run build:staging PASS
+npm run db:migrate:staging PASS
+wrangler deploy --env staging PASS
+```
 
-A physical browser/device smoke pass remains outstanding for real USB/Bluetooth keyboard-wedge scanning and camera permission/decoding. Do not call PR #3 review-ready or production-ready until that pass is completed and any findings are resolved.
+`test:cloudflare` changes only the per-test timeout ceiling to 15 seconds because several Durable Object integration tests take 5–9 seconds on Cloudflare's shared build host. The normal `npm test` gate keeps Vitest's stricter default timeout. Assertions and domain/security behavior are identical.
+
+The production/staging Vite build is green. It emits non-fatal upstream annotation and bundle/chunk-size warnings; those are performance/packaging follow-up opportunities, not build failures.
+
+## Live staging environment
+
+A real isolated staging site now exists:
+
+`https://ordermate-staging.rlh.workers.dev`
+
+It uses:
+
+- EU-jurisdiction D1 `ordermate-staging-control`;
+- a staging-only `TenantStore` Durable Object namespace;
+- explicit EU-jurisdiction R2 `ordermate-staging-documents`;
+- staging queue `ordermate-staging-events` plus DLQ;
+- Workers AI binding present but document extraction disabled;
+- preview URLs disabled in favour of the stable staging hostname.
+
+The staging D1 has both control-plane migrations applied (`0001_auth.sql`, `0002_workspace_invites.sql`) and its schema was queried directly after deployment.
+
+Cloudflare Builds watches `rebuild/cloudflare-saas` and automatically verifies/deploys staging pushes. `docs/**` changes are excluded. GitHub's rebuild verification workflow remains manual-only to avoid consuming Actions minutes on every commit.
+
+### Remaining staging prerequisite
+
+`BETTER_AUTH_SECRET` is configured with a generated staging secret. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are currently non-credential placeholders; no OAuth credential was invented or committed.
+
+Before full interactive browser testing, configure a Google OAuth Web client with this callback and replace the two placeholder Worker secrets:
+
+```text
+https://ordermate-staging.rlh.workers.dev/api/auth/callback/google
+```
+
+No staging authentication bypass should be added.
 
 ## Verification hardening completed
 
 The verification pass found and fixed issues rather than weakening tests or bypassing invariants:
 
 - generated and committed a stable `package-lock.json`;
-- aligned the root Wrangler version with the current Cloudflare Vite/Workers Types toolchain;
+- aligned root Wrangler with the current Cloudflare Vite/Workers Types toolchain;
 - made Node 24 the supported runtime for the dependency graph;
 - repaired TypeScript contracts/narrowing across client and Durable Object layers;
 - added a local-only Wrangler test configuration so Vitest does not require the disabled remote Workers AI binding or accidentally invoke inference;
 - fixed async Durable Object route failures so rejected async handlers remain inside the normal request error boundary;
 - added real SQLite Durable Object migration coverage for populated v1 -> v6 data preservation plus newer-than-runtime fail-closed behavior;
 - hardened Wave Picking to stop after the first fulfilment failure, preserve earlier successes, mark later orders not attempted and require refresh/re-scan of the remainder;
-- applied targeted Wave Picking accessibility/commit-in-flight hardening using the Agent-Template/Vercel UI guidance.
+- applied targeted Wave Picking accessibility/commit-in-flight hardening using the Agent-Template/Vercel UI guidance;
+- added an isolated Cloudflare staging environment without provisioning or mutating production resources;
+- confirmed staging D1/R2/DO/Queue bindings and secret bindings from the Cloudflare control plane after deployment.
 
 ## Platform and tenancy
 
@@ -133,17 +177,24 @@ The 112-test suite covers the critical domain areas including:
 
 ## Remaining verification before review-ready
 
-The automated repository gate is green. The remaining required validation is a real browser/device smoke pass, especially Wave Picking:
+Automated repository verification, staging infrastructure provisioning and staging deployment are complete.
 
-- same-location lock and 10-order cap;
-- manual barcode entry;
-- USB/Bluetooth keyboard-wedge scanner path;
-- camera permission + barcode decode path;
-- repeated SKU across orders;
-- partial wave quantities and existing partial fulfilments;
-- per-order preview;
-- complete successful wave;
-- earlier success followed by later failure;
-- successful orders not offered for duplicate fulfilment after refresh.
+The remaining required validation is:
 
-Keep Draft PR #3 draft until that browser/device evidence exists. Do not expand into another broad subsystem before this is closed out.
+1. replace staging's placeholder Google OAuth client ID/secret with real staging credentials;
+2. perform the real browser/device smoke pass on the live staging URL, especially:
+   - Google sign-in and tenant creation/switching;
+   - same-location lock and 10-order cap;
+   - manual barcode entry;
+   - USB/Bluetooth keyboard-wedge scanner path;
+   - camera permission + barcode decode path;
+   - repeated SKU across orders;
+   - partial wave quantities and existing partial fulfilments;
+   - per-order preview;
+   - complete successful wave;
+   - earlier success followed by later failure;
+   - successful orders not offered for duplicate fulfilment after refresh;
+   - single-order fulfilment, cycle count, PO receive and delivery-note review;
+   - responsive/accessibility spot checks on phone and desktop.
+
+Keep Draft PR #3 draft until that evidence exists. Do not expand into another broad subsystem before this is closed out.
