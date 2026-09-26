@@ -34,13 +34,6 @@ export const WORKSPACE_MODULES: readonly WorkspaceModuleDefinition[] = [
     defaultEnabled: false,
   },
   {
-    key: "orders",
-    label: "Orders",
-    description: "Customer sales, reservations, fulfilment and returns.",
-    dependencies: [],
-    defaultEnabled: true,
-  },
-  {
     key: "inventory",
     label: "Inventory",
     description: "Stock levels, movements, transfers and cycle counts.",
@@ -48,10 +41,17 @@ export const WORKSPACE_MODULES: readonly WorkspaceModuleDefinition[] = [
     defaultEnabled: true,
   },
   {
+    key: "orders",
+    label: "Orders",
+    description: "Customer sales, reservations, fulfilment and returns.",
+    dependencies: ["inventory"],
+    defaultEnabled: true,
+  },
+  {
     key: "purchasing",
     label: "Purchasing",
     description: "Suppliers, replenishment, purchase orders and receiving.",
-    dependencies: [],
+    dependencies: ["inventory"],
     defaultEnabled: true,
   },
   {
