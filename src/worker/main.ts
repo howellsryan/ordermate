@@ -7,6 +7,7 @@ import { documentsApp } from "./documents";
 import { deliveryDocumentsApp } from "./delivery-documents";
 import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
+import { operationsAssistantApp } from "./operations-assistant";
 import { can } from "./permissions";
 import { TenantStore } from "./tenant-store-order-planning";
 
@@ -18,6 +19,7 @@ type Env = AuthEnv & {
   EVENTS_QUEUE: Queue;
   AI: Ai;
   AI_DOCUMENT_EXTRACTION_ENABLED: string;
+  AI_OPERATIONS_ASSISTANT_ENABLED: string;
   APP_ENV: string;
 };
 
@@ -144,6 +146,12 @@ export default {
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
 
+    if (url.pathname === "/api/ops/assistant") {
+      const publicPath = url.pathname;
+      url.pathname = "/";
+      const response = await operationsAssistantApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
+    }
     if (url.pathname === "/api/ops/movements") {
       const publicPath = url.pathname;
       url.pathname = "/";
