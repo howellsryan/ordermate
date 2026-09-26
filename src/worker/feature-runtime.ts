@@ -2,17 +2,19 @@ import { z } from "zod";
 import {
   WORKSPACE_FEATURES,
   WORKSPACE_FEATURE_KEYS,
+  WORKSPACE_FEATURE_BY_KEY,
   isWorkspaceFeatureKey,
   validateFeatureConfiguration,
   type WorkspaceFeatureKey,
 } from "../shared/features";
 
 type Actor = { id: string; role: string };
-type FeatureRow = { feature_key: string; enabled: number; updated_at: string; updated_by: string };
+type FeatureRow = { module_key: string; enabled: number; updated_at: string; updated_by: string };
 
 const featurePatchInput = z.object({ enabled: z.boolean() });
 const timestamp = () => new Date().toISOString();
 const responseError = (message: string, status = 400) => Response.json({ error: message }, { status });
+const storageKey = (key: WorkspaceFeatureKey) => `feature:${key}`;
 
 const FEATURE_ROUTE_PREFIXES: ReadonlyArray<{ feature: WorkspaceFeatureKey; matches: (path: string) => boolean }> = [
   { feature: "operating_intelligence", matches: path => path.startsWith("/replenishment") },
@@ -37,8 +39,7 @@ export class FeatureRuntime {
 
     const requiredFeature = FEATURE_ROUTE_PREFIXES.find(entry => entry.matches(path))?.feature;
     if (requiredFeature && !this.featureEnabled(requiredFeature)) {
-      const definition = WORKSPACE_FEATURES.find(feature => feature.key === requiredFeature);
-      return responseError(`${definition?.label || requiredFeature} is disabled for this workspace.`, 404);
+      return responseError(`${WORKSPACE_FEATURE_BY_KEY[requiredFeature].label} is disabled for this workspace.`, 404);
     }
 
     return null;
@@ -52,15 +53,21 @@ export class FeatureRuntime {
   }
 
   private featureRows() {
-    return this.ctx.storage.sql.exec<FeatureRow>("SELECT feature_key, enabled, updated_at, updated_by FROM workspace_features ORDER BY feature_key").toArray();
+    return this.ctx.storage.sql.exec<FeatureRow>(
+      "SELECT module_key, enabled, updated_at, updated_by FROM workspace_modules WHERE module_key LIKE 'feature:%' ORDER BY module_key",
+    ).toArray();
   }
 
   private featureEnabled(key: WorkspaceFeatureKey) {
-    return this.ctx.storage.sql.exec<{ enabled: number }>("SELECT enabled FROM workspace_features WHERE feature_key = ?", key).toArray()[0]?.enabled === 1;
+    const row = this.ctx.storage.sql.exec<{ enabled: number }>(
+      "SELECT enabled FROM workspace_modules WHERE module_key = ?",
+      storageKey(key),
+    ).toArray()[0];
+    return row ? row.enabled === 1 : WORKSPACE_FEATURE_BY_KEY[key].defaultEnabled;
   }
 
   private listFeatures() {
-    const rows = new Map(this.featureRows().map(row => [row.feature_key, row]));
+    const rows = new Map(this.featureRows().map(row => [row.module_key.replace(/^feature:/, ""), row]));
     return Response.json({
       features: WORKSPACE_FEATURES.map(definition => {
         const row = rows.get(definition.key);
@@ -68,7 +75,7 @@ export class FeatureRuntime {
           ...definition,
           requiredModules: [...definition.requiredModules],
           dependencies: [...definition.dependencies],
-          enabled: row?.enabled === 1,
+          enabled: row ? row.enabled === 1 : definition.defaultEnabled,
           updated_at: row?.updated_at ?? null,
           updated_by: row?.updated_by ?? null,
         };
@@ -87,9 +94,9 @@ export class FeatureRuntime {
 
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec(
-        `INSERT INTO workspace_features (feature_key, enabled, updated_at, updated_by) VALUES (?, ?, ?, ?)
-         ON CONFLICT(feature_key) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-        rawKey,
+        `INSERT INTO workspace_modules (module_key, enabled, updated_at, updated_by) VALUES (?, ?, ?, ?)
+         ON CONFLICT(module_key) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        storageKey(rawKey),
         enabled ? 1 : 0,
         timestamp(),
         actor.id,
