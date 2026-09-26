@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, History, Search, ShieldCheck } from "lucide-react";
 import type { OrganizationSummary, Role } from "../../shared/types";
 import { date, downloadTenantCsv, tenantApi } from "../api";
+import { isDemoTenant } from "../demo-store";
 import type { AuditEvent } from "../model";
 import { DataState, ErrorText, PageHeader } from "../ui";
 
@@ -26,6 +27,7 @@ function allowedExports(role: Role): ExportKind[] {
 }
 
 export default function Activity({ tenant }: { tenant: OrganizationSummary }) {
+  const demo = isDemoTenant(tenant.id);
   const audit = useQuery({ queryKey: ["tenant", tenant.id, "audit"], queryFn: () => tenantApi<AuditEvent[]>(tenant.id, "/audit") });
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("all");
@@ -43,7 +45,7 @@ export default function Activity({ tenant }: { tenant: OrganizationSummary }) {
   }, [audit.data, query, role]);
 
   return <>
-    <PageHeader eyebrow="Operations" title="Activity & data" description="Trace operational changes and take clean, tenant-scoped CSV snapshots without leaving the workspace." actions={<button className="secondary" onClick={() => exportMutation.mutate("audit")} disabled={exportMutation.isPending}><Download size={16} /> Export audit CSV</button>} />
+    <PageHeader eyebrow="Operations" title="Activity & data" description={demo ? "Trace local demo changes and download browser-generated CSV snapshots without sending demo data anywhere." : "Trace operational changes and take clean, tenant-scoped CSV snapshots without leaving the workspace."} actions={<button className="secondary" onClick={() => exportMutation.mutate("audit")} disabled={exportMutation.isPending}><Download size={16} /> Export audit CSV</button>} />
 
     <section className="activity-grid">
       <div className="panel activity-audit-card">
@@ -59,10 +61,10 @@ export default function Activity({ tenant }: { tenant: OrganizationSummary }) {
 
       <aside className="panel export-panel">
         <div className="panel-heading"><div><p className="eyebrow">Portable by default</p><h3>CSV exports</h3></div><FileSpreadsheet size={21} /></div>
-        <p>Exports are generated only after the current membership and dataset permission are re-checked on the Worker.</p>
+        <p>{demo ? "Guest-demo exports are generated entirely in this browser from the local workspace state." : "Exports are generated only after the current membership and dataset permission are re-checked on the Worker."}</p>
         <div className="export-list">{exports.filter(item => permitted.includes(item.kind)).map(item => <button key={item.kind} onClick={() => exportMutation.mutate(item.kind)} disabled={exportMutation.isPending}><span className="export-icon"><Download size={15} /></span><span><strong>{item.label}</strong><small>{item.description}</small></span></button>)}</div>
         {exportMutation.error && <ErrorText error={exportMutation.error} />}
-        <div className="export-trust"><ShieldCheck size={17} /><span>Exports never bypass tenant membership or role checks.</span></div>
+        <div className="export-trust"><ShieldCheck size={17} /><span>{demo ? "Exports contain sample demo data and do not call the Operating Layer API." : "Exports never bypass tenant membership or role checks."}</span></div>
       </aside>
     </section>
   </>;
