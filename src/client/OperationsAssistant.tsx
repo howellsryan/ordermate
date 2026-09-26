@@ -6,6 +6,7 @@ import type { OrganizationSummary } from "../shared/types";
 import { tenantOpsApi } from "./api";
 import type { SearchResult } from "./model";
 import { ErrorText } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 const prompts = [
   "What am I most likely to run out of?",
@@ -13,7 +14,13 @@ const prompts = [
   "What should I know about incoming supply?",
 ];
 
-export default function OperationsAssistant({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+export default function OperationsAssistant(props: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+  const features = useWorkspaceFeatures(props.tenant.id);
+  if (!features.data || !features.enabled.has("operations_copilot")) return null;
+  return <EnabledOperationsAssistant {...props} />;
+}
+
+function EnabledOperationsAssistant({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
   const [question, setQuestion] = useState("");
   const mutation = useMutation({
     mutationFn: (value: string) => tenantOpsApi<OperationsAssistantResponse>(tenant.id, "/assistant", {

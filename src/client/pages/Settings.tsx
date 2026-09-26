@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Building2, Database, LockKeyhole, Save } from "lucide-react";
+import { Boxes, Building2, Database, LockKeyhole, Save, SlidersHorizontal } from "lucide-react";
+import type { WorkspaceFeatureKey } from "../../shared/features";
 import type { WorkspaceModuleKey } from "../../shared/modules";
 import type { OrganizationSummary } from "../../shared/types";
 import { tenantApi } from "../api";
 import { isDemoTenant } from "../demo-store";
 import { ErrorText, Field, PageHeader } from "../ui";
+import { updateWorkspaceFeature, useWorkspaceFeatures } from "../workspace-features";
 
 type TenantSettings = {
   business_name: string;
@@ -40,6 +42,7 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
   const settings = useQuery({ queryKey: ["tenant", tenant.id, "settings"], queryFn: () => tenantApi<TenantSettings>(tenant.id, "/settings") });
   const profile = useQuery({ queryKey: ["tenant", tenant.id, "business-profile"], queryFn: () => tenantApi<BusinessProfile>(tenant.id, "/business-profile") });
   const modules = useQuery({ queryKey: ["tenant", tenant.id, "modules"], queryFn: () => tenantApi<ModulesResponse>(tenant.id, "/modules") });
+  const features = useWorkspaceFeatures(tenant.id);
   const [currency, setCurrency] = useState("GBP");
   const [includeTax, setIncludeTax] = useState(true);
   const [tax, setTax] = useState("20");
@@ -126,8 +129,19 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
     },
   });
 
+  const toggleFeature = useMutation({
+    mutationFn: ({ key, enabled }: { key: WorkspaceFeatureKey; enabled: boolean }) => updateWorkspaceFeature(tenant.id, key, enabled),
+    onSuccess: data => {
+      qc.setQueryData(["tenant", tenant.id, "features"], data);
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] });
+    },
+  });
+
+  const enabledModules = new Set(modules.data?.modules.filter(module => module.enabled).map(module => module.key) || []);
+  const featureGroups = Array.from(new Set(features.data?.features.map(feature => feature.group) || []));
+
   return <>
-    <PageHeader eyebrow="Workspace" title="Settings" description={demo ? "Choose which operating modules this browser-only demo uses and change its business defaults." : "Choose only the operating modules this business needs, then configure its commercial and invoice identity settings."} />
+    <PageHeader eyebrow="Workspace" title="Settings" description={demo ? "Choose which modules and features this browser-only demo uses and change its business defaults." : "Choose only the modules and features this business needs, then configure its commercial and invoice identity settings."} />
     <div className="settings-grid">
       <section className="panel settings-card">
         <div className="panel-heading"><div><p className="eyebrow">Optional modules</p><h3>Use only what the business needs</h3></div><Boxes size={21} /></div>
@@ -142,6 +156,33 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
           </article>)}
         </div>}
         {toggleModule.error && <ErrorText error={toggleModule.error} />}
+      </section>
+
+      <section className="panel settings-card">
+        <div className="panel-heading"><div><p className="eyebrow">Optional features</p><h3>Keep each journey focused</h3></div><SlidersHorizontal size={21} /></div>
+        <p className="settings-note">Turn advanced helpers on only where they add value. Turning a feature off hides its UI and blocks its dedicated tenant route where applicable; it does not delete business data. Your choices are stored with this workspace and return after sign-in on another device.</p>
+        {features.isLoading ? <div className="empty-state compact"><div className="loader" /></div> : features.error ? <ErrorText error={features.error} /> : <div className="feature-groups">
+          {featureGroups.map(group => <div className="feature-group" key={group}>
+            <div className="feature-group-heading"><strong>{group}</strong></div>
+            <div className="module-grid">{features.data?.features.filter(feature => feature.group === group).map(feature => {
+              const missingModules = feature.requiredModules.filter(module => !enabledModules.has(module as WorkspaceModuleKey));
+              const dependencyLabels = feature.dependencies.map(dependency => features.data?.features.find(item => item.key === dependency)?.label || dependency);
+              return <article className="module-card" key={feature.key}>
+                <div>
+                  <h4>{feature.label}</h4>
+                  <p>{feature.description}</p>
+                  {dependencyLabels.length > 0 && <small>Uses {dependencyLabels.join(", ")}. Its preference is remembered if that parent feature is temporarily off.</small>}
+                  {missingModules.length > 0 && <small>Available when {missingModules.map(module => modules.data?.modules.find(item => item.key === module)?.label || module).join(", ")} {missingModules.length === 1 ? "is" : "are"} enabled.</small>}
+                </div>
+                <label className="module-switch" title={!canConfigureModules ? "Only owners and admins can change workspace features" : `${feature.enabled ? "Disable" : "Enable"} ${feature.label}`}>
+                  <input type="checkbox" checked={feature.enabled} disabled={!canConfigureModules || toggleFeature.isPending} onChange={event => toggleFeature.mutate({ key: feature.key, enabled: event.target.checked })} />
+                  <span aria-hidden="true" />
+                </label>
+              </article>;
+            })}</div>
+          </div>)}
+        </div>}
+        {toggleFeature.error && <ErrorText error={toggleFeature.error} />}
       </section>
 
       <section className="panel settings-card">

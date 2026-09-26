@@ -5,18 +5,22 @@ import type { OrganizationSummary } from "../shared/types";
 import type { SavedView, SavedViewConfig, SavedViewPage } from "../shared/saved-views";
 import { tenantApi } from "./api";
 import { ErrorText } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
-export default function SavedViews<T extends SavedViewConfig>({
-  tenant,
-  page,
-  config,
-  onApply,
-}: {
+type SavedViewsProps<T extends SavedViewConfig> = {
   tenant: OrganizationSummary;
   page: SavedViewPage;
   config: T;
   onApply: (config: T) => void;
-}) {
+};
+
+export default function SavedViews<T extends SavedViewConfig>(props: SavedViewsProps<T>) {
+  const features = useWorkspaceFeatures(props.tenant.id);
+  if (!features.data || !features.enabled.has("saved_views")) return null;
+  return <EnabledSavedViews {...props} />;
+}
+
+function EnabledSavedViews<T extends SavedViewConfig>({ tenant, page, config, onApply }: SavedViewsProps<T>) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const views = useQuery({

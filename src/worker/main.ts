@@ -1,3 +1,4 @@
+import type { WorkspaceFeatureKey } from "../shared/features";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import baseWorker from "./index";
@@ -10,6 +11,7 @@ import { operationsApp } from "./operations";
 import { operationsAssistantApp } from "./operations-assistant";
 import { can } from "./permissions";
 import { TenantStore } from "./tenant-store-order-planning";
+import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 export { TenantStore };
 
@@ -110,6 +112,21 @@ async function enforceControlPlaneRead(request: Request, env: Env, url: URL) {
   return null;
 }
 
+async function enforceRoutedWorkspaceFeature(request: Request, env: Env, key: WorkspaceFeatureKey, label: string) {
+  const tenantId = request.headers.get("x-ordermate-tenant");
+  if (!tenantId) return null;
+  const auth = createAuth(env, request);
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) return null;
+  const membership = await env.CONTROL_DB.prepare("SELECT id, role FROM member WHERE userId = ? AND organizationId = ?")
+    .bind(session.user.id, tenantId)
+    .first<Membership>();
+  if (!membership) return null;
+  const stub = env.TENANT_STORES.jurisdiction("eu").getByName(tenantId);
+  const enabled = await workspaceFeatureEnabled(stub, key, { id: session.user.id, role: membership.role, name: session.user.name });
+  return enabled ? null : Response.json({ error: `${label} is disabled or unavailable for this workspace.` }, { status: 404 });
+}
+
 function isDocumentUploadedEvent(value: unknown): value is DocumentUploadedEvent {
   if (!value || typeof value !== "object") return false;
   const event = value as Record<string, unknown>;
@@ -166,6 +183,8 @@ export default {
     }
     if (url.pathname === "/api/delivery-documents" || url.pathname.startsWith("/api/delivery-documents/")) {
       const publicPath = url.pathname;
+      const featureDenied = await enforceRoutedWorkspaceFeature(request, env, "document_assist", "Document assist");
+      if (featureDenied) return secureApiResponse(featureDenied);
       url.pathname = url.pathname.replace(/^\/api\/delivery-documents/, "") || "/";
       const response = await deliveryDocumentsApp.fetch(new Request(url, request), env, ctx);
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));

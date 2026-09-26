@@ -1,4 +1,9 @@
 import { Hono } from "hono";
+import {
+  effectiveWorkspaceFeatures,
+  type WorkspaceFeatureKey,
+} from "../shared/features";
+import type { WorkspaceModuleKey } from "../shared/modules";
 import type { OperatingIntelligenceResponse } from "../shared/operating-intelligence";
 import {
   deterministicOperationsAnswer,
@@ -17,6 +22,8 @@ type Env = AuthEnv & {
 };
 
 type Membership = { id: string; role: Role };
+type FeaturesResponse = { features: Array<{ key: WorkspaceFeatureKey; enabled: boolean }> };
+type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
 type Order = {
   number: string;
   customer_name?: string | null;
@@ -87,9 +94,22 @@ async function contextFor(request: Request, env: Env): Promise<{ context?: Opera
 
   const stub = env.TENANT_STORES.jurisdiction("eu").getByName(tenantId);
   const actor = { id: session.user.id, role: membership.role, name: session.user.name };
+  const [features, modules] = await Promise.all([
+    tenantJson<FeaturesResponse>(stub, "/features", actor),
+    tenantJson<ModulesResponse>(stub, "/modules", actor),
+  ]);
+  const configuredFeatures = Object.fromEntries(features.features.map(feature => [feature.key, feature.enabled])) as Record<WorkspaceFeatureKey, boolean>;
+  const enabledModules = new Set(modules.modules.filter(module => module.enabled).map(module => module.key));
+  const effectiveFeatures = effectiveWorkspaceFeatures(configuredFeatures, enabledModules);
+  if (!effectiveFeatures.has("operations_copilot")) {
+    return { error: Response.json({ error: "Operations copilot is disabled or unavailable for this workspace." }, { status: 404 }) };
+  }
+
   const [dashboard, intelligence, orders, purchaseOrders] = await Promise.all([
     can(membership.role, "reports", "read") ? tenantJson<DashboardSummary>(stub, "/dashboard", actor) : Promise.resolve(null),
-    can(membership.role, "purchasing", "read") ? tenantJson<OperatingIntelligenceResponse>(stub, "/replenishment", actor) : Promise.resolve(null),
+    can(membership.role, "purchasing", "read") && effectiveFeatures.has("operating_intelligence")
+      ? tenantJson<OperatingIntelligenceResponse>(stub, "/replenishment", actor)
+      : Promise.resolve(null),
     can(membership.role, "orders", "read") ? tenantJson<Order[]>(stub, "/orders", actor) : Promise.resolve([]),
     can(membership.role, "purchasing", "read") ? tenantJson<PurchaseOrder[]>(stub, "/purchase-orders", actor) : Promise.resolve([]),
   ]);

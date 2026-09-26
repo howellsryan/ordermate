@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, History, Search } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { date, tenantOpsApi } from "./api";
 import { DataState } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 type Movement = {
   id: string;
@@ -25,6 +26,12 @@ type Movement = {
 };
 
 export default function InventoryHistory({ tenant }: { tenant: OrganizationSummary }) {
+  const features = useWorkspaceFeatures(tenant.id);
+  if (!features.data || !features.enabled.has("inventory_history")) return null;
+  return <EnabledInventoryHistory tenant={tenant} />;
+}
+
+function EnabledInventoryHistory({ tenant }: { tenant: OrganizationSummary }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const history = useQuery({
