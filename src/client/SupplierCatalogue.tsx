@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, PackageSearch, Plus, Trash2 } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
@@ -45,7 +45,7 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
         </div>)}
       </div>
     </DataState>
-    {open && canWrite && <SupplierVariantModal tenant={tenant} suppliers={suppliers} onClose={() => setOpen(false)} onSaved={() => {
+    {open && canWrite && <SupplierVariantModal tenant={tenant} suppliers={suppliers} mappings={mappings.data || []} onClose={() => setOpen(false)} onSaved={() => {
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "supplier-variants"] });
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "replenishment"] });
@@ -54,7 +54,7 @@ export default function SupplierCatalogue({ tenant, suppliers }: { tenant: Organ
   </section>;
 }
 
-function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant: OrganizationSummary; suppliers: Supplier[]; onClose: () => void; onSaved: () => void }) {
+function SupplierVariantModal({ tenant, suppliers, mappings, onClose, onSaved }: { tenant: OrganizationSummary; suppliers: Supplier[]; mappings: SupplierVariant[]; onClose: () => void; onSaved: () => void }) {
   const products = useQuery({ queryKey: ["tenant", tenant.id, "products"], queryFn: () => tenantApi<Product[]>(tenant.id, "/products") });
   const variants = useMemo(() => (products.data || [])
     .filter(product => product.status === "active")
@@ -69,6 +69,25 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
   const [minimumOrderQuantity, setMinimumOrderQuantity] = useState("");
   const [orderMultiple, setOrderMultiple] = useState("");
   const selected = variants.find(variant => variant.id === variantId);
+
+  useEffect(() => {
+    if (!variantId) return;
+    const existing = mappings.find(mapping => mapping.supplier_id === supplierId && mapping.variant_id === variantId);
+    if (existing) {
+      setSupplierSku(existing.supplier_sku || "");
+      setLastCost(existing.last_cost_minor == null ? "" : (existing.last_cost_minor / 100).toFixed(2));
+      setLeadTime(existing.lead_time_days == null ? "" : String(existing.lead_time_days));
+      setMinimumOrderQuantity(existing.minimum_order_quantity == null ? "" : String(existing.minimum_order_quantity));
+      setOrderMultiple(existing.order_multiple == null ? "" : String(existing.order_multiple));
+      return;
+    }
+
+    setSupplierSku("");
+    setLastCost(selected ? (selected.cost_minor / 100).toFixed(2) : "");
+    setLeadTime("7");
+    setMinimumOrderQuantity("");
+    setOrderMultiple("");
+  }, [mappings, selected, supplierId, variantId]);
 
   const save = useMutation({
     mutationFn: () => tenantApi(tenant.id, "/supplier-variants", {
@@ -86,10 +105,10 @@ function SupplierVariantModal({ tenant, suppliers, onClose, onSaved }: { tenant:
     onSuccess: onSaved,
   });
 
-  return <Modal title="Link or update supplier variant" subtitle="Buying terms affect future replenishment recommendations only. They never rewrite the Operating Layer SKU or historical purchase orders." onClose={onClose} wide>
+  return <Modal title="Link or update supplier variant" subtitle="Existing supplier terms are loaded when you choose a linked item. Buying terms affect future replenishment recommendations only and never rewrite historical purchase orders." onClose={onClose} wide>
     <form className="form-grid" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <Field label="Supplier"><select required value={supplierId} onChange={event => setSupplierId(event.target.value)}><option value="">Select supplier</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => { const value = event.target.value; setVariantId(value); const variant = variants.find(item => item.id === value); if (variant && !lastCost) setLastCost((variant.cost_minor / 100).toFixed(2)); }}><option value="">Select active variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
+      <Field label="Operating Layer variant"><select required value={variantId} onChange={event => setVariantId(event.target.value)}><option value="">Select active variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.productName} · {variant.name} — {variant.sku}</option>)}</select></Field>
       <Field label="Supplier SKU"><input value={supplierSku} onChange={event => setSupplierSku(event.target.value)} placeholder="Their code for this item" /></Field>
       <Field label="Last known unit cost (£)"><input type="number" min="0" step="0.01" value={lastCost} onChange={event => setLastCost(event.target.value)} /></Field>
       <Field label="Typical lead time (days)"><input type="number" min="0" max="3650" step="1" value={leadTime} onChange={event => setLeadTime(event.target.value)} /></Field>
