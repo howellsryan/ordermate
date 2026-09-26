@@ -21,8 +21,6 @@ const FEATURE_ROUTE_PREFIXES: ReadonlyArray<{ feature: WorkspaceFeatureKey; matc
   { feature: "delivery_discrepancies", matches: path => path.startsWith("/delivery-discrepancies") },
   { feature: "saved_views", matches: path => path.startsWith("/saved-views") },
   { feature: "cycle_counts", matches: path => path === "/inventory/stocktake" },
-  { feature: "barcode_lookup", matches: path => path.startsWith("/inventory/barcode/") },
-  { feature: "catalogue_import", matches: path => path.startsWith("/imports/catalogue") },
 ];
 
 export class FeatureRuntime {
