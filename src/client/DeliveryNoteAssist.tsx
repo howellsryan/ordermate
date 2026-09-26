@@ -5,6 +5,7 @@ import type { OrganizationSummary } from "../shared/types";
 import { controlApi, date } from "./api";
 import type { WarehouseScanCounts } from "./warehouse-scan";
 import { ErrorText, Modal, Status } from "./ui";
+import { useWorkspaceFeatures } from "./workspace-features";
 
 type Capability = { aiDocumentExtractionEnabled: boolean };
 type SourceSummary = { key: string; name: string; uploaded: string; contentType: string; status: string; purchaseOrderId: string };
@@ -52,8 +53,15 @@ type DeliveryProposal = {
 
 type SourceList = { sources: SourceSummary[]; truncated: boolean };
 type ProposalList = { proposals: ProposalSummary[]; truncated: boolean };
+type AssistProps = { tenant: OrganizationSummary; purchaseOrderId: string; onApply: (counts: WarehouseScanCounts, proposalKey: string) => void };
 
-export default function DeliveryNoteAssist({ tenant, purchaseOrderId, onApply }: { tenant: OrganizationSummary; purchaseOrderId: string; onApply: (counts: WarehouseScanCounts, proposalKey: string) => void }) {
+export default function DeliveryNoteAssist(props: AssistProps) {
+  const features = useWorkspaceFeatures(props.tenant.id);
+  if (!features.data || !features.enabled.has("document_assist")) return null;
+  return <EnabledDeliveryNoteAssist {...props} />;
+}
+
+function EnabledDeliveryNoteAssist({ tenant, purchaseOrderId, onApply }: AssistProps) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
