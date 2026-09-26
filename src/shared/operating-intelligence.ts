@@ -68,6 +68,7 @@ export type OperatingIntelligenceRow = IntelligenceInput & {
 
 export type OperatingIntelligenceResponse = {
   generated_at: string;
+  window_days: number;
   history_window_days: number;
   forecast_horizon_weeks: number;
   default_threshold: number;
@@ -231,6 +232,7 @@ export function buildOperatingIntelligence(
   const suggestions = positions.filter(row => row.risk !== "healthy" && row.scenarios.recommended > 0);
   return {
     generated_at: new Date().toISOString(),
+    window_days: 90,
     history_window_days: 90,
     forecast_horizon_weeks: 12,
     default_threshold: options.defaultThreshold,
