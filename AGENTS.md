@@ -1,7 +1,9 @@
-# OrderMate agent instructions
+# Operating Layer agent instructions
 
 ## Product boundary
-OrderMate is a multi-tenant order, purchasing and inventory SaaS. The runtime and persisted product data must remain Cloudflare-native unless the owner explicitly changes that constraint.
+Operating Layer is a multi-tenant order, purchasing and inventory SaaS. The runtime and persisted product data must remain Cloudflare-native unless the owner explicitly changes that constraint.
+
+Customer-facing identity is **Operating Layer**. Existing `ordermate-*` Cloudflare resources, the current staging hostname and `x-ordermate-*` internal headers are legacy compatibility identifiers for the provisioned environment; do not rename them as a cosmetic refactor. See `docs/brand.md`.
 
 ## Infrastructure invariants
 - Deploy application code on Cloudflare Workers using Wrangler.
