@@ -22,6 +22,28 @@
     align-items: center;
   }
 
+  .landing-secondary-cta:is(button) {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .landing-cta-section .landing-secondary-cta {
+    border: 1px solid rgba(255, 255, 255, .16);
+    background: rgba(255, 255, 255, .05);
+    color: #e3ebe6;
+  }
+
+  .landing-cta-section .landing-secondary-cta:hover {
+    background: rgba(255, 255, 255, .1);
+  }
+
+  .landing-secondary-cta:disabled {
+    opacity: .65;
+    cursor: wait;
+  }
+
   .feature-stock-visual > div {
     align-items: center;
   }
