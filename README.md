@@ -15,7 +15,7 @@ Operating Layer is a Cloudflare-native multi-tenant SaaS for inventory, purchasi
 - One EU-jurisdiction SQLite-backed Durable Object per tenant for operational data.
 - EU-jurisdiction R2 for source documents, proposal sidecars and future product media.
 - Cloudflare Queues for asynchronous document/automation events, with a dead-letter queue for bounded failure handling.
-- Optional Cloudflare Workers AI document extraction. It is built in but disabled by default for an explicit compliance decision.
+- Optional Cloudflare Workers AI for document extraction and read-only copilot answer wording. Both AI paths are disabled by default for an explicit compliance decision; deterministic operational logic remains authoritative.
 - Wrangler is the source of truth for deployable Cloudflare resources.
 
 See `docs/architecture.md`, `docs/delivery-plan.md`, `docs/brand.md` and `docs/seo.md`.
@@ -35,7 +35,9 @@ Operating Layer currently includes:
 - Wave Picking for 2-10 same-location confirmed orders, with aggregate scanning, deterministic per-order allocation review and fulfilment through the existing canonical order endpoints;
 - suppliers, supplier-SKU mappings, purchase orders, expected delivery dates, overdue visibility, partial receiving and cancellation;
 - persistent delivery discrepancies with evidence and audited open/resolved handling;
-- deterministic replenishment suggestions using available/incoming stock, recent fulfilment demand and supplier lead time;
+- Operating Intelligence over a 90-day movement history, with bounded trend weighting, dated incoming supply, safety stock, days of cover, stockout/order-by timing, ABC segmentation and a 12-week projection;
+- minimum/recommended/maximum reviewed buying scenarios plus temporary demand and supplier-delay what-if planning, all feeding the existing draft-PO workflow rather than autonomous purchasing;
+- a permission-aware read-only operations copilot with deterministic evidence/workflow links and optional Workers AI prose enhancement;
 - per-SKU/location replenishment rules for reorder point, target stock at supplier arrival and preferred supplier;
 - reviewed supplier-SKU learning from purchase-document proposals without fuzzy or ambiguous mapping;
 - customers, order snapshots, reservation, partial/full fulfilment, cancellation and returns;
@@ -204,6 +206,8 @@ This is intentional. D1, Durable Object storage and R2 are explicitly configured
 When the flag is false, purchasing documents can still be stored and reviewed from EU R2, but no document event is sent for AI extraction.
 
 PDFs use Cloudflare Markdown conversion with PDF metadata disabled before structured extraction. Image conversion is treated as best-effort and proposals from images are always flagged for explicit review.
+
+The operations copilot follows the same explicit processing posture. `AI_OPERATIONS_ASSISTANT_ENABLED` is also `false` by default. With the flag disabled, the copilot still works using deterministic, permission-filtered operational evidence; enabling Workers AI changes only the answer prose, never evidence, navigation or business state.
 
 ## Verification
 
