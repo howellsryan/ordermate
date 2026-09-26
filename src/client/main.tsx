@@ -8,6 +8,7 @@ import "./landing.css";
 import "./landing-hardening.css";
 import "./brand.css";
 import "./demo.css";
+import "./flow-plan.css";
 
 function activateDemoDeepLink() {
   const url = new URL(window.location.href);
