@@ -1,0 +1,61 @@
+name: Operating Layer brand sweep
+
+on:
+  push:
+    branches:
+      - rebuild/cloudflare-saas
+
+permissions:
+  contents: write
+
+concurrency:
+  group: operating-layer-brand-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep-and-verify:
+    if: ${{ !startsWith(github.event.head_commit.message, 'Apply Operating Layer brand sweep') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Apply brand sweep
+        run: node scripts/rebrand-operating-layer.mjs --write
+
+      - name: Verify brand sweep
+        run: node scripts/rebrand-operating-layer.mjs
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit verified sweep
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No brand sweep changes were required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply Operating Layer brand sweep"
+          git push origin HEAD:rebuild/cloudflare-saas
