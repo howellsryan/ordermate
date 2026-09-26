@@ -12,10 +12,12 @@ type BusinessProfileRow = {
 
 type ContactRow = {
   id: string;
+  lifecycle_stage: "prospect" | "customer";
   name: string;
   email: string | null;
   mobile: string | null;
   address_json: string | null;
+  notes: string | null;
 };
 
 type InvoiceRow = {
@@ -25,6 +27,7 @@ type InvoiceRow = {
   number: string;
   status: string;
   total_minor: number;
+  tax_minor: number;
   supply_date: string | null;
 };
 
@@ -56,7 +59,10 @@ export class BusinessProfileRuntime {
       if (request.method === "PATCH" && path === "/business-profile") return this.updateProfile(request);
 
       const issue = path.match(/^\/service\/invoices\/([^/]+)\/issue$/);
-      if (request.method === "POST" && issue) return this.issueInvoice(decodeURIComponent(issue[1]), request);
+      if (request.method === "POST" && issue) {
+        if (!this.moduleEnabled("service")) return error("Service is disabled for this workspace.", 404);
+        return this.issueInvoice(decodeURIComponent(issue[1]), request);
+      }
       return null;
     } catch (cause) {
       if (cause instanceof z.ZodError) return error(cause.issues[0]?.message || "Invalid business profile", 400);
@@ -70,6 +76,13 @@ export class BusinessProfileRuntime {
       id: request.headers.get("x-ordermate-actor-id") || "system",
       role: request.headers.get("x-ordermate-actor-role") || "unknown",
     };
+  }
+
+  private moduleEnabled(moduleKey: string) {
+    return this.ctx.storage.sql.exec<{ enabled: number }>(
+      "SELECT enabled FROM workspace_modules WHERE module_key = ?",
+      moduleKey,
+    ).toArray()[0]?.enabled === 1;
   }
 
   private profile() {
@@ -120,16 +133,35 @@ export class BusinessProfileRuntime {
     return this.getProfile();
   }
 
+  private ensureCompatibilityCustomer(contact: ContactRow, timestamp: string) {
+    const existing = this.ctx.storage.sql.exec<{ id: string }>(
+      "SELECT id FROM customers WHERE crm_contact_id = ? OR id = ?",
+      contact.id,
+      contact.id,
+    ).toArray()[0];
+    if (existing) {
+      this.ctx.storage.sql.exec(
+        "UPDATE customers SET crm_contact_id = COALESCE(crm_contact_id, ?), name = ?, email = ?, phone = ?, address_json = ?, notes = ?, updated_at = ? WHERE id = ?",
+        contact.id, contact.name, contact.email, contact.mobile, contact.address_json, contact.notes, timestamp, existing.id,
+      );
+      return;
+    }
+    this.ctx.storage.sql.exec(
+      "INSERT INTO customers (id, name, email, phone, address_json, notes, crm_contact_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      contact.id, contact.name, contact.email, contact.mobile, contact.address_json, contact.notes, contact.id, timestamp, timestamp,
+    );
+  }
+
   private issueInvoice(invoiceId: string, request: Request) {
     const invoice = this.ctx.storage.sql.exec<InvoiceRow>(
-      "SELECT id, case_id, job_id, number, status, total_minor, supply_date FROM service_invoices WHERE id = ?",
+      "SELECT id, case_id, job_id, number, status, total_minor, tax_minor, supply_date FROM service_invoices WHERE id = ?",
       invoiceId,
     ).toArray()[0];
     if (!invoice) return error("Service invoice not found", 404);
     if (invoice.status !== "draft") return error(`Only draft invoices can be issued; current status is ${invoice.status}.`, 409);
 
     const contact = this.ctx.storage.sql.exec<ContactRow>(
-      "SELECT c.id, c.name, c.email, c.mobile, c.address_json FROM crm_contacts c JOIN service_cases sc ON sc.contact_id = c.id WHERE sc.id = ?",
+      "SELECT c.id, c.lifecycle_stage, c.name, c.email, c.mobile, c.address_json, c.notes FROM crm_contacts c JOIN service_cases sc ON sc.contact_id = c.id WHERE sc.id = ?",
       invoice.case_id,
     ).toArray()[0];
     if (!contact) return error("Invoice customer is unavailable", 409);
@@ -138,6 +170,7 @@ export class BusinessProfileRuntime {
     const profile = this.profile();
     const businessName = this.businessName();
     if (!businessName || !profile?.address_json) return error("Business name and business address are required before an invoice can be issued", 409);
+    if (invoice.tax_minor > 0 && !profile.vat_number) return error("VAT number is required before an invoice containing VAT can be issued", 409);
 
     let supplyDate = invoice.supply_date;
     if (!supplyDate && invoice.job_id) {
@@ -149,6 +182,7 @@ export class BusinessProfileRuntime {
     const timestamp = now();
     const issueDate = timestamp.slice(0, 10);
     const actor = this.actor(request);
+    const converted = contact.lifecycle_stage === "prospect";
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec(
         `UPDATE service_invoices SET status = 'issued', supply_date = ?, issue_date = ?,
@@ -163,6 +197,13 @@ export class BusinessProfileRuntime {
         "UPDATE crm_contacts SET lifecycle_stage = 'customer', converted_at = COALESCE(converted_at, ?), updated_at = ? WHERE id = ?",
         timestamp, timestamp, contact.id,
       );
+      this.ensureCompatibilityCustomer(contact, timestamp);
+      if (converted) {
+        this.ctx.storage.sql.exec(
+          "INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'crm_contact.converted', 'crm_contact', ?, ?, ?)",
+          uid(), actor.id, actor.role, contact.id, JSON.stringify({ source: "service_invoice" }), timestamp,
+        );
+      }
       this.ctx.storage.sql.exec(
         "INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at) VALUES (?, ?, ?, 'service_invoice.issued', 'service_invoice', ?, ?, ?)",
         uid(), actor.id, actor.role, invoiceId, JSON.stringify({ number: invoice.number, totalMinor: invoice.total_minor, supplyDate, issueDate }), timestamp,
