@@ -184,6 +184,15 @@ function daysOfCoverWithIncoming(input: IntelligenceInput, forecastDaily: number
   return null;
 }
 
+function orderByOffsetWithIncoming(input: IntelligenceInput, forecastDaily: number, leadTimeDays: number, safetyStock: number) {
+  if (forecastDaily <= 0) return null;
+  for (let orderDay = 0; orderDay <= 365; orderDay++) {
+    const projectedOnArrival = projectedStockAtDay(input, forecastDaily, orderDay + leadTimeDays, leadTimeDays);
+    if (projectedOnArrival <= safetyStock) return orderDay;
+  }
+  return null;
+}
+
 export function applyPlanningContext(
   input: IntelligenceInput,
   abcClass: "A" | "B" | "C",
@@ -202,10 +211,8 @@ export function applyPlanningContext(
   const projectedAtLead = projectedStockAtDay(scenarioInput, signals.forecastDaily, leadTimeDays, leadTimeDays);
   const daysOfCover = daysOfCoverWithIncoming(scenarioInput, signals.forecastDaily, leadTimeDays);
   const stockoutDate = daysOfCover === null ? null : isoDateFromOffset(todayIso, daysOfCover);
-  const reorderCoverageDays = signals.forecastDaily > 0
-    ? Math.max(0, Math.floor(Math.max(0, input.available - safetyStock) / signals.forecastDaily) - leadTimeDays)
-    : 0;
-  const orderByDate = signals.forecastDaily > 0 ? isoDateFromOffset(todayIso, reorderCoverageDays) : null;
+  const orderByOffset = orderByOffsetWithIncoming(scenarioInput, signals.forecastDaily, leadTimeDays, safetyStock);
+  const orderByDate = orderByOffset === null ? null : isoDateFromOffset(todayIso, orderByOffset);
 
   const minimumTarget = safetyStock;
   const recommendedTarget = Math.max(input.target_stock, Math.ceil(signals.forecastDaily * 28) + safetyStock);
