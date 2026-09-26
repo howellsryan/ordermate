@@ -1,5 +1,6 @@
 import type { SessionPayload } from "../shared/types";
-import { demoControlApi, demoCsv, demoOpsApi, demoSession, demoTenantApi, isDemoMode, isDemoTenant } from "./demo-store";
+import { demoSession, isDemoMode, isDemoTenant } from "./demo-store";
+import { demoControlApi, demoCsv, demoOpsApi, demoTenantApi } from "./demo-runtime";
 
 export async function errorFrom(response: Response) {
   const payload: unknown = await response.json().catch(() => ({ error: response.statusText }));
