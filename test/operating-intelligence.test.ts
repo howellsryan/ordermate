@@ -32,6 +32,8 @@ describe("operating intelligence", () => {
     const result = buildOperatingIntelligence([input()], { defaultThreshold: 5, todayIso: "2026-09-26" });
     const row = result.positions[0];
 
+    expect(result.window_days).toBe(90);
+    expect(result.history_window_days).toBe(90);
     expect(row.forecast_12_weeks).toHaveLength(12);
     expect(row.scenarios.minimum).toBeLessThanOrEqual(row.scenarios.recommended);
     expect(row.scenarios.recommended).toBeLessThanOrEqual(row.scenarios.maximum);
@@ -59,6 +61,56 @@ describe("operating intelligence", () => {
     expect(delayed.projected_at_lead_time).toBeLessThanOrEqual(base.projected_at_lead_time);
     expect(delayed.safety_stock).toBeGreaterThanOrEqual(base.safety_stock);
     expect(delayed.scenarios.recommended).toBeGreaterThanOrEqual(base.scenarios.recommended);
+  });
+
+  it("does not let late incoming stock hide a pre-arrival stockout", () => {
+    const row = buildOperatingIntelligence([
+      input({
+        on_hand: 3,
+        reserved: 0,
+        available: 3,
+        incoming: 100,
+        incoming_schedule: [{ daysFromNow: 30, quantity: 100 }],
+        fulfilled_30d: 90,
+        fulfilled_prev_60d: 180,
+      }),
+    ], { defaultThreshold: 5, todayIso: "2026-09-26" }).positions[0];
+
+    expect(row.days_of_cover).not.toBeNull();
+    expect(row.days_of_cover!).toBeLessThanOrEqual(2);
+    expect(row.risk).toBe("critical");
+  });
+
+  it("uses on-time dated incoming supply in the projection", () => {
+    const withoutIncoming = applyPlanningContext(input({ on_hand: 12, reserved: 0, available: 12, incoming: 0 }), "A", "2026-09-26");
+    const withIncoming = applyPlanningContext(input({
+      on_hand: 12,
+      reserved: 0,
+      available: 12,
+      incoming: 60,
+      incoming_schedule: [{ daysFromNow: 2, quantity: 60 }],
+    }), "A", "2026-09-26");
+
+    expect(withIncoming.days_of_cover).not.toBeNull();
+    expect(withIncoming.days_of_cover!).toBeGreaterThan(withoutIncoming.days_of_cover!);
+    expect(withIncoming.forecast_12_weeks[0].projected).toBeGreaterThan(withoutIncoming.forecast_12_weeks[0].projected);
+  });
+
+  it("moves dated incoming supply when simulating a supplier delay", () => {
+    const scenarioInput = input({
+      on_hand: 18,
+      reserved: 0,
+      available: 18,
+      incoming: 60,
+      incoming_schedule: [{ daysFromNow: 3, quantity: 60 }],
+      effective_lead_time_days: 3,
+    });
+    const base = applyPlanningContext(scenarioInput, "A", "2026-09-26");
+    const delayed = applyPlanningContext(scenarioInput, "A", "2026-09-26", { extraLeadTimeDays: 14 });
+
+    expect(delayed.effective_lead_time_days).toBe(17);
+    expect(delayed.days_of_cover ?? 0).toBeLessThanOrEqual(base.days_of_cover ?? 0);
+    expect(delayed.explanation.at(-1)).toContain("dated incoming supply");
   });
 
   it("detects rising demand and a near-term stockout", () => {
