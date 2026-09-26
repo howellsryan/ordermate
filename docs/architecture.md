@@ -1,8 +1,8 @@
-# OrderMate architecture
+# Operating Layer architecture
 
 ## Decision summary
 
-OrderMate is a Cloudflare-native modular monolith. The browser talks to one Worker. Authentication and membership are global; operational business data is physically isolated per tenant.
+Operating Layer is a Cloudflare-native modular monolith. The browser talks to one Worker. Authentication and membership are global; operational business data is physically isolated per tenant.
 
 ### Control plane
 `CONTROL_DB` is a D1 database restricted to the EU jurisdiction. Better Auth stores Google identities, sessions, organizations, members and workspace invitations here. The Worker derives the user from the session and verifies organization membership before any tenant request is routed.
@@ -37,7 +37,7 @@ The supported flow is:
 
 A CSV can create new products/variants/categories/suppliers, arbitrary option values, supplier mappings and opening stock at an already-existing location code. Location typos fail validation rather than silently creating warehouses.
 
-The browser parser is convenience only. The TenantStore validates the complete structured payload again against live tenant state. Dry-run returns line-numbered errors/warnings and an exact create plan. Commit must echo the reviewed fingerprint; OrderMate rebuilds the plan against current tenant state and rejects stale previews before mutation.
+The browser parser is convenience only. The TenantStore validates the complete structured payload again against live tenant state. Dry-run returns line-numbered errors/warnings and an exact create plan. Commit must echo the reviewed fingerprint; Operating Layer rebuilds the plan against current tenant state and rejects stale previews before mutation.
 
 The commit path then writes all catalogue records, supplier mappings, opening inventory levels, immutable opening-stock movements and one audit summary inside a single `transactionSync`. Any invariant/write failure rolls back the whole import. A successful create-only import cannot be safely duplicated by retrying the same CSV because its SKU/barcode/product conflicts are caught on the next dry-run.
 
@@ -82,16 +82,16 @@ This choice preserves each order's reservation identity, audit event and invento
 ### Purchasing
 Suppliers own purchase orders. PO lines snapshot supplier references, unit cost and tax. Partial receiving is supported and receiving creates inventory movements. Purchase-order cancellation removes only outstanding incoming commitment; it never reverses already received physical stock.
 
-`supplier_variants` maps supplier SKU, latest known cost and lead time onto stable OrderMate variant identities.
+`supplier_variants` maps supplier SKU, latest known cost and lead time onto stable Operating Layer variant identities.
 
-Supplier-code learning is human-reviewed. When a purchase-document proposal contains a supplier SKU, the reviewer may explicitly choose to remember that code only after confirming the supplier and OrderMate variant. Existing different codes are not silently replaced. A supplier code already owned by another variant is rejected both in the review UX and by the canonical supplier-mapping endpoint, preserving deterministic future matching.
+Supplier-code learning is human-reviewed. When a purchase-document proposal contains a supplier SKU, the reviewer may explicitly choose to remember that code only after confirming the supplier and Operating Layer variant. Existing different codes are not silently replaced. A supplier code already owned by another variant is rejected both in the review UX and by the canonical supplier-mapping endpoint, preserving deterministic future matching.
 
 ### Purchase-order expected delivery
 Schema v3 adds nullable `purchase_orders.expected_delivery_date` plus an index for operational due-date queries.
 
 An operator may set or clear the expected date while a PO is draft, ordered or partially received. Manual changes are audited. Received/cancelled purchase orders are closed to expected-date edits.
 
-If no manual date is present when a draft PO is submitted, OrderMate derives one only when **every PO line** has a supplier-specific lead-time mapping. It uses the maximum mapped lead time so a multi-line PO is not declared overdue before its slowest known item is expected. If any line lacks lead-time coverage, expected delivery remains unset rather than presenting false precision.
+If no manual date is present when a draft PO is submitted, Operating Layer derives one only when **every PO line** has a supplier-specific lead-time mapping. It uses the maximum mapped lead time so a multi-line PO is not declared overdue before its slowest known item is expected. If any line lacks lead-time coverage, expected delivery remains unset rather than presenting false precision.
 
 Expected delivery is an operational projection, not a lifecycle state. An open PO whose expected date is before the current UTC calendar date is surfaced as overdue in purchasing and attention views while its canonical status remains `ordered` or `partially_received`. Expected date and `ordered_at` are included in PO exports. A future tenant-timezone setting can deliberately move these date-only comparisons to business-local time; until then client/server comparisons use UTC consistently.
 
@@ -114,21 +114,21 @@ Rules:
 1. source document text is treated as untrusted data; model prompts explicitly prohibit following instructions embedded in the document;
 2. the model extracts a strict JSON shape only and must leave unsupported values blank/zero rather than infer them;
 3. model output is validated again with Zod;
-4. matching is deterministic and explainable: exact normalized supplier identity, supplier SKU, barcode or OrderMate SKU only;
+4. matching is deterministic and explainable: exact normalized supplier identity, supplier SKU, barcode or Operating Layer SKU only;
 5. ambiguous data remains unmatched for the reviewer; fuzzy model-selected stock identities are not accepted;
 6. raw converted Markdown is not persisted;
 7. the source document and structured proposal remain in tenant-prefixed R2;
 8. AI never submits a PO, receives stock, adjusts inventory or fulfils an order; and
 9. the reviewed proposal creates a standard draft PO through the same canonical purchasing endpoint as a manually entered PO.
 
-Currency mismatch is a hard block for AI-assisted draft creation because OrderMate does not silently convert supplier costs. Image conversion is considered best-effort and is always flagged for explicit review.
+Currency mismatch is a hard block for AI-assisted draft creation because Operating Layer does not silently convert supplier costs. Image conversion is considered best-effort and is always flagged for explicit review.
 
 ### AI delivery-note assistance
 Delivery notes use the same trust boundary but are anchored to one existing open purchase order:
 
 `EU R2 delivery note -> Queue -> extraction of delivered identifiers/quantities -> exact selected-PO matching -> R2 proposal -> human review -> staged Warehouse counts -> canonical PO receipt`
 
-The extraction prompt ignores prices/tax and only asks for document references, product identifiers and physically delivered quantities. Exact supplier SKU, barcode and OrderMate SKU evidence may propose a match. Conflicting identifiers, unknown lines, wrong PO references, image extraction and over-delivery force review. Suggested quantities are capped at the selected PO's outstanding quantity.
+The extraction prompt ignores prices/tax and only asks for document references, product identifiers and physically delivered quantities. Exact supplier SKU, barcode and Operating Layer SKU evidence may propose a match. Conflicting identifiers, unknown lines, wrong PO references, image extraction and over-delivery force review. Suggested quantities are capped at the selected PO's outstanding quantity.
 
 A reviewed delivery proposal still does not alter inventory. It only pre-fills the Warehouse receiving counts. The operator can scan/edit them further and must explicitly press Receive. The live PO receiving transaction re-validates the outstanding quantities before any stock movement. The R2 proposal is marked accepted only after that canonical receipt succeeds.
 
@@ -176,7 +176,7 @@ Migration `5` creates actor-private `saved_views` and the owner/page index.
 
 Migration `6` adds nullable `orders.required_by_date`, constrained `orders.priority` with default `normal`, and an open-order planning index. The migration checks whether each column already exists before altering the table so replay is safe when DDL/bookkeeping are interrupted.
 
-Cloudflare Durable Objects do not support `PRAGMA user_version`, so OrderMate follows Cloudflare's explicit migration-table pattern rather than relying on that SQLite pragma.
+Cloudflare Durable Objects do not support `PRAGMA user_version`, so Operating Layer follows Cloudflare's explicit migration-table pattern rather than relying on that SQLite pragma.
 
 Every future schema migration must:
 
