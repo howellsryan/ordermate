@@ -3,6 +3,7 @@ import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can } from "./permissions";
 import type { TenantStore } from "./tenant-store-runtime";
+import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 type Env = AuthEnv & {
   DOCUMENTS: R2Bucket;
@@ -30,6 +31,9 @@ async function contextFor(request: Request, env: Env, action: "read" | "create" 
   const membership = await env.CONTROL_DB.prepare("SELECT id, role FROM member WHERE userId = ? AND organizationId = ?").bind(session.user.id, tenantId).first<Membership>();
   if (!membership) return { error: Response.json({ error: "Forbidden" }, { status: 403 }) } as const;
   if (!can(membership.role, "purchasing", action)) return { error: Response.json({ error: "Insufficient permission" }, { status: 403 }) } as const;
+  const stub = env.TENANT_STORES.jurisdiction("eu").getByName(tenantId);
+  const enabled = await workspaceFeatureEnabled(stub, "document_assist", { id: session.user.id, role: membership.role, name: session.user.name });
+  if (!enabled) return { error: Response.json({ error: "Document assist is disabled or unavailable for this workspace." }, { status: 404 }) } as const;
   return { session, tenantId, membership } as const;
 }
 
@@ -129,6 +133,58 @@ documentsApp.get("/file", async c => {
   return new Response(object.body, { headers });
 });
 
+documentsApp.post("/", async c => {
+  const context = await contextFor(c.req.raw, c.env, "create");
+  if ("error" in context) return context.error;
+  const form = await c.req.formData();
+  const file = form.get("file");
+  const purpose = form.get("purpose");
+  if (!(file instanceof File) || purpose !== PURPOSE) return c.json({ error: "A purchase-source file is required" }, 400);
+  if (file.size <= 0 || file.size > 15 * 1024 * 1024) return c.json({ error: "Document must be between 1 byte and 15 MB" }, 400);
+  const contentType = file.type || "application/octet-stream";
+  if (contentType !== "application/pdf" && !contentType.startsWith("image/")) return c.json({ error: "Only PDFs and images are accepted" }, 400);
+
+  const eventId = crypto.randomUUID();
+  const key = `${context.tenantId}/${PURPOSE}/${eventId}`;
+  const createdAt = new Date().toISOString();
+  const status = c.env.AI_DOCUMENT_EXTRACTION_ENABLED === "true" ? "queued" : "stored";
+  await c.env.DOCUMENTS.put(key, file.stream(), {
+    httpMetadata: { contentType },
+    customMetadata: {
+      originalName: file.name.slice(0, 240),
+      uploadedBy: context.session.user.id,
+      purpose: PURPOSE,
+      eventId,
+      status,
+    },
+  });
+  if (status === "queued") {
+    try {
+      await queueExtraction(c.env, context.tenantId, key, eventId, context.session.user.id, createdAt);
+    } catch (cause) {
+      await c.env.DOCUMENTS.delete(key).catch(() => undefined);
+      throw cause;
+    }
+  }
+  const object = await c.env.DOCUMENTS.head(key);
+  if (!object) return c.json({ error: "Document upload failed" }, 500);
+  return c.json(documentSummary(object), 201);
+});
+
+documentsApp.post("/extract", async c => {
+  const context = await contextFor(c.req.raw, c.env, "update");
+  if ("error" in context) return context.error;
+  if (c.env.AI_DOCUMENT_EXTRACTION_ENABLED !== "true") return c.json({ error: "AI document extraction is disabled" }, 409);
+  const body = await c.req.json<{ key?: string }>();
+  const key = body.key || "";
+  const eventId = sourceEventId(context.tenantId, key);
+  if (!eventId) return c.json({ error: "Document not found" }, 404);
+  const source = await c.env.DOCUMENTS.head(key);
+  if (!source) return c.json({ error: "Document not found" }, 404);
+  const result = await queueExtraction(c.env, context.tenantId, key, eventId, context.session.user.id, source.uploaded.toISOString());
+  return c.json({ status: result, eventId });
+});
+
 documentsApp.get("/proposals", async c => {
   const context = await contextFor(c.req.raw, c.env, "read");
   if ("error" in context) return context.error;
@@ -142,93 +198,8 @@ documentsApp.get("/proposal", async c => {
   if ("error" in context) return context.error;
   const key = c.req.query("key") || "";
   const allowedPrefix = `${context.tenantId}/${PROPOSAL_PURPOSE}/`;
-  if (!key.startsWith(allowedPrefix) || !key.endsWith(".json")) return c.json({ error: "Proposal not found" }, 404);
+  if (!key.startsWith(allowedPrefix)) return c.json({ error: "Proposal not found" }, 404);
   const object = await c.env.DOCUMENTS.get(key);
   if (!object) return c.json({ error: "Proposal not found" }, 404);
-  return c.json(await object.json<unknown>());
-});
-
-documentsApp.post("/extract", async c => {
-  const context = await contextFor(c.req.raw, c.env, "update");
-  if ("error" in context) return context.error;
-  if (c.env.AI_DOCUMENT_EXTRACTION_ENABLED !== "true") return c.json({ error: "AI document extraction is disabled for this deployment" }, 409);
-
-  const body = await c.req.json<{ key?: string }>();
-  const key = body.key || "";
-  const eventId = sourceEventId(context.tenantId, key);
-  if (!eventId) return c.json({ error: "Source document not found" }, 404);
-
-  const source = await c.env.DOCUMENTS.head(key);
-  if (!source || source.customMetadata?.tenantId !== context.tenantId || source.customMetadata?.purpose !== PURPOSE) return c.json({ error: "Source document not found" }, 404);
-
-  const result = await queueExtraction(
-    c.env,
-    context.tenantId,
-    key,
-    eventId,
-    context.session.user.id,
-    source.customMetadata?.createdAt || source.uploaded.toISOString(),
-  );
-  return c.json({ status: result, eventId });
-});
-
-documentsApp.post("/proposal/complete", async c => {
-  const context = await contextFor(c.req.raw, c.env, "update");
-  if ("error" in context) return context.error;
-  const body = await c.req.json<{ key?: string; purchaseOrderId?: string }>();
-  const key = body.key || "";
-  const purchaseOrderId = body.purchaseOrderId || "";
-  const allowedPrefix = `${context.tenantId}/${PROPOSAL_PURPOSE}/`;
-  if (!key.startsWith(allowedPrefix) || !key.endsWith(".json") || !purchaseOrderId) return c.json({ error: "Proposal and purchase order are required" }, 400);
-
-  const proposalObject = await c.env.DOCUMENTS.get(key);
-  if (!proposalObject) return c.json({ error: "Proposal not found" }, 404);
-  const proposal = await proposalObject.json<Record<string, unknown>>();
-  const stub = c.env.TENANT_STORES.jurisdiction("eu").getByName(context.tenantId);
-  const poResponse = await stub.fetch(new Request(`https://tenant.internal/purchase-orders/${encodeURIComponent(purchaseOrderId)}`, {
-    headers: { "x-ordermate-actor-id": context.session.user.id, "x-ordermate-actor-role": context.membership.role },
-  }));
-  if (!poResponse.ok) return c.json({ error: "Purchase order could not be verified in this business" }, 409);
-
-  const acceptedAt = new Date().toISOString();
-  const metadata = proposalObject.customMetadata || {};
-  await c.env.DOCUMENTS.put(key, JSON.stringify({ ...proposal, status: "accepted", purchaseOrderId, acceptedAt }), {
-    httpMetadata: { contentType: "application/json" },
-    customMetadata: { ...metadata, status: "accepted", purchaseOrderId, acceptedAt },
-  });
-  return c.json({ ok: true });
-});
-
-documentsApp.post("/", async c => {
-  const context = await contextFor(c.req.raw, c.env, "create");
-  if ("error" in context) return context.error;
-  const form = await c.req.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) return c.json({ error: "Choose a PDF or image to upload" }, 400);
-  if (file.size > 15 * 1024 * 1024) return c.json({ error: "File exceeds 15 MB" }, 413);
-  const allowedType = file.type === "application/pdf" || file.type.startsWith("image/");
-  if (!allowedType) return c.json({ error: "Only PDF and image source documents are supported" }, 415);
-
-  const extractionEnabled = c.env.AI_DOCUMENT_EXTRACTION_ENABLED === "true";
-  const eventId = crypto.randomUUID();
-  const key = `${context.tenantId}/${PURPOSE}/${eventId}`;
-  const createdAt = new Date().toISOString();
-  await c.env.DOCUMENTS.put(key, file.stream(), {
-    httpMetadata: { contentType: file.type || "application/octet-stream" },
-    customMetadata: {
-      tenantId: context.tenantId,
-      uploadedBy: context.session.user.id,
-      originalName: file.name.slice(0, 180),
-      purpose: PURPOSE,
-      status: extractionEnabled ? "queued" : "stored",
-      createdAt,
-    },
-  });
-
-  if (extractionEnabled) {
-    await queueExtraction(c.env, context.tenantId, key, eventId, context.session.user.id, createdAt);
-  }
-
-  const object = await c.env.DOCUMENTS.head(key);
-  return c.json(object ? documentSummary(object) : { key, name: file.name, size: file.size, uploaded: createdAt, contentType: file.type, purpose: PURPOSE, status: extractionEnabled ? "queued" : "stored" }, 201);
+  return new Response(object.body, { headers: { "content-type": "application/json", "cache-control": "private, no-store" } });
 });
