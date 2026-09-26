@@ -55,6 +55,9 @@ jobs:
           git commit -m "chore: lock npm dependencies"
           git push origin HEAD:rebuild/cloudflare-saas
 
+      - name: Verify Operating Layer brand sweep
+        run: node scripts/rebrand-operating-layer.mjs
+
       - name: Typecheck
         run: npm run typecheck
 
