@@ -1,5 +1,6 @@
+import type { WorkspaceModuleKey } from "../shared/modules";
 import type { DashboardSummary, SessionPayload } from "../shared/types";
-import type { AttentionResponse, InventoryRow, Product } from "./model";
+import type { AttentionResponse, InventoryRow, Product, SearchResult, WorkspacePage } from "./model";
 import { demoControlApi } from "./demo-acceptance";
 import { demoBusinessProfileApi } from "./demo-business-profile";
 import { demoOpsApi } from "./demo-attention";
@@ -27,9 +28,6 @@ export async function getSession(): Promise<SessionPayload | null> {
     return { ...session, organizations: session.organizations.map(organization => ({ ...organization, name: profile.businessName })) };
   }
 
-  // Better Auth deliberately returns 200 + null for an anonymous visitor. Probe
-  // that lightweight endpoint first so the public landing page does not create
-  // an expected 401 network error before we ask for the richer Operating Layer session.
   const authResponse = await fetch("/api/auth/get-session", { credentials: "include" });
   if (!authResponse.ok) throw await errorFrom(authResponse);
   const authSession: unknown = await authResponse.json();
@@ -131,21 +129,108 @@ export async function tenantApi<T>(tenantId: string, path: string, init?: Reques
   return response.json();
 }
 
+type ModulesResponse = { modules: Array<{ key: WorkspaceModuleKey; enabled: boolean }> };
+const PAGE_MODULE: Partial<Record<WorkspacePage, WorkspaceModuleKey>> = {
+  crm: "crm",
+  customers: "crm",
+  service: "service",
+  orders: "orders",
+  warehouse: "warehouse",
+  "wave-pick": "warehouse",
+  stocktake: "inventory",
+  products: "inventory",
+  inventory: "inventory",
+  purchasing: "purchasing",
+  suppliers: "purchasing",
+  reports: "reports",
+};
+
+function normalizedPage(page: WorkspacePage): WorkspacePage {
+  return page === "customers" ? "crm" : page;
+}
+
+function includesQuery(value: unknown, query: string) {
+  return value !== null && value !== undefined && String(value).toLocaleLowerCase().includes(query);
+}
+
+async function moduleAwareOpsResult<T>(tenantId: string, path: string, raw: unknown): Promise<T> {
+  const url = new URL(path, "https://ops.local");
+  if (url.pathname !== "/search" && url.pathname !== "/attention") return raw as T;
+
+  const moduleResponse = await tenantApi<ModulesResponse>(tenantId, "/modules");
+  const enabled = new Set(moduleResponse.modules.filter(module => module.enabled).map(module => module.key));
+  const pageEnabled = (page: WorkspacePage) => {
+    const module = PAGE_MODULE[normalizedPage(page)];
+    return !module || enabled.has(module);
+  };
+
+  if (url.pathname === "/attention") {
+    const data = raw as AttentionResponse;
+    const items = data.items
+      .map(item => ({ ...item, page: normalizedPage(item.page) }))
+      .filter(item => pageEnabled(item.page));
+    return { ...data, total: items.length, items } as T;
+  }
+
+  const data = raw as { results: SearchResult[] };
+  const baseResults = data.results
+    .map(result => ({ ...result, page: normalizedPage(result.page) }))
+    .filter(result => result.type !== "Customer" || !enabled.has("crm"))
+    .filter(result => pageEnabled(result.page));
+  const query = (url.searchParams.get("q") || "").trim().toLocaleLowerCase();
+  const enriched: SearchResult[] = [...baseResults];
+
+  if (query.length >= 2 && enabled.has("crm")) {
+    const contacts = await tenantApi<{ contacts: Array<{ id: string; name: string; email?: string | null; mobile?: string | null; source?: string | null; lifecycle_stage: string }> }>(tenantId, "/crm/contacts");
+    for (const contact of contacts.contacts) {
+      if (![contact.name, contact.email, contact.mobile, contact.source].some(value => includesQuery(value, query))) continue;
+      enriched.push({
+        id: contact.id,
+        type: contact.lifecycle_stage === "prospect" ? "Prospect" : "Customer",
+        title: contact.name,
+        subtitle: contact.email || contact.mobile || contact.source || "CRM contact",
+        page: "crm",
+        badge: contact.lifecycle_stage,
+      });
+    }
+  }
+
+  if (query.length >= 2 && enabled.has("service")) {
+    const cases = await tenantApi<{ cases: Array<{ id: string; number: string; contact_name: string; title: string; summary?: string | null; source?: string | null; status: string }> }>(tenantId, "/service/cases");
+    for (const serviceCase of cases.cases) {
+      if (![serviceCase.number, serviceCase.contact_name, serviceCase.title, serviceCase.summary, serviceCase.source, serviceCase.status].some(value => includesQuery(value, query))) continue;
+      enriched.push({
+        id: serviceCase.id,
+        type: "Service",
+        title: `${serviceCase.number} · ${serviceCase.title}`,
+        subtitle: `${serviceCase.contact_name} · ${serviceCase.status}`,
+        page: "service",
+        badge: serviceCase.status,
+      });
+    }
+  }
+
+  const unique = new Map<string, SearchResult>();
+  for (const result of enriched) unique.set(`${result.page}:${result.id}`, result);
+  return { results: [...unique.values()].slice(0, 30) } as T;
+}
+
 export async function tenantOpsApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
   if (isDemoTenant(tenantId)) {
     const result = await demoOpsApi<unknown>(path, init);
     const pathname = new URL(path, "https://demo.local").pathname;
+    let data: unknown = result;
     if (pathname === "/attention") {
       const activeVariants = await activeDemoVariantIds();
-      const data = result as AttentionResponse;
-      const items = data.items.filter(item => {
+      const attention = result as AttentionResponse;
+      const items = attention.items.filter(item => {
         if (item.type !== "Low stock") return true;
         const [, variantId] = item.id.split(":");
         return activeVariants.has(variantId || "");
       });
-      return { total: items.length, items } as T;
+      data = { total: items.length, items };
     }
-    return result as T;
+    return moduleAwareOpsResult<T>(tenantId, path, data);
   }
 
   const headers = new Headers(init?.headers);
@@ -153,7 +238,8 @@ export async function tenantOpsApi<T>(tenantId: string, path: string, init?: Req
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
   const response = await fetch(`/api/ops${path}`, { ...init, headers, credentials: "include" });
   if (!response.ok) throw await errorFrom(response);
-  return response.json();
+  const data = await response.json<unknown>();
+  return moduleAwareOpsResult<T>(tenantId, path, data);
 }
 
 export async function downloadTenantCsv(tenantId: string, kind: string) {
