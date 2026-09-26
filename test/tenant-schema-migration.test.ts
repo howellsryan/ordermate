@@ -9,7 +9,7 @@ function quoteIdentifier(value: string) {
 }
 
 describe("tenant schema migrations", () => {
-  it("migrates a populated v1 tenant through v6 without losing baseline data", async () => {
+  it("migrates a populated v1 tenant through v7 without losing baseline data", async () => {
     const stub = env.TENANT_STORES.get(env.TENANT_STORES.newUniqueId());
 
     await runInDurableObject(stub, async (_instance, state) => {
@@ -35,13 +35,16 @@ describe("tenant schema migrations", () => {
       const versions = sql.exec<{ id: number }>(
         "SELECT id FROM _sql_schema_migrations ORDER BY id",
       ).toArray().map(row => row.id);
-      expect(versions).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
       const orderColumns = sql.exec<{ name: string }>("PRAGMA table_info(orders)").toArray().map(row => row.name);
       expect(orderColumns).toEqual(expect.arrayContaining(["required_by_date", "priority"]));
 
       const purchaseOrderColumns = sql.exec<{ name: string }>("PRAGMA table_info(purchase_orders)").toArray().map(row => row.name);
       expect(purchaseOrderColumns).toContain("expected_delivery_date");
+
+      const supplierVariantColumns = sql.exec<{ name: string }>("PRAGMA table_info(supplier_variants)").toArray().map(row => row.name);
+      expect(supplierVariantColumns).toEqual(expect.arrayContaining(["minimum_order_quantity", "order_multiple"]));
 
       const addedTables = new Set(sql.exec<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'table'",
