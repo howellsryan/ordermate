@@ -5,6 +5,7 @@ import {
   type IntegrationConnectionStatus,
   type IntegrationProvider,
 } from "../shared/integration-contract";
+import { migrateIntegrationSchema } from "./integration-schema";
 
 const INTERNAL_HEADER = "x-operating-layer-internal-integration";
 const INTERNAL_VALUE = "integration-v1";
@@ -97,7 +98,9 @@ function safeJsonArray(value: string) {
 }
 
 export class IntegrationRuntime {
-  constructor(private readonly ctx: DurableObjectState) {}
+  constructor(private readonly ctx: DurableObjectState) {
+    migrateIntegrationSchema(ctx.storage);
+  }
 
   async handle(request: Request): Promise<Response | null> {
     const url = new URL(request.url);
