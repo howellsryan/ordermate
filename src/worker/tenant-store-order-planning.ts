@@ -3,6 +3,7 @@ import type { OperatingIntelligenceResponse } from "../shared/operating-intellig
 import { applySupplierOrderingTerms, type SupplierOrderingTerm } from "../shared/supplier-ordering";
 import { BusinessProfileRuntime } from "./business-profile-runtime";
 import { FeatureRuntime } from "./feature-runtime";
+import { IntegrationRuntime } from "./integration-runtime";
 import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
@@ -58,6 +59,7 @@ export class TenantStore extends ReportsTenantStore {
   private readonly orderPlanningCtx: DurableObjectState;
   private readonly businessProfileRuntime: BusinessProfileRuntime;
   private readonly featureRuntime: FeatureRuntime;
+  private readonly integrationRuntime: IntegrationRuntime;
   private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
@@ -65,6 +67,7 @@ export class TenantStore extends ReportsTenantStore {
     this.orderPlanningCtx = ctx;
     this.businessProfileRuntime = new BusinessProfileRuntime(ctx);
     this.featureRuntime = new FeatureRuntime(ctx);
+    this.integrationRuntime = new IntegrationRuntime(ctx);
     this.serviceRuntime = new ServiceRuntime(ctx);
   }
 
@@ -74,6 +77,9 @@ export class TenantStore extends ReportsTenantStore {
 
     const businessProfileResponse = await this.businessProfileRuntime.handle(request);
     if (businessProfileResponse) return businessProfileResponse;
+
+    const integrationResponse = await this.integrationRuntime.handle(request);
+    if (integrationResponse) return integrationResponse;
 
     const modularResponse = await this.serviceRuntime.handle(request);
     if (modularResponse) return modularResponse;
