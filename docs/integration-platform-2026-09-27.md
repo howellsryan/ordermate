@@ -1,6 +1,6 @@
 # Operating Layer integration platform — Shopify-first architecture
 
-Prepared 27 September 2026 against `main` at `a3e25e588ac8803f5653135a2c341a198d83bcfd`.
+Prepared 27 September 2026 against the product delivered through PRs #4–#8 and continued on PR #9.
 
 ## Decision
 
@@ -27,7 +27,7 @@ Use the GraphQL Admin API for new development. Shopify marks the REST Admin API 
 
 Use webhooks for production change delivery rather than polling. Shopify's Events successor remains developer preview for a subset of topics, so it should not be the production dependency yet.
 
-Background sync requires an offline access token. For a public app, design for expiring offline access tokens and refresh now; Shopify states public apps must use expiring offline tokens for GraphQL Admin API requests by 1 January 2027.
+Background sync requires an offline access token. Public GraphQL apps must be designed for expiring offline access tokens and refresh; Shopify states this becomes mandatory for public apps by 1 January 2027.
 
 Primary references:
 
@@ -67,36 +67,46 @@ Primary references:
 
 Inbound webhooks arrive without an authenticated Operating Layer user, so tenant routing cannot use the existing browser tenant selector.
 
-Add a small D1 control-plane registry:
+Slice B adds D1 control-plane tables:
 
-`integration_routes`
+### `integration_routes`
 
-- `provider`
-- `external_account_id` — Shopify permanent `*.myshopify.com` domain for Shopify
-- `tenant_id`
-- `connection_id`
-- `status`
-- timestamps
-- unique `(provider, external_account_id)`
+- provider;
+- permanent external account identity (`*.myshopify.com` for Shopify);
+- tenant ID;
+- connection ID;
+- route status;
+- timestamps;
+- unique `(provider, external_account_id)`.
 
-This is routing metadata, not tenant operational data, so D1 remains within the existing control-plane boundary.
+### `integration_oauth_states`
 
-Flow:
+A short-lived, one-time OAuth state registry keyed by a hash of the browser-bound state value. It records the initiating tenant/user/shop, expiry and consumption timestamp. The plaintext state remains in an HttpOnly, Secure, SameSite=Lax callback-scoped cookie and is not used as a tenant selector after callback validation.
 
-1. verify provider signature at the public Worker;
-2. derive the permanent external account identity from provider-authenticated metadata;
+This is routing/authentication metadata, not tenant operational data, so D1 remains within the existing control-plane boundary.
+
+Inbound flow:
+
+1. verify Shopify HMAC against the raw webhook body before trusting any Shopify header;
+2. derive the permanent shop identity from signed provider metadata;
 3. resolve the route in D1;
-4. forward only the verified tenant/connection identity internally;
-5. record/deduplicate the event in that tenant's Durable Object;
-6. enqueue durable processing by event ID where asynchronous work is needed.
+4. forward only the verified tenant/connection identity through an internal Worker-to-Durable-Object route;
+5. record/deduplicate the event in that tenant's Durable Object using Shopify's delivery ID;
+6. later slices process the recorded event into reviewed/canonical domain intent.
+
+Slice B deliberately stops at receipt. It does **not** create orders, reserve stock, fulfil orders or mutate returns.
 
 ## Tenant integration data
 
-Keep tenant-specific integration state in the tenant Durable Object:
+Tenant-specific integration state stays in the tenant Durable Object under a composed `IntegrationRuntime` with its own monotonic `_integration_schema_migrations` table. This avoids adding another `TenantStore extends ...` layer while retaining fail-closed storage versioning.
 
 ### `integration_connections`
 
-Non-secret connection metadata, sync mode, enabled capabilities, health, last success/failure and timestamps.
+Non-secret connection metadata, enabled capabilities, health/last event state and timestamps.
+
+### `integration_credentials`
+
+Encrypted per-store credential envelopes and non-secret rotation metadata. This table is only reachable through Worker-internal integration routes; the normal `/integrations` response never serializes token material or ciphertext.
 
 ### `integration_entity_links`
 
@@ -104,59 +114,86 @@ Maps one external entity to one canonical entity using `(provider, connection_id
 
 ### `integration_events`
 
-Append-oriented event receipt with provider event ID, topic, status, attempts, timestamps and a deterministic dedupe key. Store only the minimum payload needed for replay/diagnosis and apply retention deliberately.
+Append-oriented event receipt with provider delivery ID, provider action/event ID where supplied, topic, API version, timestamps, attempts/status and a deterministic dedupe key. The same Shopify `X-Shopify-Webhook-Id` cannot insert a second tenant event.
 
 ### `integration_exceptions`
 
-Actionable failures such as unmapped variant, unmapped location, stale event, conflicting mapping or canonical domain rejection. These should eventually feed the persistent Operations Work Queue rather than become a separate dead-end screen.
+Actionable failures such as unmapped variant, unmapped location, stale event, conflicting mapping or canonical domain rejection. Later slices should feed these into the persistent Operations Work Queue rather than build a separate dead-end alert screen.
 
 ## Credentials
 
-Do not store app credentials in tenant data. App-level Shopify secrets belong in Wrangler secrets.
+Application-level Shopify client credentials stay in Wrangler secrets.
 
-Per-store access/refresh tokens are credentials and must not be exposed to the browser or logs. Before the live connector, implement a dedicated encrypted credential envelope using a Worker-held encryption key, rotation metadata and least-privilege scopes. Store ciphertext plus metadata only.
+Per-store access/refresh tokens are encrypted before entering Durable Object storage using AES-256-GCM with:
 
-Credential code must be isolated from normal integration metadata so connection/list endpoints can never accidentally serialize tokens.
+- a cryptographically random 32-byte Worker-held key supplied as a secret;
+- a 12-byte random IV per envelope;
+- authenticated key-version context;
+- explicit key-version metadata for future rotation.
+
+The plaintext access/refresh tokens exist only transiently in Worker memory during OAuth exchange/refresh. Public integration read routes return only non-secret connection metadata.
+
+OAuth code exchange explicitly requests expiring offline tokens. Refresh uses Shopify's refresh-token grant and replaces both rotated tokens in one encrypted credential update.
+
+## OAuth correctness
+
+Slice B enforces:
+
+- Owner/Admin initiation only;
+- permanent `*.myshopify.com` shop identity;
+- random browser-bound state with a 10-minute expiry;
+- one-time state consumption;
+- callback HMAC verification over Shopify's canonical sorted query parameters;
+- shop equality against the shop stored with the OAuth state;
+- re-check of initiating user's Owner/Admin membership before credential persistence;
+- one shop route cannot be claimed by two workspaces;
+- required-scope validation before a connection becomes active.
 
 ## Event correctness
 
-Every inbound event needs all of these properties before a production Shopify launch:
+Slice B establishes these invariants:
 
-- signature verified before tenant lookup/processing;
-- globally routable by provider-authenticated account identity;
-- idempotent on provider event ID + connection;
-- retry-safe after partial failure;
-- tolerant of out-of-order delivery;
-- auditable with a system integration actor;
-- unable to bypass canonical domain validation;
-- poison events visible as operator exceptions after bounded retries;
-- replay does not duplicate orders, reservations, fulfilments, returns or stock movements.
+- webhook signature verified before tenant lookup/processing;
+- globally routable by signed Shopify shop identity;
+- idempotent on Shopify delivery ID within the connection;
+- tenant event state physically isolated by Durable Object;
+- event connection/provider/shop mismatch rejected;
+- internal credential/event routes hidden from normal tenant API calls;
+- raw event receipt cannot bypass canonical domain validation because no canonical mutation is performed yet;
+- unsupported queue event types retry instead of being silently acknowledged.
 
-The new `src/shared/integration-contract.ts` starts the stable identity/idempotency contract without introducing a provider-specific mutation path.
+Still required in later processing slices:
+
+- retry-safe canonical event processing after partial failure;
+- out-of-order order/update semantics;
+- bounded processing attempts and operator-facing poison-event exceptions;
+- replay proof for actual order/reservation/fulfilment/return mutations.
 
 ## Shopify MVP sequence
 
-### Slice A — integration foundation
-
-Delivered/started in this PR:
+### Slice A — integration foundation — delivered
 
 - provider-neutral types;
 - collision-safe connection, event and external-entity identity helpers;
 - permanent Shopify shop-domain normalization;
-- explicit canonical mutation intent boundary;
+- explicit canonical mutation-intent boundary;
 - architecture and product roadmap.
 
-No production connector is claimed yet.
+### Slice B — connection + routing — source delivered on PR #9
 
-### Slice B — connection + routing
+- D1 route/OAuth-state migration;
+- composed tenant integration schema and runtime;
+- encrypted per-store credential envelope;
+- Owner/Admin Shopify install flow;
+- callback state + HMAC verification;
+- expiring offline-token exchange and refresh rotation;
+- verified webhook ingress and D1 tenant routing;
+- idempotent tenant event receipt;
+- public connection metadata without credential exposure;
+- tenant isolation, replay, cryptography and signature tests;
+- staging deployment/security acceptance documented.
 
-- D1 `integration_routes` migration;
-- tenant `integration_connections`, event/link/exception tables;
-- owner/admin connection settings API;
-- encrypted token envelope;
-- Shopify install/OAuth/token refresh;
-- webhook signature verification and route resolution;
-- tenant-isolation and replay tests.
+**Environment gate:** source completion is not a claim that a live Shopify store is connected. Staging still needs the D1 migration applied, real Shopify app credentials, a generated 32-byte encryption secret, callback/webhook app configuration and a live OAuth/webhook smoke pass. See `docs/staging.md`.
 
 ### Slice C — catalogue/location mapping
 
@@ -197,9 +234,9 @@ Do not couple accounting sync to the Shopify adapter. Both providers use the sam
 
 ## Architecture rule for implementation
 
-The current Durable Object runtime already has a legacy inheritance chain. New integration work must follow the newer composition pattern used by `ServiceRuntime`, `FeatureRuntime` and `BusinessProfileRuntime`: a dedicated `IntegrationRuntime` handler composed into the canonical store rather than another `TenantStore extends ...` layer.
+The current Durable Object runtime already has a legacy inheritance chain. New integration work follows the newer composition pattern used by `ServiceRuntime`, `FeatureRuntime` and `BusinessProfileRuntime`: `IntegrationRuntime` is composed into the canonical store rather than creating another `TenantStore extends ...` layer.
 
-The guest demo should consume shared integration-domain planning/normalization functions. Do not build a second independent integration engine in `demo-store.ts`.
+The guest demo should consume shared integration-domain planning/normalization functions where integration behavior becomes demonstrable. Do not build a second independent integration engine in `demo-store.ts`.
 
 ## Definition of done for the first live Shopify release
 
