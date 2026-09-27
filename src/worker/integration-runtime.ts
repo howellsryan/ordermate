@@ -76,6 +76,7 @@ type CredentialRow = {
 };
 
 type EventRow = { id: string; event_key: string; status: string };
+type EventReceipt = { id: string; duplicate: boolean };
 
 function now() {
   return new Date().toISOString();
@@ -320,17 +321,14 @@ export class IntegrationRuntime {
       providerEventId: input.providerEventId,
       topic: input.topic,
     });
-    let result: { id: string; duplicate: boolean } | null = null;
     const receivedAt = now();
-    this.ctx.storage.transactionSync(() => {
+    const result = this.ctx.storage.transactionSync((): EventReceipt => {
       const existing = this.ctx.storage.sql.exec<EventRow>(
         "SELECT id, event_key, status FROM integration_events WHERE event_key = ?",
         key,
       ).toArray()[0];
-      if (existing) {
-        result = { id: existing.id, duplicate: true };
-        return;
-      }
+      if (existing) return { id: existing.id, duplicate: true };
+
       const eventId = crypto.randomUUID();
       this.ctx.storage.sql.exec(
         `INSERT INTO integration_events (
@@ -354,10 +352,10 @@ export class IntegrationRuntime {
         receivedAt,
         input.connectionId,
       );
-      result = { id: eventId, duplicate: false };
+      return { id: eventId, duplicate: false };
     });
 
-    return Response.json(result, { status: result?.duplicate ? 200 : 202 });
+    return Response.json(result, { status: result.duplicate ? 200 : 202 });
   }
 }
 
