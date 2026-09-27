@@ -10,12 +10,13 @@ import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { operationsAssistantApp } from "./operations-assistant";
 import { can } from "./permissions";
+import { shopifyIntegrationApp, type ShopifyIntegrationEnv } from "./shopify-integration";
 import { TenantStore } from "./tenant-store-order-planning";
 import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 export { TenantStore };
 
-type Env = AuthEnv & {
+type Env = AuthEnv & ShopifyIntegrationEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
@@ -80,6 +81,7 @@ function isCustomApi(pathname: string) {
     || pathname.startsWith("/api/ops")
     || pathname.startsWith("/api/documents")
     || pathname.startsWith("/api/delivery-documents")
+    || pathname.startsWith("/api/integrations")
     || pathname.startsWith("/api/organizations")
     || pathname.startsWith("/api/invites");
 }
@@ -163,6 +165,12 @@ export default {
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
 
+    if (url.pathname === "/api/integrations/shopify" || url.pathname.startsWith("/api/integrations/shopify/")) {
+      const publicPath = url.pathname;
+      url.pathname = url.pathname.replace(/^\/api\/integrations\/shopify/, "") || "/";
+      const response = await shopifyIntegrationApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
+    }
     if (url.pathname === "/api/ops/assistant") {
       const publicPath = url.pathname;
       url.pathname = "/";
@@ -216,6 +224,8 @@ export default {
           } else {
             console.log("Operating Layer event skipped: AI delivery-note extraction disabled", envelope.eventId || message.id);
           }
+        } else {
+          throw new Error(`Unsupported queue event type: ${envelope.type || "unknown"}`);
         }
         console.log("Operating Layer event processed", envelope.type || "unknown", envelope.eventId || message.id);
         message.ack();
