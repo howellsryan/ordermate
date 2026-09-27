@@ -158,9 +158,6 @@ async function reserveRoute(env: ShopifyIntegrationEnv, shop: string, tenantId: 
   ).bind(shop).first<RouteRow>();
   if (existing) {
     if (existing.tenant_id !== tenantId) throw new IntegrationHttpError("That Shopify store is already connected to another workspace", 409);
-    await env.CONTROL_DB.prepare(
-      "UPDATE integration_routes SET status = 'connecting', updated_at = ? WHERE provider = 'shopify' AND external_account_id = ?",
-    ).bind(Date.now(), shop).run();
     return existing.connection_id;
   }
 
