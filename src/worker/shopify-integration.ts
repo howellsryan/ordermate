@@ -38,6 +38,10 @@ type RouteRow = {
   connection_id: string;
   status: string;
 };
+type RouteReservation = {
+  connectionId: string;
+  previousStatus: string | null;
+};
 type CredentialRead = {
   connection: {
     id: string;
@@ -152,13 +156,13 @@ async function jsonOrThrow<T>(response: Response, fallback: string) {
   return payload as T;
 }
 
-async function reserveRoute(env: ShopifyIntegrationEnv, shop: string, tenantId: string) {
+async function reserveRoute(env: ShopifyIntegrationEnv, shop: string, tenantId: string): Promise<RouteReservation> {
   const existing = await env.CONTROL_DB.prepare(
     "SELECT tenant_id, connection_id, status FROM integration_routes WHERE provider = 'shopify' AND external_account_id = ?",
   ).bind(shop).first<RouteRow>();
   if (existing) {
     if (existing.tenant_id !== tenantId) throw new IntegrationHttpError("That Shopify store is already connected to another workspace", 409);
-    return existing.connection_id;
+    return { connectionId: existing.connection_id, previousStatus: existing.status };
   }
 
   const connectionId = crypto.randomUUID();
@@ -168,13 +172,13 @@ async function reserveRoute(env: ShopifyIntegrationEnv, shop: string, tenantId: 
       `INSERT INTO integration_routes (provider, external_account_id, tenant_id, connection_id, status, created_at, updated_at)
        VALUES ('shopify', ?, ?, ?, 'connecting', ?, ?)`,
     ).bind(shop, tenantId, connectionId, timestamp, timestamp).run();
-    return connectionId;
+    return { connectionId, previousStatus: null };
   } catch {
     const raced = await env.CONTROL_DB.prepare(
       "SELECT tenant_id, connection_id, status FROM integration_routes WHERE provider = 'shopify' AND external_account_id = ?",
     ).bind(shop).first<RouteRow>();
     if (!raced || raced.tenant_id !== tenantId) throw new IntegrationHttpError("That Shopify store is already connected to another workspace", 409);
-    return raced.connection_id;
+    return { connectionId: raced.connection_id, previousStatus: raced.status };
   }
 }
 
@@ -264,7 +268,8 @@ shopifyIntegrationApp.get("/callback", async c => {
     ).bind(Date.now(), stateHash, Date.now()).run();
     if (!consumed.meta.changes) throw new IntegrationHttpError("Shopify OAuth state expired or already used", 410);
 
-    const connectionId = await reserveRoute(c.env, shop, stateRow.tenant_id);
+    const routeReservation = await reserveRoute(c.env, shop, stateRow.tenant_id);
+    const connectionId = routeReservation.connectionId;
     const tokens = await exchangeShopifyAuthorizationCode({
       shop,
       clientId: c.env.SHOPIFY_CLIENT_ID,
@@ -273,7 +278,9 @@ shopifyIntegrationApp.get("/callback", async c => {
     });
     const missing = missingShopifyScopes(scopes, tokens.scope);
     if (missing.length) {
-      await setRouteStatus(c.env, shop, stateRow.tenant_id, connectionId, "attention_required");
+      if (routeReservation.previousStatus !== "active") {
+        await setRouteStatus(c.env, shop, stateRow.tenant_id, connectionId, "attention_required");
+      }
       throw new IntegrationHttpError(`Shopify did not grant required scopes: ${missing.join(", ")}`, 409);
     }
 
