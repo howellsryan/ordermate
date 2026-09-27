@@ -198,7 +198,7 @@ shopifyIntegrationApp.post("/install", async c => {
   try {
     const scopes = configured(c.env);
     const context = await sessionContext(c.req.raw, c.env);
-    const body = await c.req.json<{ shop?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ shop?: string }>().catch((): { shop?: string } => ({}));
     const shop = normalizeShopifyShopDomain(body.shop || "");
     const state = randomState();
     const stateHash = await sha256Hex(state);
@@ -325,7 +325,7 @@ shopifyIntegrationApp.post("/refresh", async c => {
   try {
     configured(c.env);
     const context = await sessionContext(c.req.raw, c.env);
-    const body = await c.req.json<{ connectionId?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ connectionId?: string }>().catch((): { connectionId?: string } => ({}));
     if (!body.connectionId) throw new IntegrationHttpError("connectionId is required", 400);
 
     const credentialResponse = await internalRequest(
