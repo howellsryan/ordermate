@@ -19,12 +19,19 @@ describe("integration schema migrations", () => {
         "integration_entity_links",
         "integration_events",
         "integration_exceptions",
+        "integration_external_entities",
+        "integration_sync_checkpoints",
       ]) expect(tables.has(table), table).toBe(true);
 
       const versions = state.storage.sql.exec<{ id: number }>(
         "SELECT id FROM _integration_schema_migrations ORDER BY id",
       ).toArray().map(row => row.id);
-      expect(versions).toEqual([1]);
+      expect(versions).toEqual([1, 2]);
+
+      const uniqueMappingIndex = state.storage.sql.exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'integration_entity_links_one_to_one_idx'",
+      ).toArray();
+      expect(uniqueMappingIndex).toHaveLength(1);
     });
   });
 
