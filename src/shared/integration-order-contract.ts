@@ -59,12 +59,12 @@ export const integrationOrderProposalSchema = z.object({
       externalLineIds.add(line.externalLineId);
     }
     const lineSubtotal = proposal.lines.reduce((sum, line) => sum + line.netMinor, 0);
-    const lineTax = proposal.lines.reduce((sum, line) => sum + line.taxMinor, 0);
+    const merchandiseTax = proposal.lines.reduce((sum, line) => sum + line.taxMinor, 0);
     if (lineSubtotal !== proposal.subtotalMinor) {
       ctx.addIssue({ code: "custom", message: "Integration order line net totals do not match the order subtotal" });
     }
-    if (lineTax !== proposal.taxMinor) {
-      ctx.addIssue({ code: "custom", message: "Integration order line tax totals do not match the order tax total" });
+    if (merchandiseTax > proposal.taxMinor) {
+      ctx.addIssue({ code: "custom", message: "Merchandise line tax cannot exceed the authoritative order tax total" });
     }
     if (proposal.totalMinor !== proposal.subtotalMinor + proposal.taxMinor + proposal.nonMerchandiseMinor) {
       ctx.addIssue({ code: "custom", message: "Integration order total does not reconcile" });
