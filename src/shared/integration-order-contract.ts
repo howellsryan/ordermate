@@ -19,6 +19,8 @@ export const integrationOrderLineSchema = z.object({
   }
 });
 
+const externalLocationIdSchema = z.string().trim().min(1).max(255);
+
 export const integrationOrderProposalSchema = z.object({
   provider: z.enum(INTEGRATION_PROVIDERS),
   connectionId: z.string().uuid(),
@@ -27,16 +29,19 @@ export const integrationOrderProposalSchema = z.object({
   externalUpdatedAt: z.string().datetime(),
   state: z.enum(["active", "cancelled"]),
   currency: z.string().trim().length(3).transform(value => value.toUpperCase()),
-  locationExternalId: z.string().trim().min(1).max(255).nullable(),
+  locationExternalId: externalLocationIdSchema.nullable(),
+  locationExternalIds: z.array(externalLocationIdSchema).max(50).default([]),
   subtotalMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   taxMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   totalMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   nonMerchandiseMinor: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
   lines: z.array(integrationOrderLineSchema).max(2_000),
 }).superRefine((proposal, ctx) => {
-  if (proposal.state === "active") {
-    if (!proposal.locationExternalId) ctx.addIssue({ code: "custom", message: "Active integration orders require one external fulfilment location" });
-    if (!proposal.lines.length) ctx.addIssue({ code: "custom", message: "Active integration orders require at least one line" });
+  if (proposal.state === "active" && !proposal.lines.length) {
+    ctx.addIssue({ code: "custom", message: "Active integration orders require at least one line" });
+  }
+  if (proposal.locationExternalId && proposal.locationExternalIds.length && !proposal.locationExternalIds.includes(proposal.locationExternalId)) {
+    ctx.addIssue({ code: "custom", message: "Primary external fulfilment location must appear in the routing location set" });
   }
   if (proposal.lines.length) {
     const externalLineIds = new Set<string>();
