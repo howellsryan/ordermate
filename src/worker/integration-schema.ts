@@ -1,4 +1,4 @@
-const CURRENT_INTEGRATION_SCHEMA_VERSION = 1;
+const CURRENT_INTEGRATION_SCHEMA_VERSION = 2;
 
 type MigrationRow = { version: number };
 type SqlStorage = DurableObjectState["storage"];
@@ -109,6 +109,49 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
       );
     });
     current = 1;
+  }
+
+  if (current < 2) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS integration_external_entities (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('variant','location')),
+          external_id TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          external_updated_at TEXT,
+          match_status TEXT NOT NULL DEFAULT 'unmatched' CHECK(match_status IN ('mapped','suggested','ambiguous','unmatched')),
+          suggested_local_entity_type TEXT,
+          suggested_local_entity_id TEXT,
+          suggestion_reason TEXT,
+          discovered_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, entity_type, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS integration_external_entities_status_idx
+          ON integration_external_entities(connection_id, entity_type, match_status, display_name COLLATE NOCASE);
+
+        CREATE TABLE IF NOT EXISTS integration_sync_checkpoints (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          resource TEXT NOT NULL CHECK(resource IN ('catalogue','locations')),
+          status TEXT NOT NULL CHECK(status IN ('idle','running','completed','failed')),
+          item_count INTEGER NOT NULL DEFAULT 0 CHECK(item_count >= 0),
+          started_at TEXT,
+          completed_at TEXT,
+          last_error TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, resource)
+        );
+        CREATE INDEX IF NOT EXISTS integration_sync_checkpoints_status_idx
+          ON integration_sync_checkpoints(connection_id, status, updated_at DESC);
+      `);
+      sql.exec(
+        "INSERT INTO _integration_schema_migrations (id, applied_at) VALUES (2, ?)",
+        new Date().toISOString(),
+      );
+    });
+    current = 2;
   }
 
   if (current !== CURRENT_INTEGRATION_SCHEMA_VERSION) {
