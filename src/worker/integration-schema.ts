@@ -1,4 +1,4 @@
-const CURRENT_INTEGRATION_SCHEMA_VERSION = 2;
+const CURRENT_INTEGRATION_SCHEMA_VERSION = 3;
 
 type MigrationRow = { version: number };
 type SqlStorage = DurableObjectState["storage"];
@@ -155,6 +155,34 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
       );
     });
     current = 2;
+  }
+
+  if (current < 3) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS integration_order_state (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          external_order_id TEXT NOT NULL,
+          local_order_id TEXT,
+          applied_external_updated_at TEXT,
+          applied_proposal_json TEXT,
+          last_event_id TEXT REFERENCES integration_events(id) ON DELETE SET NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','cancelled','blocked')),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, external_order_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS integration_order_state_local_idx
+          ON integration_order_state(connection_id, local_order_id)
+          WHERE local_order_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS integration_order_state_status_idx
+          ON integration_order_state(connection_id, status, updated_at DESC);
+      `);
+      sql.exec(
+        "INSERT INTO _integration_schema_migrations (id, applied_at) VALUES (3, ?)",
+        new Date().toISOString(),
+      );
+    });
+    current = 3;
   }
 
   if (current !== CURRENT_INTEGRATION_SCHEMA_VERSION) {
