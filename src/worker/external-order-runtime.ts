@@ -33,9 +33,9 @@ const importOrderSchema = z.object({
   lines: z.array(importLineSchema).min(1).max(2_000),
 }).superRefine((order, ctx) => {
   const lineSubtotal = order.lines.reduce((sum, line) => sum + line.netMinor, 0);
-  const lineTax = order.lines.reduce((sum, line) => sum + line.taxMinor, 0);
+  const merchandiseTax = order.lines.reduce((sum, line) => sum + line.taxMinor, 0);
   if (lineSubtotal !== order.subtotalMinor) ctx.addIssue({ code: "custom", message: "External order lines do not match the supplied subtotal" });
-  if (lineTax !== order.taxMinor) ctx.addIssue({ code: "custom", message: "External order lines do not match the supplied tax total" });
+  if (merchandiseTax > order.taxMinor) ctx.addIssue({ code: "custom", message: "External merchandise tax cannot exceed the supplied order tax total" });
   if (order.totalMinor !== order.subtotalMinor + order.taxMinor + order.nonMerchandiseMinor) {
     ctx.addIssue({ code: "custom", message: "External order totals do not reconcile" });
   }
@@ -55,8 +55,6 @@ type VariantRow = { id: string; active: number; product_status: string };
 type LevelRow = { on_hand: number; reserved: number };
 type FulfilledRow = { fulfilled: number; returned: number };
 type SettingsRow = { currency: string };
-
-type SqlStorage = DurableObjectState["storage"];
 
 class ExternalOrderError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -211,7 +209,6 @@ export class ExternalOrderRuntime {
     const existing = this.existing(input.orderId);
     if (existing) {
       if (existing.status === "cancelled") throw new ExternalOrderError("A cancelled external order cannot be reactivated automatically", 409);
-      if (existing.status === "completed" || existing.fulfilment_status !== "unfulfilled") this.assertNoFulfilledQuantity(input.orderId);
       this.assertNoFulfilledQuantity(input.orderId);
     }
     const currentReservations = existing
