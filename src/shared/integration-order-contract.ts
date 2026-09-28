@@ -20,6 +20,12 @@ export const integrationOrderLineSchema = z.object({
 });
 
 const externalLocationIdSchema = z.string().trim().min(1).max(255);
+const proposalBlockSchema = z.object({
+  code: z.string().trim().min(1).max(120),
+  message: z.string().trim().min(1).max(2_000),
+  retryable: z.boolean().default(true),
+  retryDelivery: z.boolean().default(false),
+}).nullable().optional();
 
 export const integrationOrderProposalSchema = z.object({
   provider: z.enum(INTEGRATION_PROVIDERS),
@@ -36,8 +42,9 @@ export const integrationOrderProposalSchema = z.object({
   totalMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   nonMerchandiseMinor: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
   lines: z.array(integrationOrderLineSchema).max(2_000),
+  block: proposalBlockSchema,
 }).superRefine((proposal, ctx) => {
-  if (proposal.state === "active" && !proposal.lines.length) {
+  if (proposal.state === "active" && !proposal.lines.length && !proposal.block) {
     ctx.addIssue({ code: "custom", message: "Active integration orders require at least one line" });
   }
   if (proposal.locationExternalId && proposal.locationExternalIds.length && !proposal.locationExternalIds.includes(proposal.locationExternalId)) {
