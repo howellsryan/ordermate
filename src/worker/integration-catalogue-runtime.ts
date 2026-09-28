@@ -113,6 +113,8 @@ type MatchIndexes = {
   locationByIdentity: Map<string, Set<string>>;
 };
 
+type MatchableEntity = { externalId: string; payload: Record<string, unknown> };
+
 const INTERNAL_ENTRIES = Object.entries(integrationInternalHeaders);
 
 function now() {
@@ -264,12 +266,51 @@ export class IntegrationCatalogueRuntime {
     return { status: "suggested", localEntityType: "location", localEntityId, reason: "Exact location name/code match" };
   }
 
+  private matchesForEntities(
+    entityType: "variant" | "location",
+    entities: MatchableEntity[],
+    indexes: MatchIndexes,
+    links: LinkRow[],
+  ) {
+    const approvedByExternal = new Map<string, LinkRow>(links.map(link => [link.external_id, link]));
+    const localLinks = new Map<string, string>(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id]));
+    const matches = new Map<string, MatchResult>();
+    for (const entity of entities) {
+      const approved = approvedByExternal.get(entity.externalId);
+      matches.set(entity.externalId, approved
+        ? { status: "mapped", localEntityType: approved.local_entity_type as "product_variant" | "location", localEntityId: approved.local_entity_id, reason: "Approved mapping" }
+        : this.match(entityType, entity.payload, indexes, localLinks, entity.externalId));
+    }
+
+    const suggestionOwners = new Map<string, string[]>();
+    for (const entity of entities) {
+      const result = matches.get(entity.externalId);
+      if (result?.status !== "suggested" || !result.localEntityType || !result.localEntityId) continue;
+      const key = `${result.localEntityType}:${result.localEntityId}`;
+      const externalIds = suggestionOwners.get(key) || [];
+      externalIds.push(entity.externalId);
+      suggestionOwners.set(key, externalIds);
+    }
+    for (const externalIds of suggestionOwners.values()) {
+      if (externalIds.length < 2) continue;
+      for (const externalId of externalIds) {
+        matches.set(externalId, {
+          status: "ambiguous",
+          localEntityType: null,
+          localEntityId: null,
+          reason: `Multiple external ${entityType === "variant" ? "variants" : "locations"} have the same exact local match`,
+        });
+      }
+    }
+    return matches;
+  }
+
   private mappingState(connectionId: string) {
     const connection = this.connection(connectionId);
     if (!connection) return Response.json({ error: "Integration connection not found" }, { status: 404 });
     const indexes = this.localIndexes();
     const links = this.links(connectionId);
-    const linkByExternal = new Map<string, LinkRow>(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
+    const linkByExternal = new Map<string, LinkRow>(links.map(link => [`${link.entity_type}:${link.external_id}`, link]));
     const entities = this.ctx.storage.sql.exec<ExternalEntityRow>(
       `SELECT connection_id, entity_type, external_id, display_name, payload_json, external_updated_at,
               match_status, suggested_local_entity_type, suggested_local_entity_id, suggestion_reason,
@@ -360,16 +401,9 @@ export class IntegrationCatalogueRuntime {
 
     const indexes = this.localIndexes();
     const links = this.links(input.connectionId, input.entityType);
-    const linkByExternal = new Map<string, LinkRow>(links.map(link => [link.external_id, link] as const));
-    const localLinks = new Map<string, string>(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
+    const matches = this.matchesForEntities(input.entityType, input.entities, indexes, links);
     const timestamp = now();
-    const prepared = input.entities.map(entity => {
-      const approved = linkByExternal.get(entity.externalId);
-      const result: MatchResult = approved
-        ? { status: "mapped", localEntityType: approved.local_entity_type as "product_variant" | "location", localEntityId: approved.local_entity_id, reason: "Approved mapping" }
-        : this.match(input.entityType, entity.payload, indexes, localLinks, entity.externalId);
-      return { entity, result };
-    });
+    const prepared = input.entities.map(entity => ({ entity, result: matches.get(entity.externalId)! }));
 
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec(
@@ -510,6 +544,49 @@ export class IntegrationCatalogueRuntime {
     ).toArray()[0];
   }
 
+  private externalRows(connectionId: string, entityType: "variant" | "location") {
+    return this.ctx.storage.sql.exec<ExternalEntityRow>(
+      `SELECT connection_id, entity_type, external_id, display_name, payload_json, external_updated_at,
+              match_status, suggested_local_entity_type, suggested_local_entity_id, suggestion_reason,
+              discovered_at, updated_at
+       FROM integration_external_entities WHERE connection_id = ? AND entity_type = ?
+       ORDER BY display_name COLLATE NOCASE, external_id`,
+      connectionId,
+      entityType,
+    ).toArray();
+  }
+
+  private refreshMatchStatuses(connectionId: string, entityTypes: Set<"variant" | "location">, timestamp: string) {
+    const indexes = this.localIndexes();
+    const allLinks = this.links(connectionId);
+    for (const entityType of entityTypes) {
+      const rows = this.externalRows(connectionId, entityType);
+      const matches = this.matchesForEntities(
+        entityType,
+        rows.map(row => ({ externalId: row.external_id, payload: payloadObject(row.payload_json) })),
+        indexes,
+        allLinks.filter(link => link.entity_type === entityType),
+      );
+      for (const row of rows) {
+        const result = matches.get(row.external_id)!;
+        this.ctx.storage.sql.exec(
+          `UPDATE integration_external_entities
+           SET match_status = ?, suggested_local_entity_type = ?, suggested_local_entity_id = ?,
+               suggestion_reason = ?, updated_at = ?
+           WHERE connection_id = ? AND entity_type = ? AND external_id = ?`,
+          result.status,
+          result.status === "suggested" ? result.localEntityType : null,
+          result.status === "suggested" ? result.localEntityId : null,
+          result.reason,
+          timestamp,
+          connectionId,
+          entityType,
+          row.external_id,
+        );
+      }
+    }
+  }
+
   private async updateMappings(connectionId: string, request: Request) {
     const connection = this.connection(connectionId);
     if (!connection) return Response.json({ error: "Integration connection not found" }, { status: 404 });
@@ -524,8 +601,10 @@ export class IntegrationCatalogueRuntime {
     const keys = new Set<string>();
     const targetKeys = new Set<string>();
     const affectedExternalIds = new Set<string>(input.mappings.map(mapping => `${mapping.entityType}:${mapping.externalId}`));
+    const affectedTypes = new Set<"variant" | "location">();
     const externalByKey = new Map<string, ExternalEntityRow>();
     for (const mapping of input.mappings) {
+      affectedTypes.add(mapping.entityType);
       const key = `${mapping.entityType}:${mapping.externalId}`;
       if (keys.has(key)) return Response.json({ error: "Each external entity can be mapped only once per request" }, { status: 409 });
       keys.add(key);
@@ -593,33 +672,7 @@ export class IntegrationCatalogueRuntime {
           timestamp,
         );
       }
-
-      const indexes = this.localIndexes();
-      const links = this.links(connectionId);
-      const linkByExternal = new Map<string, LinkRow>(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
-      const localLinks = new Map<string, string>(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
-      for (const mapping of input.mappings) {
-        const key = `${mapping.entityType}:${mapping.externalId}`;
-        const external = externalByKey.get(key)!;
-        const approved = linkByExternal.get(key);
-        const result: MatchResult = approved
-          ? { status: "mapped", localEntityType: approved.local_entity_type as "product_variant" | "location", localEntityId: approved.local_entity_id, reason: "Approved mapping" }
-          : this.match(mapping.entityType, payloadObject(external.payload_json), indexes, localLinks, mapping.externalId);
-        this.ctx.storage.sql.exec(
-          `UPDATE integration_external_entities
-           SET match_status = ?, suggested_local_entity_type = ?, suggested_local_entity_id = ?,
-               suggestion_reason = ?, updated_at = ?
-           WHERE connection_id = ? AND entity_type = ? AND external_id = ?`,
-          result.status,
-          result.status === "suggested" ? result.localEntityType : null,
-          result.status === "suggested" ? result.localEntityId : null,
-          result.reason,
-          timestamp,
-          connectionId,
-          mapping.entityType,
-          mapping.externalId,
-        );
-      }
+      this.refreshMatchStatuses(connectionId, affectedTypes, timestamp);
       this.ctx.storage.sql.exec(
         `INSERT INTO audit_events (id, actor_id, actor_role, action, entity_type, entity_id, metadata_json, created_at)
          VALUES (?, ?, ?, 'integration.mappings_updated', 'integration_connection', ?, ?, ?)`,
