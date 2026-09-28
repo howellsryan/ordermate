@@ -10,13 +10,14 @@ import { movementHistoryApp } from "./movement-history";
 import { operationsApp } from "./operations";
 import { operationsAssistantApp } from "./operations-assistant";
 import { can } from "./permissions";
+import { shopifyCatalogueApp, type ShopifyCatalogueEnv } from "./shopify-catalogue";
 import { shopifyIntegrationApp, type ShopifyIntegrationEnv } from "./shopify-integration";
 import { TenantStore } from "./tenant-store-order-planning";
 import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 export { TenantStore };
 
-type Env = AuthEnv & ShopifyIntegrationEnv & {
+type Env = AuthEnv & ShopifyIntegrationEnv & ShopifyCatalogueEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
@@ -165,6 +166,12 @@ export default {
     const denied = await enforceControlPlaneRead(request, env, url);
     if (denied) return secureApiResponse(denied);
 
+    if (url.pathname === "/api/integrations/shopify/catalogue" || url.pathname.startsWith("/api/integrations/shopify/catalogue/")) {
+      const publicPath = url.pathname;
+      url.pathname = url.pathname.replace(/^\/api\/integrations\/shopify\/catalogue/, "") || "/";
+      const response = await shopifyCatalogueApp.fetch(new Request(url, request), env, ctx);
+      return secureApiResponse(maskUnexpectedApiError(publicPath, response));
+    }
     if (url.pathname === "/api/integrations/shopify" || url.pathname.startsWith("/api/integrations/shopify/")) {
       const publicPath = url.pathname;
       url.pathname = url.pathname.replace(/^\/api\/integrations\/shopify/, "") || "/";
