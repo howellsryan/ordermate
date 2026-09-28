@@ -25,6 +25,8 @@ The first staging deployment completed successfully on 26 September 2026. Before
 
 Slice B adds `0003_integrations.sql`. Source merge/deployment alone is not evidence that the live staging D1 has this migration; verify `npm run db:migrate:staging` has applied it before exercising Shopify connection routes.
 
+Slice C extends only tenant Durable Object integration storage through its independently versioned integration schema. It does not add another D1 control-plane migration.
+
 The EU R2 bucket, staging queue/DLQ, Worker bindings and static assets are provisioned. The Cloudflare build gate runs:
 
 ```sh
@@ -56,9 +58,9 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
 
 Do not replace `BETTER_AUTH_SECRET` unless intentionally rotating staging sessions, and never commit any of these values. No staging authentication bypass should be added.
 
-## Shopify Slice B staging prerequisites
+## Shopify staging prerequisites
 
-Slice B intentionally fails closed until a real Shopify app and integration encryption secret are configured. Do not invent or commit these values.
+Slices B and C intentionally fail closed until a real Shopify app and integration encryption secret are configured. Do not invent or commit these values.
 
 Create/configure a Shopify app for staging with this callback URL:
 
@@ -82,7 +84,7 @@ npx wrangler secret put INTEGRATION_TOKEN_ENCRYPTION_KEY --env staging
 
 `INTEGRATION_TOKEN_ENCRYPTION_KEY` must be a cryptographically random 32-byte key encoded as base64. Generate and store it outside the repository; do not paste it into source, documentation, PR comments or application logs. `INTEGRATION_TOKEN_KEY_VERSION=v1` is non-secret configuration used for rotation metadata.
 
-Current non-secret Shopify settings live in `wrangler.jsonc`, including the API version and requested scopes. Before connecting a non-development store, confirm the Shopify app has the approvals required for the requested protected order/customer data. Do not broaden scopes merely to make OAuth succeed.
+Current non-secret Shopify settings live in `wrangler.jsonc`, including the pinned Admin API version and requested scopes. Slice C relies on product and location read access; before connecting a non-development store, confirm the Shopify app has every required approval for the intended store type. Do not broaden scopes merely to make OAuth succeed.
 
 ### Slice B security acceptance
 
@@ -100,6 +102,27 @@ Before calling the live staging connector foundation verified:
 10. Send a webhook for an unknown/inactive shop and confirm no tenant is selected from browser-controlled input.
 11. Rotate the offline token through the refresh path and confirm the stored credential envelope changes without exposing either token.
 12. Confirm no order, stock, fulfilment or return state changes from Slice B webhook receipt alone; canonical processing belongs to later slices.
+
+### Slice C catalogue/location acceptance
+
+Before calling live Shopify discovery and mapping verified:
+
+1. Confirm the configured Shopify Admin API version and the connected token have the required product/location read scopes before starting discovery.
+2. In the staging workspace, create active Operating Layer variants with representative unique SKUs/barcodes and at least two active stock locations with distinct names/codes.
+3. From Settings → Shopify, run **Sync Shopify catalogue** and verify catalogue and location checkpoints both complete with item counts and a new last-success timestamp.
+4. Confirm exact SKU/barcode matches appear only as **suggestions**. Discovery itself must leave `integration_entity_links` unchanged until an Owner/Admin approves a mapping.
+5. Confirm a Shopify variant whose SKU and barcode point at different local variants is marked ambiguous and cannot be bulk-approved as an exact suggestion.
+6. Confirm two external Shopify variants (or locations) competing for the same exact local target are both marked ambiguous rather than suggesting one local record twice.
+7. Confirm unmatched entities remain reviewable and can be manually mapped from the Settings UI; product titles are display context only and never an automatic matching signal.
+8. Approve exact/manual variant and location mappings, refresh/re-open Settings, and confirm the one-to-one mappings persist.
+9. Attempt to map two external entities to the same local target and confirm the second mapping is rejected.
+10. Unmap an approved entity and confirm its current deterministic suggestion/ambiguous/unmatched state is recomputed rather than retaining stale status.
+11. Remove or deactivate an external Shopify entity, re-run discovery, and confirm its approved link is retained as a stale historical mapping instead of being silently deleted.
+12. Force a Shopify GraphQL/scoping failure and confirm the failed checkpoint/connection error is visible without changing canonical products, variants, locations, stock movements or inventory balances and without disabling an otherwise-valid webhook route.
+13. Confirm a Manager can inspect connection/mapping health but cannot sync or mutate mappings; Inventory/Fulfilment/Viewer roles must not receive integration-settings access.
+14. Confirm the browser-only guest demo performs no Shopify OAuth, sync or external request.
+
+Slice C is a discovery/mapping layer only. It may persist external snapshots, suggestions, approved links and sync health, but it must not create/retire products or variants, change local locations, or mutate stock. Canonical Shopify order ingestion begins in Slice D.
 
 ## Manual browser/device smoke pass
 
