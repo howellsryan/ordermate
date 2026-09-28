@@ -43,6 +43,7 @@ type BlockInput = {
   code: string;
   message: string;
   retryable?: boolean;
+  deliveryRetry?: boolean;
   entityType?: string;
   externalId?: string;
 };
@@ -154,14 +155,12 @@ export class IntegrationOrderRuntime {
   }
 
   private beginEvent(eventId: string) {
-    const timestamp = now();
     this.ctx.storage.sql.exec(
       `UPDATE integration_events
        SET status = 'processing', attempts = attempts + 1, error = NULL, processed_at = NULL
        WHERE id = ?`,
       eventId,
     );
-    return timestamp;
   }
 
   private completeEvent(eventId: string, status: "applied" | "ignored", error: string | null = null) {
@@ -223,7 +222,7 @@ export class IntegrationOrderRuntime {
     });
     return Response.json({
       outcome: "blocked",
-      retryDelivery: false,
+      retryDelivery: input.deliveryRetry ?? false,
       eventId: input.eventId,
       exceptionId,
       error: input.message,
@@ -235,6 +234,7 @@ export class IntegrationOrderRuntime {
     const externalIds = new Set<string>([
       proposal.externalOrderId,
       ...(proposal.locationExternalId ? [proposal.locationExternalId] : []),
+      ...proposal.locationExternalIds,
       ...proposal.lines.map(line => line.externalVariantId),
     ]);
     for (const externalId of externalIds) {
@@ -268,10 +268,25 @@ export class IntegrationOrderRuntime {
   }
 
   private mapActiveProposal(eventId: string, proposal: IntegrationOrderProposal, localOrderId: string | null): MappedIntegrationOrder | Response {
-    if (!proposal.locationExternalId) {
+    const routedLocations = proposal.locationExternalIds.length
+      ? Array.from(new Set(proposal.locationExternalIds))
+      : proposal.locationExternalId ? [proposal.locationExternalId] : [];
+    if (routedLocations.length > 1) {
+      return this.block({
+        eventId,
+        connectionId: proposal.connectionId,
+        externalOrderId: proposal.externalOrderId,
+        localOrderId,
+        code: "multiple_fulfilment_locations",
+        message: "Shopify order is split across multiple fulfilment locations; Operating Layer currently requires one location per order",
+        retryable: false,
+      });
+    }
+    const externalLocationId = proposal.locationExternalId || routedLocations[0] || null;
+    if (!externalLocationId) {
       return this.block({ eventId, connectionId: proposal.connectionId, externalOrderId: proposal.externalOrderId, localOrderId, code: "missing_fulfilment_location", message: "Shopify order does not currently resolve to one fulfilment location" });
     }
-    const location = this.locationLink(proposal.connectionId, proposal.locationExternalId);
+    const location = this.locationLink(proposal.connectionId, externalLocationId);
     if (!location || location.local_entity_type !== "location") {
       return this.block({
         eventId,
@@ -279,9 +294,9 @@ export class IntegrationOrderRuntime {
         externalOrderId: proposal.externalOrderId,
         localOrderId,
         code: "unmapped_location",
-        message: `Shopify fulfilment location ${proposal.locationExternalId} is not approved against an Operating Layer location`,
+        message: `Shopify fulfilment location ${externalLocationId} is not approved against an Operating Layer location`,
         entityType: "location",
-        externalId: proposal.locationExternalId,
+        externalId: externalLocationId,
       });
     }
 
@@ -305,7 +320,7 @@ export class IntegrationOrderRuntime {
     }
     return {
       ...proposal,
-      locationExternalId: proposal.locationExternalId,
+      locationExternalId: externalLocationId,
       locationId: location.local_entity_id,
       lines: mappedLines,
     };
@@ -392,6 +407,19 @@ export class IntegrationOrderRuntime {
         code: "order_version_conflict",
         message: "Two different Shopify order states have the same external update timestamp; automatic ordering is unsafe",
         retryable: false,
+      });
+    }
+
+    if (proposal.block) {
+      return this.block({
+        eventId: event.id,
+        connectionId: proposal.connectionId,
+        externalOrderId: proposal.externalOrderId,
+        localOrderId: existing?.local_order_id,
+        code: proposal.block.code,
+        message: proposal.block.message,
+        retryable: proposal.block.retryable,
+        deliveryRetry: proposal.block.retryDelivery,
       });
     }
 
