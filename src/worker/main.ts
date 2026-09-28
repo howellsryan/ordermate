@@ -1,3 +1,4 @@
+import { normalizeShopifyShopDomain } from "../shared/integration-contract";
 import type { WorkspaceFeatureKey } from "../shared/features";
 import type { Role } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
@@ -12,12 +13,19 @@ import { operationsAssistantApp } from "./operations-assistant";
 import { can } from "./permissions";
 import { shopifyCatalogueApp, type ShopifyCatalogueEnv } from "./shopify-catalogue";
 import { shopifyIntegrationApp, type ShopifyIntegrationEnv } from "./shopify-integration";
+import {
+  isShopifyOrderReceivedEvent,
+  processShopifyOrderReceived,
+  shopifyOrderGidFromWebhookPayload,
+  type ShopifyOrderProcessingEnv,
+  type ShopifyOrderReceivedEvent,
+} from "./shopify-orders";
 import { TenantStore } from "./tenant-store-order-planning";
 import { workspaceFeatureEnabled } from "./workspace-feature-access";
 
 export { TenantStore };
 
-type Env = AuthEnv & ShopifyIntegrationEnv & ShopifyCatalogueEnv & {
+type Env = AuthEnv & ShopifyIntegrationEnv & ShopifyCatalogueEnv & ShopifyOrderProcessingEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
@@ -29,6 +37,9 @@ type Env = AuthEnv & ShopifyIntegrationEnv & ShopifyCatalogueEnv & {
 
 type Membership = { id: string; role: Role };
 type QueueEnvelope = { type?: string; eventId?: string };
+type ShopifyRouteRow = { tenant_id: string; connection_id: string; status: string };
+
+const SHOPIFY_ORDER_TOPICS = new Set<ShopifyOrderReceivedEvent["topic"]>(["orders/create", "orders/updated", "orders/cancelled"]);
 
 function secureApiResponse(response: Response) {
   const secured = new Response(response.body, response);
@@ -155,6 +166,30 @@ function isDeliveryNoteUploadedEvent(value: unknown): value is DeliveryNoteUploa
     && typeof event.createdAt === "string";
 }
 
+async function queueShopifyOrderReceipt(request: Request, response: Response, env: Env) {
+  const topic = request.headers.get("x-shopify-topic") as ShopifyOrderReceivedEvent["topic"] | null;
+  if (!topic || !SHOPIFY_ORDER_TOPICS.has(topic)) return;
+  const receipt = await response.clone().json<{ eventId?: string }>().catch(() => ({}));
+  if (!receipt.eventId) throw new Error("Shopify webhook receipt did not return an event ID");
+  const rawShop = request.headers.get("x-shopify-shop-domain") || "";
+  const shop = normalizeShopifyShopDomain(rawShop);
+  const route = await env.CONTROL_DB.prepare(
+    "SELECT tenant_id, connection_id, status FROM integration_routes WHERE provider = 'shopify' AND external_account_id = ?",
+  ).bind(shop).first<ShopifyRouteRow>();
+  if (!route || route.status !== "active") throw new Error("Shopify route became unavailable after webhook receipt");
+  const payload = await request.json<Record<string, unknown>>().catch(() => ({}));
+  const queued: ShopifyOrderReceivedEvent = {
+    type: "shopify.order.received",
+    eventId: receipt.eventId,
+    tenantId: route.tenant_id,
+    connectionId: route.connection_id,
+    shop,
+    topic,
+    orderGid: shopifyOrderGidFromWebhookPayload(payload),
+  };
+  await env.EVENTS_QUEUE.send(queued);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
@@ -174,8 +209,17 @@ export default {
     }
     if (url.pathname === "/api/integrations/shopify" || url.pathname.startsWith("/api/integrations/shopify/")) {
       const publicPath = url.pathname;
+      const webhookSnapshot = publicPath === "/api/integrations/shopify/webhooks" ? request.clone() : null;
       url.pathname = url.pathname.replace(/^\/api\/integrations\/shopify/, "") || "/";
       const response = await shopifyIntegrationApp.fetch(new Request(url, request), env, ctx);
+      if (webhookSnapshot && response.ok) {
+        try {
+          await queueShopifyOrderReceipt(webhookSnapshot, response, env);
+        } catch (cause) {
+          console.error("Operating Layer Shopify order enqueue failed", cause instanceof Error ? cause.message : "unknown error");
+          return secureApiResponse(Response.json({ error: "Unable to enqueue Shopify order processing" }, { status: 503 }));
+        }
+      }
       return secureApiResponse(maskUnexpectedApiError(publicPath, response));
     }
     if (url.pathname === "/api/ops/assistant") {
@@ -231,6 +275,9 @@ export default {
           } else {
             console.log("Operating Layer event skipped: AI delivery-note extraction disabled", envelope.eventId || message.id);
           }
+        } else if (isShopifyOrderReceivedEvent(message.body)) {
+          const result = await processShopifyOrderReceived(message.body, env);
+          if (result.retryDelivery) throw new Error(result.error || `Shopify order event ${message.body.eventId} requested retry`);
         } else {
           throw new Error(`Unsupported queue event type: ${envelope.type || "unknown"}`);
         }
