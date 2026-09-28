@@ -220,13 +220,14 @@ export class IntegrationCatalogueRuntime {
   }
 
   private links(connectionId: string, entityType?: "variant" | "location") {
+    const params: string[] = entityType ? [connectionId, entityType] : [connectionId];
     return this.ctx.storage.sql.exec<LinkRow>(
       `SELECT provider, connection_id, entity_type, external_id, local_entity_type, local_entity_id,
               external_updated_at, last_synced_at
        FROM integration_entity_links
        WHERE connection_id = ? ${entityType ? "AND entity_type = ?" : ""}
        ORDER BY entity_type, external_id`,
-      ...entityType ? [connectionId, entityType] : [connectionId],
+      ...params,
     ).toArray();
   }
 
@@ -268,7 +269,7 @@ export class IntegrationCatalogueRuntime {
     if (!connection) return Response.json({ error: "Integration connection not found" }, { status: 404 });
     const indexes = this.localIndexes();
     const links = this.links(connectionId);
-    const linkByExternal = new Map(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
+    const linkByExternal = new Map<string, LinkRow>(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
     const entities = this.ctx.storage.sql.exec<ExternalEntityRow>(
       `SELECT connection_id, entity_type, external_id, display_name, payload_json, external_updated_at,
               match_status, suggested_local_entity_type, suggested_local_entity_id, suggestion_reason,
@@ -295,7 +296,7 @@ export class IntegrationCatalogueRuntime {
         discoveredAt: row.discovered_at,
       };
     });
-    const entityKeys = new Set(entities.map(entity => `${entity.entityType}:${entity.externalId}`));
+    const entityKeys = new Set<string>(entities.map(entity => `${entity.entityType}:${entity.externalId}`));
     const staleLinks = links.filter(link => !entityKeys.has(`${link.entity_type}:${link.external_id}`)).map(link => ({
       entityType: link.entity_type,
       externalId: link.external_id,
@@ -359,8 +360,8 @@ export class IntegrationCatalogueRuntime {
 
     const indexes = this.localIndexes();
     const links = this.links(input.connectionId, input.entityType);
-    const linkByExternal = new Map(links.map(link => [link.external_id, link] as const));
-    const localLinks = new Map(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
+    const linkByExternal = new Map<string, LinkRow>(links.map(link => [link.external_id, link] as const));
+    const localLinks = new Map<string, string>(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
     const timestamp = now();
     const prepared = input.entities.map(entity => {
       const approved = linkByExternal.get(entity.externalId);
@@ -522,7 +523,7 @@ export class IntegrationCatalogueRuntime {
 
     const keys = new Set<string>();
     const targetKeys = new Set<string>();
-    const affectedExternalIds = new Set(input.mappings.map(mapping => `${mapping.entityType}:${mapping.externalId}`));
+    const affectedExternalIds = new Set<string>(input.mappings.map(mapping => `${mapping.entityType}:${mapping.externalId}`));
     const externalByKey = new Map<string, ExternalEntityRow>();
     for (const mapping of input.mappings) {
       const key = `${mapping.entityType}:${mapping.externalId}`;
@@ -595,8 +596,8 @@ export class IntegrationCatalogueRuntime {
 
       const indexes = this.localIndexes();
       const links = this.links(connectionId);
-      const linkByExternal = new Map(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
-      const localLinks = new Map(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
+      const linkByExternal = new Map<string, LinkRow>(links.map(link => [`${link.entity_type}:${link.external_id}`, link] as const));
+      const localLinks = new Map<string, string>(links.map(link => [`${link.local_entity_type}:${link.local_entity_id}`, link.external_id] as const));
       for (const mapping of input.mappings) {
         const key = `${mapping.entityType}:${mapping.externalId}`;
         const external = externalByKey.get(key)!;
