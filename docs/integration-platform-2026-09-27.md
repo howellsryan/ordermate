@@ -98,7 +98,7 @@ Slice B deliberately stops at receipt. It does **not** create orders, reserve st
 
 ## Tenant integration data
 
-Tenant-specific integration state stays in the tenant Durable Object under a composed `IntegrationRuntime` with its own monotonic `_integration_schema_migrations` table. This avoids adding another `TenantStore extends ...` layer while retaining fail-closed storage versioning.
+Tenant-specific integration state stays in the tenant Durable Object under composed integration runtimes with their own monotonic `_integration_schema_migrations` table. This avoids adding another `TenantStore extends ...` layer while retaining fail-closed storage versioning.
 
 ### `integration_connections`
 
@@ -110,7 +110,15 @@ Encrypted per-store credential envelopes and non-secret rotation metadata. This 
 
 ### `integration_entity_links`
 
-Maps one external entity to one canonical entity using `(provider, connection_id, entity_type, external_id)`. This is the stable bridge for orders, variants, locations, customers, fulfilments and returns.
+Maps one external entity to one canonical entity using `(provider, connection_id, entity_type, external_id)`. Slice C also enforces one local target per external entity type/connection so two Shopify variants or locations cannot be approved against the same Operating Layer entity.
+
+### `integration_external_entities`
+
+Slice C stores the latest provider snapshot needed for reviewed mapping without copying Shopify into canonical catalogue tables. Each discovered variant/location records its external ID, display context, minimal provider payload, external timestamp and current `mapped` / `suggested` / `ambiguous` / `unmatched` state.
+
+### `integration_sync_checkpoints`
+
+Slice C records independent catalogue/location discovery checkpoints, item counts, start/completion/failure state and error detail. The connection's last successful sync is advanced only after both resources complete.
 
 ### `integration_events`
 
@@ -133,7 +141,7 @@ Per-store access/refresh tokens are encrypted before entering Durable Object sto
 
 The plaintext access/refresh tokens exist only transiently in Worker memory during OAuth exchange/refresh. Public integration read routes return only non-secret connection metadata.
 
-OAuth code exchange explicitly requests expiring offline tokens. Refresh uses Shopify's refresh-token grant and replaces both rotated tokens in one encrypted credential update.
+OAuth code exchange explicitly requests expiring offline tokens. Refresh uses Shopify's refresh-token grant and replaces both rotated tokens in one encrypted credential update. Slice C reuses the same credential boundary for GraphQL discovery and refreshes an expiring access token before discovery when required.
 
 ## OAuth correctness
 
@@ -169,6 +177,27 @@ Still required in later processing slices:
 - bounded processing attempts and operator-facing poison-event exceptions;
 - replay proof for actual order/reservation/fulfilment/return mutations.
 
+## Catalogue/location mapping correctness
+
+Slice C deliberately separates **discovery evidence** from **approved identity links**.
+
+Variant matching uses only exact normalized SKU/barcode evidence:
+
+- exact unique SKU and/or barcode → suggestion;
+- SKU/barcode pointing to different local variants → ambiguous;
+- no exact evidence → unmatched;
+- titles/names are display context only and never automatic variant identity;
+- two Shopify variants competing for the same exact local variant → both ambiguous;
+- an approved local target already owned by another external entity → ambiguous/rejected.
+
+Location matching may suggest an exact normalized Shopify location name against an active Operating Layer location name/code, but it is still never auto-approved. Location mappings are explicit before later order/inventory processing can depend on them.
+
+All suggestions require Owner/Admin approval. Managers may inspect integration health and mapping state but cannot sync or mutate mappings. Inventory/Fulfilment/Viewer roles have no integration-settings grant.
+
+A Shopify discovery refresh replaces the current external snapshot for that resource but deliberately retains approved links whose external entity is no longer returned. Those links are surfaced as stale historical mappings rather than silently deleted. Mapping/unmapping recomputes the affected suggestion set so stale collision state cannot linger.
+
+Slice C does **not** create, rename, retire or update Operating Layer products/variants/locations, and it performs no stock movement or inventory mutation.
+
 ## Shopify MVP sequence
 
 ### Slice A — integration foundation — delivered
@@ -195,18 +224,30 @@ Still required in later processing slices:
 
 **Environment gate:** source completion is not a claim that a live Shopify store is connected. Staging still needs the D1 migration applied, real Shopify app credentials, a generated 32-byte encryption secret, callback/webhook app configuration and a live OAuth/webhook smoke pass. See `docs/staging.md`.
 
-### Slice C — catalogue/location mapping
+### Slice C — catalogue/location mapping — source delivered on PR #9
 
-- read Shopify products/variants/locations via GraphQL;
-- match SKU/barcode where deterministic;
-- reviewed mapping/import for ambiguous or missing variants;
-- explicit Shopify location → Operating Layer location mapping;
-- initial sync checkpoint and connection health.
+- paginated Shopify GraphQL Admin API discovery for product variants and locations;
+- configured API-version pinning and fail-closed GraphQL error handling;
+- token refresh through the existing encrypted credential path before discovery when required;
+- provider-neutral external snapshot and sync-checkpoint storage;
+- deterministic exact SKU/barcode variant suggestions;
+- explicit collision handling for conflicting evidence and competing external entities;
+- explicit reviewed Shopify location → Operating Layer location mapping;
+- one-to-one approved mapping invariant;
+- retained stale approved links for historical identity;
+- connection/checkpoint health and last-complete-sync state;
+- Owner/Admin Settings workflow to connect, sync, approve exact suggestions, manually map and unmap;
+- Manager read-only health/mapping visibility;
+- guest demo performs no external Shopify request;
+- regression coverage for pagination, API errors, schema upgrades, suggestions, ambiguity, one-to-one mapping, unmapping and stale-link behavior.
+
+**Environment gate:** Slice C source completion is not a claim that a live Shopify catalogue has been synchronized in staging. Live acceptance requires a real connected Shopify development/test store, required product/location read access and the mapping acceptance pass in `docs/staging.md`.
 
 ### Slice D — orders in
 
 - subscribe to order create/update/cancel plus required privacy/app lifecycle topics;
 - normalize Shopify order facts into a provider-neutral proposal;
+- resolve only approved variant/location mappings;
 - create/update through canonical order services;
 - idempotent retries and out-of-order protection;
 - unmapped lines become integration exceptions, never silent partial orders.
@@ -234,7 +275,7 @@ Do not couple accounting sync to the Shopify adapter. Both providers use the sam
 
 ## Architecture rule for implementation
 
-The current Durable Object runtime already has a legacy inheritance chain. New integration work follows the newer composition pattern used by `ServiceRuntime`, `FeatureRuntime` and `BusinessProfileRuntime`: `IntegrationRuntime` is composed into the canonical store rather than creating another `TenantStore extends ...` layer.
+The current Durable Object runtime already has a legacy inheritance chain. New integration work follows the newer composition pattern used by `ServiceRuntime`, `FeatureRuntime` and `BusinessProfileRuntime`: integration runtimes are composed into the canonical store rather than creating another `TenantStore extends ...` layer.
 
 The guest demo should consume shared integration-domain planning/normalization functions where integration behavior becomes demonstrable. Do not build a second independent integration engine in `demo-store.ts`.
 
