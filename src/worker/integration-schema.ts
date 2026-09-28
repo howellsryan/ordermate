@@ -114,6 +114,9 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
   if (current < 2) {
     storage.transactionSync(() => {
       sql.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS integration_entity_links_one_to_one_idx
+          ON integration_entity_links(connection_id, entity_type, local_entity_type, local_entity_id);
+
         CREATE TABLE IF NOT EXISTS integration_external_entities (
           connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
           entity_type TEXT NOT NULL CHECK(entity_type IN ('variant','location')),
