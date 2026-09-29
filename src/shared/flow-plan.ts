@@ -107,11 +107,15 @@ function attentionAction(item: FlowPlanAttentionItem): FlowPlanAction | null {
   return null;
 }
 
-export function buildFlowPlan(
+/**
+ * Full deterministic signal set. Persistent work-queue materialisation uses this
+ * untruncated list so a still-active lower-ranked condition is never mistaken for
+ * a cleared one merely because it fell outside the dashboard's top eight.
+ */
+export function buildFlowActions(
   attention: FlowPlanAttentionItem[],
   replenishment: Pick<OperatingIntelligenceResponse, "suggestions">,
-  now = new Date().toISOString(),
-): FlowPlan {
+): FlowPlanAction[] {
   const actions: FlowPlanAction[] = [];
 
   for (const item of attention) {
@@ -154,9 +158,16 @@ export function buildFlowPlan(
     if (!existing || action.score > existing.score) deduped.set(action.id, action);
   }
 
-  const sorted = [...deduped.values()]
-    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
-    .slice(0, 8);
+  return [...deduped.values()]
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+}
+
+export function buildFlowPlan(
+  attention: FlowPlanAttentionItem[],
+  replenishment: Pick<OperatingIntelligenceResponse, "suggestions">,
+  now = new Date().toISOString(),
+): FlowPlan {
+  const sorted = buildFlowActions(attention, replenishment).slice(0, 8);
 
   return {
     generatedAt: now,
