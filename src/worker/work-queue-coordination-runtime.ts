@@ -53,6 +53,8 @@ type MetricRow = {
   resolved_at: string | null;
 };
 
+type ActiveResult = { ok: true; row: Row } | { ok: false; response: Response };
+
 const assignmentSchema = z.object({
   assigneeId: z.string().trim().min(1).max(255).nullable().optional(),
   assigneeName: z.string().trim().min(1).max(255).nullable().optional(),
@@ -71,6 +73,15 @@ const scheduleSchema = z.object({
     ctx.addIssue({ code: "custom", message: "Escalation cannot be earlier than the due date" });
   }
 });
+
+const roleCategoryScope: Record<string, WorkQueueCategory[] | null> = {
+  owner: null,
+  admin: null,
+  manager: null,
+  inventory: ["stock_risk", "supply_risk", "receiving_exception"],
+  fulfilment: ["customer_promise", "receiving_exception"],
+  viewer: [],
+};
 
 function now() {
   return new Date().toISOString();
@@ -147,6 +158,10 @@ function percentile(values: number[], fraction: number) {
   return Math.round(sorted[index]! / 60_000);
 }
 
+function scopedCategories(actor: Actor) {
+  return Object.prototype.hasOwnProperty.call(roleCategoryScope, actor.role) ? roleCategoryScope[actor.role] : [];
+}
+
 export class WorkQueueCoordinationRuntime {
   constructor(private readonly ctx: DurableObjectState) {
     migrateWorkQueueSchema(ctx.storage);
@@ -161,13 +176,13 @@ export class WorkQueueCoordinationRuntime {
 
     try {
       if (request.method === "GET" && path === "/work-queue/frontline") return this.frontline(url, actor);
-      if (request.method === "GET" && path === "/work-queue/metrics") return this.metrics(url);
+      if (request.method === "GET" && path === "/work-queue/metrics") return this.metrics(url, actor);
 
       const assignment = path.match(/^\/work-queue\/([^/]+)\/assign$/);
-      if (request.method === "POST" && assignment) return await this.assign(decodeURIComponent(assignment[1]), request, actor);
+      if (request.method === "POST" && assignment) return this.assign(decodeURIComponent(assignment[1]), request, actor);
 
       const schedule = path.match(/^\/work-queue\/([^/]+)\/schedule$/);
-      if (request.method === "POST" && schedule) return await this.schedule(decodeURIComponent(schedule[1]), request, actor);
+      if (request.method === "POST" && schedule) return this.schedule(decodeURIComponent(schedule[1]), request, actor);
       return null;
     } catch (cause) {
       if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message || "Invalid work queue request" }, { status: 400 });
@@ -196,12 +211,12 @@ export class WorkQueueCoordinationRuntime {
     );
   }
 
-  private active(itemId: string) {
+  private active(itemId: string): ActiveResult {
     const row = this.one<Row>("SELECT * FROM work_items WHERE id = ?", itemId);
-    if (!row) return { error: Response.json({ error: "Work item not found" }, { status: 404 }) } as const;
-    if (row.active_signal !== 1) return { error: Response.json({ error: "This work item is no longer active" }, { status: 409 }) } as const;
-    if (row.status === "resolved" || row.status === "dismissed") return { error: Response.json({ error: "This work item is already closed" }, { status: 409 }) } as const;
-    return { row } as const;
+    if (!row) return { ok: false, response: Response.json({ error: "Work item not found" }, { status: 404 }) };
+    if (row.active_signal !== 1) return { ok: false, response: Response.json({ error: "This work item is no longer active" }, { status: 409 }) };
+    if (row.status === "resolved" || row.status === "dismissed") return { ok: false, response: Response.json({ error: "This work item is already closed" }, { status: 409 }) };
+    return { ok: true, row };
   }
 
   private markEscalations() {
@@ -224,18 +239,27 @@ export class WorkQueueCoordinationRuntime {
 
   private frontline(url: URL, actor: Actor) {
     this.markEscalations();
+    const allowed = scopedCategories(actor);
+    if (allowed && !allowed.length) return Response.json({ error: "This role does not have a frontline work queue" }, { status: 403 });
     const categoryValue = url.searchParams.get("category");
     const category = categoryValue && (WORK_QUEUE_CATEGORIES as readonly string[]).includes(categoryValue) ? categoryValue as WorkQueueCategory : null;
     if (categoryValue && !category) return Response.json({ error: "Unknown work queue category" }, { status: 400 });
+    if (category && allowed && !allowed.includes(category)) return Response.json({ error: "That queue category is outside this role's scope" }, { status: 403 });
+
     const teamId = url.searchParams.get("teamId")?.trim() || null;
     const assigneeId = url.searchParams.get("assigneeId")?.trim() || null;
     const mine = url.searchParams.get("mine") === "true";
     const bindings: unknown[] = [];
     const conditions = ["active_signal = 1", "status IN ('open','acknowledged')"];
+    if (allowed) {
+      conditions.push(`category IN (${allowed.map(() => "?").join(",")})`);
+      bindings.push(...allowed);
+    }
     if (category) { conditions.push("category = ?"); bindings.push(category); }
     if (teamId) { conditions.push("team_id = ?"); bindings.push(teamId); }
     const effectiveAssignee = mine ? actor.id : assigneeId;
     if (effectiveAssignee) { conditions.push("assignee_id = ?"); bindings.push(effectiveAssignee); }
+
     const rows = this.rows<Row>(
       `SELECT * FROM work_items WHERE ${conditions.join(" AND ")}
        ORDER BY
@@ -249,7 +273,14 @@ export class WorkQueueCoordinationRuntime {
       ...bindings,
     );
     const items = rows.map(item);
-    const allActive = this.rows<Row>("SELECT * FROM work_items WHERE active_signal = 1");
+
+    const summaryBindings: unknown[] = [];
+    const summaryConditions = ["active_signal = 1"];
+    if (allowed) {
+      summaryConditions.push(`category IN (${allowed.map(() => "?").join(",")})`);
+      summaryBindings.push(...allowed);
+    }
+    const allActive = this.rows<Row>(`SELECT * FROM work_items WHERE ${summaryConditions.join(" AND ")}`, ...summaryBindings);
     const actionable = allActive.filter(row => row.status === "open" || row.status === "acknowledged");
     const timestamp = Date.now();
     const response: FrontlineWorkQueueResponse = {
@@ -270,17 +301,25 @@ export class WorkQueueCoordinationRuntime {
     return Response.json(response);
   }
 
-  private metrics(url: URL) {
+  private metrics(url: URL, actor: Actor) {
     const rawDays = Number(url.searchParams.get("days") || "30");
     const windowDays = Number.isInteger(rawDays) ? Math.min(365, Math.max(1, rawDays)) : 30;
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-    const rows = this.rows<MetricRow>(
+    const allowed = scopedCategories(actor);
+    if (allowed && !allowed.length) return Response.json({ error: "This role does not have work queue metrics" }, { status: 403 });
+
+    const bindings: unknown[] = [since];
+    let categoryClause = "";
+    if (allowed) {
+      categoryClause = ` AND category IN (${allowed.map(() => "?").join(",")})`;
+      bindings.push(...allowed);
+    }
+    const cohort = this.rows<MetricRow>(
       `SELECT category, status, first_seen_at, resolved_at FROM work_items
-       WHERE first_seen_at >= ? OR (resolved_at IS NOT NULL AND resolved_at >= ?)`,
-      since, since,
+       WHERE first_seen_at >= ?${categoryClause}`,
+      ...bindings,
     );
-    const detected = rows.filter(row => row.first_seen_at >= since).length;
-    const closedRows = rows.filter(row => row.resolved_at && row.resolved_at >= since && (row.status === "resolved" || row.status === "dismissed"));
+    const closedRows = cohort.filter(row => row.resolved_at && (row.status === "resolved" || row.status === "dismissed"));
     const metric = (category: WorkQueueCategory | "all", values: MetricRow[]): WorkQueueResolutionMetric => {
       const durations = values
         .filter(row => row.resolved_at)
@@ -294,24 +333,35 @@ export class WorkQueueCoordinationRuntime {
         p90Minutes: percentile(durations, 0.9),
       };
     };
+
+    const openBindings: unknown[] = [];
+    let openCategoryClause = "";
+    if (allowed) {
+      openCategoryClause = ` AND category IN (${allowed.map(() => "?").join(",")})`;
+      openBindings.push(...allowed);
+    }
     const openNow = this.one<{ count: number }>(
-      "SELECT COUNT(*) AS count FROM work_items WHERE active_signal = 1 AND status IN ('open','acknowledged','snoozed')",
+      `SELECT COUNT(*) AS count FROM work_items
+       WHERE active_signal = 1 AND status IN ('open','acknowledged','snoozed')${openCategoryClause}`,
+      ...openBindings,
     )?.count ?? 0;
     const response: WorkQueueMetrics = {
       windowDays,
-      detected,
+      detected: cohort.length,
       closed: closedRows.length,
       openNow,
-      resolutionRate: detected ? Math.round(closedRows.length / detected * 1000) / 1000 : null,
+      resolutionRate: cohort.length ? Math.round(closedRows.length / cohort.length * 1000) / 1000 : null,
       overall: metric("all", closedRows),
-      byCategory: WORK_QUEUE_CATEGORIES.map(category => metric(category, closedRows.filter(row => row.category === category))),
+      byCategory: WORK_QUEUE_CATEGORIES
+        .filter(category => !allowed || allowed.includes(category))
+        .map(category => metric(category, closedRows.filter(row => row.category === category))),
     };
     return Response.json(response);
   }
 
-  private async assign(itemId: string, request: Request, actor: Actor) {
+  private async assign(itemId: string, request: Request, actor: Actor): Promise<Response> {
     const active = this.active(itemId);
-    if ("error" in active) return active.error;
+    if (!active.ok) return active.response;
     const input = assignmentSchema.parse(await request.json());
     const timestamp = now();
     const previous = active.row;
@@ -340,9 +390,9 @@ export class WorkQueueCoordinationRuntime {
     return Response.json({ ok: true, item: item(updated) });
   }
 
-  private async schedule(itemId: string, request: Request, actor: Actor) {
+  private async schedule(itemId: string, request: Request, actor: Actor): Promise<Response> {
     const active = this.active(itemId);
-    if ("error" in active) return active.error;
+    if (!active.ok) return active.response;
     const input = scheduleSchema.parse(await request.json());
     const timestamp = now();
     this.ctx.storage.transactionSync(() => {
