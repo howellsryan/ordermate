@@ -10,6 +10,7 @@ import { IntegrationRuntime } from "./integration-runtime";
 import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
+import { WorkQueueRuntime } from "./work-queue-runtime";
 
 const updateSchema = z.object({
   requiredByDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -66,6 +67,7 @@ export class TenantStore extends ReportsTenantStore {
   private readonly integrationRuntime: IntegrationRuntime;
   private readonly integrationCatalogueRuntime: IntegrationCatalogueRuntime;
   private readonly integrationOrderRuntime: IntegrationOrderRuntime;
+  private readonly workQueueRuntime: WorkQueueRuntime;
   private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
@@ -77,12 +79,17 @@ export class TenantStore extends ReportsTenantStore {
     this.integrationRuntime = new IntegrationRuntime(ctx);
     this.integrationCatalogueRuntime = new IntegrationCatalogueRuntime(ctx);
     this.integrationOrderRuntime = new IntegrationOrderRuntime(ctx, request => this.canonicalOrderFetch(request));
+    this.workQueueRuntime = new WorkQueueRuntime(ctx, request => this.workQueueSourceFetch(request));
     this.serviceRuntime = new ServiceRuntime(ctx);
   }
 
   private async canonicalOrderFetch(request: Request): Promise<Response> {
     const externalOrderResponse = await this.externalOrderRuntime.handle(request);
     if (externalOrderResponse) return externalOrderResponse;
+    return super.fetch(request);
+  }
+
+  private async workQueueSourceFetch(request: Request): Promise<Response> {
     return super.fetch(request);
   }
 
@@ -104,6 +111,9 @@ export class TenantStore extends ReportsTenantStore {
 
     const integrationResponse = await this.integrationRuntime.handle(request);
     if (integrationResponse) return integrationResponse;
+
+    const workQueueResponse = await this.workQueueRuntime.handle(request);
+    if (workQueueResponse) return workQueueResponse;
 
     const modularResponse = await this.serviceRuntime.handle(request);
     if (modularResponse) return modularResponse;
