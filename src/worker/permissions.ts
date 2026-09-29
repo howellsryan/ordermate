@@ -17,10 +17,10 @@ const policies: Record<Role, RolePolicy> = {
     catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: ["read"], features: ["read"], integrations: ["read"], work_queue: "*", reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
-    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], features: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], features: ["read"], work_queue: ["read", "update"], reports: ["read"], analytics: ["read"], preferences: "*",
   },
   fulfilment: {
-    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], crm: ["read"], service: ["read", "update"], modules: ["read"], features: ["read"], reports: ["read"], preferences: "*",
+    catalogue: ["read"], inventory: ["read", "update"], orders: ["read", "update"], customers: ["read"], crm: ["read"], service: ["read", "update"], modules: ["read"], features: ["read"], work_queue: ["read", "update"], reports: ["read"], preferences: "*",
   },
   viewer: {
     catalogue: ["read"], inventory: ["read"], purchasing: ["read"], orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], features: ["read"], reports: ["read"], analytics: ["read"], settings: ["read"], members: ["read"], preferences: "*",
