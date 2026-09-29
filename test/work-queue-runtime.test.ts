@@ -158,4 +158,28 @@ describe("persistent operations work queue", () => {
       expect(item).toMatchObject({ active_signal: 0, status: "resolved" });
     });
   });
+
+  it("treats an intentionally disabled module as absent operational scope rather than a source failure", async () => {
+    const stub = tenant();
+    const orderId = await createUrgentOrder(stub);
+    const active = await request<WorkQueueResponse>(stub, "/work-queue/refresh", "POST");
+    const item = customerPromise(active.data, orderId);
+    expect(item).toBeTruthy();
+
+    const disabled = await request<{ modules: Array<{ key: string; enabled: boolean }> }>(stub, "/modules/orders", "PATCH", { enabled: false });
+    expect(disabled.response.ok).toBe(true);
+    expect(disabled.data.modules.find(module => module.key === "orders")?.enabled).toBe(false);
+
+    const afterDisable = await request<WorkQueueResponse>(stub, "/work-queue/refresh", "POST");
+    expect(afterDisable.response.ok).toBe(true);
+    expect(customerPromise(afterDisable.data, orderId)).toBeUndefined();
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const persisted = state.storage.sql.exec<{ active_signal: number; status: string }>(
+        "SELECT active_signal, status FROM work_items WHERE source = 'flow_plan' AND fingerprint = ?",
+        `flow:order:${orderId}`,
+      ).toArray()[0];
+      expect(persisted).toMatchObject({ active_signal: 0, status: "resolved" });
+    });
+  });
 });
