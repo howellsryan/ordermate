@@ -79,8 +79,8 @@ export class TenantStore extends ReportsTenantStore {
     this.integrationRuntime = new IntegrationRuntime(ctx);
     this.integrationCatalogueRuntime = new IntegrationCatalogueRuntime(ctx);
     this.integrationOrderRuntime = new IntegrationOrderRuntime(ctx, request => this.canonicalOrderFetch(request));
-    this.workQueueRuntime = new WorkQueueRuntime(ctx, request => this.workQueueSourceFetch(request));
     this.serviceRuntime = new ServiceRuntime(ctx);
+    this.workQueueRuntime = new WorkQueueRuntime(ctx, request => this.workQueueSourceFetch(request));
   }
 
   private async canonicalOrderFetch(request: Request): Promise<Response> {
@@ -90,6 +90,8 @@ export class TenantStore extends ReportsTenantStore {
   }
 
   private async workQueueSourceFetch(request: Request): Promise<Response> {
+    const modularResponse = await this.serviceRuntime.handle(request);
+    if (modularResponse) return modularResponse;
     return super.fetch(request);
   }
 
