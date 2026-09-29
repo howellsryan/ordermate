@@ -217,9 +217,9 @@ async function loadUsableCredential(env: ShopifyOrderProcessingEnv, event: Shopi
   return secrets.accessToken;
 }
 
-function currencyDigits(currency: string) {
+function currencyDigits(currency: string): number {
   try {
-    return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits;
+    return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
   } catch {
     throw new Error(`Unsupported Shopify currency ${currency}`);
   }
