@@ -25,7 +25,7 @@ The first staging deployment completed successfully on 26 September 2026. Before
 
 Slice B adds `0003_integrations.sql`. Source merge/deployment alone is not evidence that the live staging D1 has this migration; verify `npm run db:migrate:staging` has applied it before exercising Shopify connection routes.
 
-Slice C extends only tenant Durable Object integration storage through its independently versioned integration schema. It does not add another D1 control-plane migration.
+Slices C and D extend only tenant Durable Object integration storage through its independently versioned integration schema. They do not add another D1 control-plane migration. Slice D advances that integration schema to v3 with persistent external-order application state.
 
 The EU R2 bucket, staging queue/DLQ, Worker bindings and static assets are provisioned. The Cloudflare build gate runs:
 
@@ -60,15 +60,15 @@ Do not replace `BETTER_AUTH_SECRET` unless intentionally rotating staging sessio
 
 ## Shopify staging prerequisites
 
-Slices B and C intentionally fail closed until a real Shopify app and integration encryption secret are configured. Do not invent or commit these values.
+Slices B–D intentionally fail closed until a real Shopify app and integration encryption secret are configured. Do not invent or commit these values.
 
-Create/configure a Shopify app for staging with this callback URL:
+Use a dedicated staging Shopify app/development store rather than pointing production credentials at the staging Worker. Configure this callback URL:
 
 ```text
 https://ordermate-staging.rlh.workers.dev/api/integrations/shopify/callback
 ```
 
-Webhook delivery targets the stable staging Worker endpoint:
+Shop-scoped operational webhook delivery targets the stable staging Worker endpoint:
 
 ```text
 https://ordermate-staging.rlh.workers.dev/api/integrations/shopify/webhooks
@@ -84,7 +84,9 @@ npx wrangler secret put INTEGRATION_TOKEN_ENCRYPTION_KEY --env staging
 
 `INTEGRATION_TOKEN_ENCRYPTION_KEY` must be a cryptographically random 32-byte key encoded as base64. Generate and store it outside the repository; do not paste it into source, documentation, PR comments or application logs. `INTEGRATION_TOKEN_KEY_VERSION=v1` is non-secret configuration used for rotation metadata.
 
-Current non-secret Shopify settings live in `wrangler.jsonc`, including the pinned Admin API version and requested scopes. Slice C relies on product and location read access; before connecting a non-development store, confirm the Shopify app has every required approval for the intended store type. Do not broaden scopes merely to make OAuth succeed.
+Current non-secret Shopify settings live in `wrangler.jsonc`, including the pinned Admin API version and requested scopes. Slice C relies on product and location read access; Slice D relies on order plus merchant-managed fulfilment-order read access. Before connecting a non-development store, confirm the Shopify app has every required approval for the intended store type. Do not broaden scopes merely to make OAuth succeed.
+
+After successful OAuth/re-authentication, Operating Layer reconciles the shop-scoped operational subscriptions it owns: order create, order update, order cancel and app uninstall. Order subscriptions request only the identity fields needed to fetch current authoritative order state through GraphQL. Re-authentication must update a stale callback URI rather than creating duplicate subscriptions.
 
 ### Slice B security acceptance
 
@@ -122,7 +124,38 @@ Before calling live Shopify discovery and mapping verified:
 13. Confirm a Manager can inspect connection/mapping health but cannot sync or mutate mappings; Inventory/Fulfilment/Viewer roles must not receive integration-settings access.
 14. Confirm the browser-only guest demo performs no Shopify OAuth, sync or external request.
 
-Slice C is a discovery/mapping layer only. It may persist external snapshots, suggestions, approved links and sync health, but it must not create/retire products or variants, change local locations, or mutate stock. Canonical Shopify order ingestion begins in Slice D.
+Slice C is a discovery/mapping layer only. It may persist external snapshots, suggestions, approved links and sync health, but it must not create/retire products or variants, change local locations, or mutate stock.
+
+### Slice D order-ingestion acceptance
+
+Before calling Shopify order ingestion verified against a real store:
+
+1. Re-authenticate the staging Shopify connection and confirm exactly one active shop-scoped subscription exists for each owned operational topic: order create, order update, order cancel and app uninstall. All must target the staging webhook URL. Re-authentication must be idempotent.
+2. Confirm order subscriptions are configured with the identity-only include-field set and that persisted `integration_events.payload_json` for an order webhook contains only order identity—not customer email, addresses or line-item data. HMAC verification must still be performed against the complete raw delivery before minimisation.
+3. Create a Shopify order containing only approved mapped variants and ensure Shopify assigns all outstanding fulfilment quantity to one approved mapped Shopify location. Seed enough available Operating Layer stock first.
+4. Confirm one canonical Operating Layer order is created, immediately confirmed, and reserves the mapped stock. Verify the local order keeps a stable ID and its header currency/subtotal/tax/total match Shopify current order facts rather than local catalogue pricing.
+5. Replay the same Shopify webhook delivery ID and confirm no second event/order/reservation is created.
+6. Change the Shopify quantity before Operating Layer fulfilment. Confirm the same local order ID is reconciled and only the reservation delta changes; old lines/reservations must not remain active.
+7. Process an older Shopify order version after a newer one and confirm it is marked ignored without rolling canonical order state backwards.
+8. Remove an approved variant mapping and trigger a Shopify order update. Confirm no partial order mutation occurs and an `unmapped_variant` exception is visible in Settings → Shopify.
+9. Restore the mapping, trigger a later Shopify update, and confirm the order can proceed and the relevant exception resolves after successful processing.
+10. Reduce available stock below the requested mapped quantity and trigger an update. Confirm the canonical order mutation is rolled back and an insufficient-stock exception is surfaced without corrupting existing reservations.
+11. Split one Shopify order across multiple fulfilment locations. Confirm automatic import is blocked rather than assigning the whole order to an arbitrary warehouse.
+12. Start fulfilment externally in Shopify before Operating Layer owns the matching fulfilment progression. Confirm the event is blocked rather than rewriting reservations around external fulfilment progress.
+13. Cancel an unfulfilled Shopify order and confirm the same local order becomes cancelled and all active reservations are released.
+14. Fulfil some/all of an imported order inside Operating Layer, then send a later Shopify edit/cancellation. Confirm the canonical rewrite is rejected and surfaced as an exception rather than rewriting fulfilled history.
+15. Force a transient Shopify/GraphQL/Worker failure and confirm the queue delivery retries; mapping, stock and other deterministic business blocks must persist as exceptions and be acknowledged rather than repeatedly hammering Shopify.
+16. Uninstall the Shopify app and confirm the verified `app/uninstalled` event moves both the tenant connection and control-plane route to disconnected. Subsequent order deliveries must not enter canonical processing.
+17. Confirm a Manager can see order exceptions but cannot change mappings; Owner/Admin can use the same Settings screen to repair mapping issues.
+18. Confirm the guest demo still sends no Shopify webhook, GraphQL or queue traffic.
+
+Slice D does not publish stock or fulfilment state back to Shopify and it does not attempt to auto-handle multi-location orders or externally progressed fulfilments. Those are deliberately blocked until a later slice owns the bidirectional lifecycle safely.
+
+### Shopify privacy/public-distribution gate
+
+The operational subscriptions above are not a substitute for Shopify's mandatory privacy/compliance webhooks for public App Store distribution. Before any public distribution or app-review claim, configure and live-test the required customer-data request/redaction and shop-redaction topics using Shopify's required app configuration mechanism, and implement the corresponding deletion/export semantics against Operating Layer's retained data.
+
+Do not point those mandatory compliance topics at the normal operational webhook route and call the requirement complete. In particular, shop redaction can arrive after uninstall, when the normal operational route is intentionally disconnected. Public distribution remains gated until that separate privacy lifecycle is implemented and verified.
 
 ## Manual browser/device smoke pass
 
@@ -150,4 +183,4 @@ Staging data is disposable, but destructive testing must remain inside the stagi
 
 Do not run top-level `npm run deploy`, `npm run db:migrate:remote`, or `npm run cf:bootstrap` while testing staging. Those commands remain reserved for the eventual production configuration.
 
-The top-level production D1 ID remains intentionally unprovisioned/placeholder; staging deployment does not make the product production-ready. Shopify production credentials, encryption keys, app review/data-access approvals and migration evidence must be established separately from staging.
+The top-level production D1 ID remains intentionally unprovisioned/placeholder; staging deployment does not make the product production-ready. Shopify production credentials, encryption keys, app review/data-access approvals, privacy lifecycle and migration evidence must be established separately from staging.
