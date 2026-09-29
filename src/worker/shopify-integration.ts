@@ -14,6 +14,7 @@ import {
   verifyShopifyOAuthHmac,
   verifyShopifyWebhookHmac,
 } from "./shopify-auth";
+import { ensureShopifyWebhookSubscriptions } from "./shopify-webhooks";
 import type { TenantStore } from "./tenant-store-order-planning";
 
 export type ShopifyIntegrationEnv = AuthEnv & {
@@ -21,6 +22,7 @@ export type ShopifyIntegrationEnv = AuthEnv & {
   SHOPIFY_CLIENT_ID: string;
   SHOPIFY_CLIENT_SECRET: string;
   SHOPIFY_SCOPES: string;
+  SHOPIFY_API_VERSION: string;
   INTEGRATION_TOKEN_ENCRYPTION_KEY: string;
   INTEGRATION_TOKEN_KEY_VERSION: string;
 };
@@ -73,6 +75,7 @@ const SHOPIFY_CAPABILITIES = [
   "inventory:publish",
   "fulfilments:publish",
 ] as const;
+const ORDER_WEBHOOK_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled"]);
 
 class IntegrationHttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -87,6 +90,7 @@ function configured(env: ShopifyIntegrationEnv) {
   if (!env.SHOPIFY_CLIENT_SECRET?.trim()) throw new IntegrationHttpError("Shopify client secret is not configured", 503);
   if (!env.INTEGRATION_TOKEN_ENCRYPTION_KEY?.trim()) throw new IntegrationHttpError("Integration token encryption key is not configured", 503);
   if (!env.INTEGRATION_TOKEN_KEY_VERSION?.trim()) throw new IntegrationHttpError("Integration token key version is not configured", 503);
+  if (!/^\d{4}-\d{2}$/.test(env.SHOPIFY_API_VERSION || "")) throw new IntegrationHttpError("Shopify API version is not configured", 503);
   const scopes = shopifyScopes(env.SHOPIFY_SCOPES || "");
   if (!scopes.length) throw new IntegrationHttpError("Shopify scopes are not configured", 503);
   return scopes;
@@ -131,6 +135,10 @@ function cookieValue(request: Request, name: string) {
 
 function oauthCookie(state: string, maxAgeSeconds: number) {
   return `${OAUTH_COOKIE}=${encodeURIComponent(state)}; Path=/api/integrations/shopify/callback; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+}
+
+function webhookUri(requestUrl: string) {
+  return new URL("/api/integrations/shopify/webhooks", requestUrl).toString();
 }
 
 async function internalRequest(
@@ -193,6 +201,26 @@ function normalizedOccurredAt(value: string | null) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/**
+ * Webhook HMAC is always verified against the raw bytes first. After that we
+ * persist only routing/identity fields needed by the integration runtime. The
+ * queue processor fetches authoritative current order state via GraphQL, so a
+ * full REST-shaped Shopify order/customer payload is unnecessary at rest.
+ */
+export function shopifyStoredWebhookPayload(topic: string, payload: unknown) {
+  const record = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+  if (ORDER_WEBHOOK_TOPICS.has(topic)) {
+    return JSON.stringify({
+      id: typeof record.id === "number" || typeof record.id === "string" ? record.id : null,
+      admin_graphql_api_id: typeof record.admin_graphql_api_id === "string" ? record.admin_graphql_api_id : null,
+    });
+  }
+  if (topic === "app/uninstalled") {
+    return JSON.stringify({ id: typeof record.id === "number" || typeof record.id === "string" ? record.id : null });
+  }
+  return "{}";
 }
 
 shopifyIntegrationApp.post("/install", async c => {
@@ -284,6 +312,20 @@ shopifyIntegrationApp.get("/callback", async c => {
       throw new IntegrationHttpError(`Shopify did not grant required scopes: ${missing.join(", ")}`, 409);
     }
 
+    try {
+      await ensureShopifyWebhookSubscriptions({
+        shop,
+        accessToken: tokens.accessToken,
+        apiVersion: c.env.SHOPIFY_API_VERSION,
+        uri: webhookUri(c.req.url),
+      });
+    } catch (cause) {
+      if (routeReservation.previousStatus !== "active") {
+        await setRouteStatus(c.env, shop, stateRow.tenant_id, connectionId, "attention_required");
+      }
+      throw new IntegrationHttpError(cause instanceof Error ? cause.message : "Unable to register Shopify webhooks", 502);
+    }
+
     const envelope = await encryptCredentialPayload({
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -359,6 +401,13 @@ shopifyIntegrationApp.post("/refresh", async c => {
     const missing = missingShopifyScopes(requestedScopes, tokens.scope);
     if (missing.length) throw new IntegrationHttpError(`Shopify no longer grants required scopes: ${missing.join(", ")}`, 409);
 
+    await ensureShopifyWebhookSubscriptions({
+      shop: stored.connection.externalAccountId,
+      accessToken: tokens.accessToken,
+      apiVersion: c.env.SHOPIFY_API_VERSION,
+      uri: webhookUri(c.req.url),
+    });
+
     const envelope = await encryptCredentialPayload({
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -411,12 +460,14 @@ shopifyIntegrationApp.post("/webhooks", async c => {
     const providerActionId = (c.req.header("x-shopify-event-id") || "").trim() || null;
     const topic = (c.req.header("x-shopify-topic") || "").trim();
     if (!providerEventId || !topic) throw new IntegrationHttpError("Shopify webhook is missing its delivery identity or topic", 400);
-    const payloadJson = new TextDecoder().decode(rawBody);
+    const rawPayload = new TextDecoder().decode(rawBody);
+    let parsedPayload: unknown;
     try {
-      JSON.parse(payloadJson);
+      parsedPayload = JSON.parse(rawPayload);
     } catch {
       throw new IntegrationHttpError("Shopify webhook payload is not valid JSON", 400);
     }
+    const payloadJson = shopifyStoredWebhookPayload(topic, parsedPayload);
 
     const route = await c.env.CONTROL_DB.prepare(
       `SELECT tenant_id, connection_id, status FROM integration_routes
@@ -439,6 +490,16 @@ shopifyIntegrationApp.post("/webhooks", async c => {
       }),
     }, { id: `integration:shopify:${shop}`, role: "integration" });
     const receipt = await jsonOrThrow<{ id: string; duplicate: boolean }>(response, "Unable to record Shopify webhook");
+
+    if (topic === "app/uninstalled") {
+      const statusResponse = await internalRequest(c.env, route.tenant_id, `/__integrations/connections/${encodeURIComponent(route.connection_id)}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: "disconnected", error: null }),
+      }, { id: `integration:shopify:${shop}`, role: "integration" });
+      await jsonOrThrow<{ ok: true }>(statusResponse, "Unable to disconnect uninstalled Shopify integration");
+      await setRouteStatus(c.env, shop, route.tenant_id, route.connection_id, "disconnected");
+    }
+
     return c.json({ ok: true, eventId: receipt.id, duplicate: receipt.duplicate });
   } catch (cause) {
     if (cause instanceof IntegrationHttpError) return c.json({ error: cause.message }, cause.status as 400);
