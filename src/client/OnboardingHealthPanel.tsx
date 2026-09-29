@@ -71,7 +71,7 @@ export default function OnboardingHealthPanel({
     </div>
     <p>Operating Layer derives this checklist from real workspace state. It stays focused on the next blocker, then measures how long it took to reach the first real operational transaction.</p>
 
-    <DataState loading={health.isLoading} error={health.error} empty={false}>
+    <DataState loading={health.isLoading} error={health.error} empty={false} emptyText="Onboarding health is unavailable.">
       {data && <>
         <div className="flow-plan-summary" aria-label="Onboarding health summary">
           <span><CheckCircle2 size={15} /> {complete}/{total} core steps</span>
