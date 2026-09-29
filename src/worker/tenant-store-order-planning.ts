@@ -92,7 +92,11 @@ export class TenantStore extends ReportsTenantStore {
   private async workQueueSourceFetch(request: Request): Promise<Response> {
     const modularResponse = await this.serviceRuntime.handle(request);
     if (modularResponse) return modularResponse;
-    return super.fetch(request);
+    const response = await super.fetch(request);
+    if (response.status === 404) {
+      return Response.json({ error: `Operational signal source route is unavailable: ${new URL(request.url).pathname}` }, { status: 500 });
+    }
+    return response;
   }
 
   async fetch(request: Request): Promise<Response> {
