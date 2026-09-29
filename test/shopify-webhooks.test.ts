@@ -6,8 +6,16 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-function node(id: string, topic: string, uri: string) {
-  return { id, topic, uri };
+function node(id: string, topic: string, uri: string, options?: { format?: string | null; includeFields?: string[] | null }) {
+  return {
+    id,
+    topic,
+    uri,
+    format: options?.format === undefined ? "JSON" : options.format,
+    includeFields: options?.includeFields === undefined
+      ? topic.startsWith("ORDERS_") ? ["id", "admin_graphql_api_id"] : null
+      : options.includeFields,
+  };
 }
 
 describe("Shopify webhook subscription reconciliation", () => {
@@ -27,17 +35,19 @@ describe("Shopify webhook subscription reconciliation", () => {
         } } });
       }
       if (body.query.includes("OperatingLayerWebhookUpdate")) {
-        const variables = body.variables as { id: string; webhookSubscription: { uri: string; includeFields?: string[] } };
+        const variables = body.variables as { id: string; webhookSubscription: { uri: string; format: string; includeFields?: string[] } };
         expect(variables.id).toBe("gid://shopify/WebhookSubscription/2");
         expect(variables.webhookSubscription.uri).toBe(uri);
+        expect(variables.webhookSubscription.format).toBe("JSON");
         expect(variables.webhookSubscription.includeFields).toEqual(["id", "admin_graphql_api_id"]);
         return jsonResponse({ data: { webhookSubscriptionUpdate: {
           webhookSubscription: node("gid://shopify/WebhookSubscription/2", "ORDERS_UPDATED", uri),
           userErrors: [],
         } } });
       }
-      const variables = body.variables as { topic: string; webhookSubscription: { uri: string; includeFields?: string[] } };
+      const variables = body.variables as { topic: string; webhookSubscription: { uri: string; format: string; includeFields?: string[] } };
       expect(variables.webhookSubscription.uri).toBe(uri);
+      expect(variables.webhookSubscription.format).toBe("JSON");
       if (variables.topic.startsWith("ORDERS_")) {
         expect(variables.webhookSubscription.includeFields).toEqual(["id", "admin_graphql_api_id"]);
       } else {
@@ -65,7 +75,7 @@ describe("Shopify webhook subscription reconciliation", () => {
     expect(createdTopics).toEqual(["ORDERS_CANCELLED", "APP_UNINSTALLED"]);
   });
 
-  it("is idempotent when every required subscription already targets the canonical URI", async () => {
+  it("is idempotent only when URI, format and payload fields all match", async () => {
     const uri = "https://app.example.com/api/integrations/shopify/webhooks";
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { query: string };
@@ -85,6 +95,43 @@ describe("Shopify webhook subscription reconciliation", () => {
     });
     expect(ensured).toHaveLength(4);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates a same-URI order subscription that still sends the full payload", async () => {
+    const uri = "https://app.example.com/api/integrations/shopify/webhooks";
+    let calls = 0;
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+      if (calls === 1) {
+        return jsonResponse({ data: { webhookSubscriptions: {
+          edges: [
+            { node: node("gid://shopify/WebhookSubscription/1", "ORDERS_CREATE", uri, { includeFields: null }) },
+            { node: node("gid://shopify/WebhookSubscription/2", "ORDERS_UPDATED", uri) },
+            { node: node("gid://shopify/WebhookSubscription/3", "ORDERS_CANCELLED", uri) },
+            { node: node("gid://shopify/WebhookSubscription/4", "APP_UNINSTALLED", uri) },
+          ],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        } } });
+      }
+      expect(body.query).toContain("OperatingLayerWebhookUpdate");
+      const variables = body.variables as { id: string; webhookSubscription: { includeFields?: string[] } };
+      expect(variables.id).toBe("gid://shopify/WebhookSubscription/1");
+      expect(variables.webhookSubscription.includeFields).toEqual(["id", "admin_graphql_api_id"]);
+      return jsonResponse({ data: { webhookSubscriptionUpdate: {
+        webhookSubscription: node("gid://shopify/WebhookSubscription/1", "ORDERS_CREATE", uri),
+        userErrors: [],
+      } } });
+    }) as unknown as typeof fetch;
+
+    await ensureShopifyWebhookSubscriptions({
+      shop: "example.myshopify.com",
+      accessToken: "token",
+      apiVersion: "2026-07",
+      uri,
+      fetchImpl,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("fails closed when the same required topic already has conflicting subscriptions", async () => {
