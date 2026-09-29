@@ -16,6 +16,7 @@ const processSchema = z.object({
 const INTERNAL_ENTRIES = Object.entries(integrationInternalHeaders);
 
 type CanonicalOrderFetch = (request: Request) => Promise<Response>;
+type CanonicalOrderPayload = Record<string, unknown> & { error?: string; created?: boolean };
 type EventRow = {
   id: string;
   connection_id: string;
@@ -351,7 +352,7 @@ export class IntegrationOrderRuntime {
       headers: internalHeaders(),
       body: body === undefined ? undefined : JSON.stringify(body),
     }));
-    const payload = await response.json<Record<string, unknown> & { error?: string }>().catch(() => ({}));
+    const payload = await response.json<CanonicalOrderPayload>().catch((): CanonicalOrderPayload => ({}));
     return { response, payload };
   }
 
