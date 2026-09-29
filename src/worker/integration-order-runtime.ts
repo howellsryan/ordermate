@@ -31,6 +31,8 @@ type StateRow = {
   local_order_id: string | null;
   applied_external_updated_at: string | null;
   applied_proposal_json: string | null;
+  observed_external_updated_at: string | null;
+  observed_proposal_json: string | null;
   last_event_id: string | null;
   status: "pending" | "active" | "cancelled" | "blocked";
 };
@@ -109,8 +111,10 @@ export class IntegrationOrderRuntime {
 
   private state(connectionId: string, externalOrderId: string) {
     return this.one<StateRow>(
-      `SELECT connection_id, external_order_id, local_order_id, applied_external_updated_at,
-              applied_proposal_json, last_event_id, status
+      `SELECT connection_id, external_order_id, local_order_id,
+              applied_external_updated_at, applied_proposal_json,
+              observed_external_updated_at, observed_proposal_json,
+              last_event_id, status
        FROM integration_order_state WHERE connection_id = ? AND external_order_id = ?`,
       connectionId,
       externalOrderId,
@@ -228,6 +232,29 @@ export class IntegrationOrderRuntime {
       exceptionId,
       error: input.message,
     });
+  }
+
+  private observeProposal(eventId: string, proposal: IntegrationOrderProposal, proposalJson: string, existing: StateRow | null) {
+    const timestamp = now();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO integration_order_state (
+         connection_id, external_order_id, local_order_id,
+         observed_external_updated_at, observed_proposal_json,
+         last_event_id, status, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+       ON CONFLICT(connection_id, external_order_id) DO UPDATE SET
+         observed_external_updated_at = excluded.observed_external_updated_at,
+         observed_proposal_json = excluded.observed_proposal_json,
+         last_event_id = excluded.last_event_id,
+         updated_at = excluded.updated_at`,
+      proposal.connectionId,
+      proposal.externalOrderId,
+      existing?.local_order_id || null,
+      proposal.externalUpdatedAt,
+      proposalJson,
+      eventId,
+      timestamp,
+    );
   }
 
   private resolveOrderExceptions(connectionId: string, proposal: IntegrationOrderProposal) {
@@ -388,28 +415,34 @@ export class IntegrationOrderRuntime {
     const proposalJson = canonicalIntegrationOrderJson(proposal);
     const existing = this.state(proposal.connectionId, proposal.externalOrderId);
     const appliedAt = parseTimestamp(existing?.applied_external_updated_at || null);
+    const observedAt = parseTimestamp(existing?.observed_external_updated_at || existing?.applied_external_updated_at || null);
     const proposedAt = parseTimestamp(proposal.externalUpdatedAt);
     if (proposedAt === null) return Response.json({ error: "Integration order version is invalid" }, { status: 400 });
 
-    if (appliedAt !== null && proposedAt < appliedAt) {
-      this.completeEvent(event.id, "ignored", "Older external order version");
+    if (observedAt !== null && proposedAt < observedAt) {
+      this.completeEvent(event.id, "ignored", "Older external order version than the latest observed Shopify state");
       return Response.json({ outcome: "ignored", reason: "out_of_order", retryDelivery: false, eventId: event.id });
     }
-    if (appliedAt !== null && proposedAt === appliedAt) {
-      if (existing?.applied_proposal_json === proposalJson) {
+    if (observedAt !== null && proposedAt === observedAt) {
+      const observedJson = existing?.observed_proposal_json || existing?.applied_proposal_json;
+      if (observedJson && observedJson !== proposalJson) {
+        return this.block({
+          eventId: event.id,
+          connectionId: proposal.connectionId,
+          externalOrderId: proposal.externalOrderId,
+          localOrderId: existing?.local_order_id,
+          code: "order_version_conflict",
+          message: "Two different Shopify order states have the same external update timestamp; automatic ordering is unsafe",
+          retryable: false,
+        });
+      }
+      if (appliedAt === proposedAt && existing?.applied_proposal_json === proposalJson && (existing.status === "active" || existing.status === "cancelled")) {
         this.completeEvent(event.id, "ignored", "External order version already applied");
         return Response.json({ outcome: "ignored", reason: "already_applied", retryDelivery: false, eventId: event.id });
       }
-      return this.block({
-        eventId: event.id,
-        connectionId: proposal.connectionId,
-        externalOrderId: proposal.externalOrderId,
-        localOrderId: existing?.local_order_id,
-        code: "order_version_conflict",
-        message: "Two different Shopify order states have the same external update timestamp; automatic ordering is unsafe",
-        retryable: false,
-      });
     }
+
+    this.observeProposal(event.id, proposal, proposalJson, existing);
 
     if (proposal.block) {
       return this.block({
@@ -440,17 +473,23 @@ export class IntegrationOrderRuntime {
       this.ctx.storage.transactionSync(() => {
         this.ctx.storage.sql.exec(
           `INSERT INTO integration_order_state (
-             connection_id, external_order_id, local_order_id, applied_external_updated_at,
-             applied_proposal_json, last_event_id, status, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, 'cancelled', ?)
+             connection_id, external_order_id, local_order_id,
+             applied_external_updated_at, applied_proposal_json,
+             observed_external_updated_at, observed_proposal_json,
+             last_event_id, status, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cancelled', ?)
            ON CONFLICT(connection_id, external_order_id) DO UPDATE SET
              local_order_id = COALESCE(integration_order_state.local_order_id, excluded.local_order_id),
              applied_external_updated_at = excluded.applied_external_updated_at,
              applied_proposal_json = excluded.applied_proposal_json,
+             observed_external_updated_at = excluded.observed_external_updated_at,
+             observed_proposal_json = excluded.observed_proposal_json,
              last_event_id = excluded.last_event_id, status = 'cancelled', updated_at = excluded.updated_at`,
           proposal.connectionId,
           proposal.externalOrderId,
           existing?.local_order_id || null,
+          proposal.externalUpdatedAt,
+          proposalJson,
           proposal.externalUpdatedAt,
           proposalJson,
           event.id,
@@ -513,9 +552,12 @@ export class IntegrationOrderRuntime {
       this.ctx.storage.sql.exec(
         `UPDATE integration_order_state
          SET local_order_id = ?, applied_external_updated_at = ?, applied_proposal_json = ?,
+             observed_external_updated_at = ?, observed_proposal_json = ?,
              last_event_id = ?, status = 'active', updated_at = ?
          WHERE connection_id = ? AND external_order_id = ?`,
         localOrderId,
+        proposal.externalUpdatedAt,
+        proposalJson,
         proposal.externalUpdatedAt,
         proposalJson,
         event.id,
