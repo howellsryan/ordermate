@@ -9,7 +9,13 @@ export const REQUIRED_SHOPIFY_WEBHOOK_TOPICS = [
 
 export type RequiredShopifyWebhookTopic = typeof REQUIRED_SHOPIFY_WEBHOOK_TOPICS[number];
 
-type WebhookNode = { id: string; topic: string; uri: string };
+type WebhookNode = {
+  id: string;
+  topic: string;
+  uri: string;
+  format: string | null;
+  includeFields: string[] | null;
+};
 type WebhookList = {
   webhookSubscriptions: {
     edges: Array<{ node: WebhookNode }>;
@@ -30,7 +36,7 @@ type WebhookMutation = {
 const LIST_WEBHOOKS = `#graphql
   query OperatingLayerWebhookSubscriptions {
     webhookSubscriptions(first: 250) {
-      edges { node { id topic uri } }
+      edges { node { id topic uri format includeFields } }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -39,7 +45,7 @@ const LIST_WEBHOOKS = `#graphql
 const CREATE_WEBHOOK = `#graphql
   mutation OperatingLayerWebhookCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
     webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
-      webhookSubscription { id topic uri }
+      webhookSubscription { id topic uri format includeFields }
       userErrors { field message }
     }
   }
@@ -48,7 +54,7 @@ const CREATE_WEBHOOK = `#graphql
 const UPDATE_WEBHOOK = `#graphql
   mutation OperatingLayerWebhookUpdate($id: ID!, $webhookSubscription: WebhookSubscriptionInput!) {
     webhookSubscriptionUpdate(id: $id, webhookSubscription: $webhookSubscription) {
-      webhookSubscription { id topic uri }
+      webhookSubscription { id topic uri format includeFields }
       userErrors { field message }
     }
   }
@@ -58,6 +64,20 @@ function subscriptionInput(topic: RequiredShopifyWebhookTopic, uri: string) {
   return topic.startsWith("ORDERS_")
     ? { uri, format: "JSON", includeFields: ["id", "admin_graphql_api_id"] }
     : { uri, format: "JSON" };
+}
+
+function expectedIncludeFields(topic: RequiredShopifyWebhookTopic) {
+  return topic.startsWith("ORDERS_") ? ["admin_graphql_api_id", "id"] : [];
+}
+
+function normalizedFields(fields: string[] | null | undefined) {
+  return [...(fields || [])].sort();
+}
+
+function matchesExpected(subscription: WebhookNode, topic: RequiredShopifyWebhookTopic, uri: string) {
+  return subscription.uri === uri
+    && subscription.format === "JSON"
+    && JSON.stringify(normalizedFields(subscription.includeFields)) === JSON.stringify(expectedIncludeFields(topic));
 }
 
 function mutationResult(data: WebhookMutation, operation: "create" | "update") {
@@ -72,8 +92,8 @@ function mutationResult(data: WebhookMutation, operation: "create" | "update") {
 
 /**
  * Ensures the shop-scoped subscriptions needed by the custom OAuth integration.
- * Existing subscriptions for the same topic are updated to the canonical Worker
- * endpoint rather than duplicated, so reconnects remain idempotent.
+ * Existing subscriptions for the same topic are reconciled to the canonical
+ * Worker endpoint and payload contract rather than duplicated.
  */
 export async function ensureShopifyWebhookSubscriptions(input: {
   shop: string;
@@ -97,13 +117,13 @@ export async function ensureShopifyWebhookSubscriptions(input: {
   const ensured: WebhookNode[] = [];
   for (const topic of REQUIRED_SHOPIFY_WEBHOOK_TOPICS) {
     const matches = existing.filter(subscription => subscription.topic === topic);
-    const exact = matches.find(subscription => subscription.uri === input.uri);
+    const exact = matches.find(subscription => matchesExpected(subscription, topic, input.uri));
     if (exact) {
       ensured.push(exact);
       continue;
     }
     if (matches.length > 1) {
-      throw new Error(`Shopify has multiple ${topic} subscriptions with different endpoints; remove duplicates before reconnecting`);
+      throw new Error(`Shopify has multiple ${topic} subscriptions with conflicting configuration; remove duplicates before reconnecting`);
     }
 
     if (matches.length === 1) {
