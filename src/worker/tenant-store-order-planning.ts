@@ -2,7 +2,11 @@ import { z } from "zod";
 import type { OperatingIntelligenceResponse } from "../shared/operating-intelligence";
 import { applySupplierOrderingTerms, type SupplierOrderingTerm } from "../shared/supplier-ordering";
 import { BusinessProfileRuntime } from "./business-profile-runtime";
+import { ExternalOrderRuntime } from "./external-order-runtime";
 import { FeatureRuntime } from "./feature-runtime";
+import { IntegrationCatalogueRuntime } from "./integration-catalogue-runtime";
+import { IntegrationOrderRuntime } from "./integration-order-runtime";
+import { IntegrationRuntime } from "./integration-runtime";
 import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
@@ -57,15 +61,29 @@ function now() {
 export class TenantStore extends ReportsTenantStore {
   private readonly orderPlanningCtx: DurableObjectState;
   private readonly businessProfileRuntime: BusinessProfileRuntime;
+  private readonly externalOrderRuntime: ExternalOrderRuntime;
   private readonly featureRuntime: FeatureRuntime;
+  private readonly integrationRuntime: IntegrationRuntime;
+  private readonly integrationCatalogueRuntime: IntegrationCatalogueRuntime;
+  private readonly integrationOrderRuntime: IntegrationOrderRuntime;
   private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
     super(ctx, env);
     this.orderPlanningCtx = ctx;
     this.businessProfileRuntime = new BusinessProfileRuntime(ctx);
+    this.externalOrderRuntime = new ExternalOrderRuntime(ctx);
     this.featureRuntime = new FeatureRuntime(ctx);
+    this.integrationRuntime = new IntegrationRuntime(ctx);
+    this.integrationCatalogueRuntime = new IntegrationCatalogueRuntime(ctx);
+    this.integrationOrderRuntime = new IntegrationOrderRuntime(ctx, request => this.canonicalOrderFetch(request));
     this.serviceRuntime = new ServiceRuntime(ctx);
+  }
+
+  private async canonicalOrderFetch(request: Request): Promise<Response> {
+    const externalOrderResponse = await this.externalOrderRuntime.handle(request);
+    if (externalOrderResponse) return externalOrderResponse;
+    return super.fetch(request);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -74,6 +92,18 @@ export class TenantStore extends ReportsTenantStore {
 
     const businessProfileResponse = await this.businessProfileRuntime.handle(request);
     if (businessProfileResponse) return businessProfileResponse;
+
+    const externalOrderResponse = await this.externalOrderRuntime.handle(request);
+    if (externalOrderResponse) return externalOrderResponse;
+
+    const integrationOrderResponse = await this.integrationOrderRuntime.handle(request);
+    if (integrationOrderResponse) return integrationOrderResponse;
+
+    const integrationCatalogueResponse = await this.integrationCatalogueRuntime.handle(request);
+    if (integrationCatalogueResponse) return integrationCatalogueResponse;
+
+    const integrationResponse = await this.integrationRuntime.handle(request);
+    if (integrationResponse) return integrationResponse;
 
     const modularResponse = await this.serviceRuntime.handle(request);
     if (modularResponse) return modularResponse;

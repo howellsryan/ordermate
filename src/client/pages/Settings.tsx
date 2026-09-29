@@ -6,6 +6,7 @@ import type { WorkspaceModuleKey } from "../../shared/modules";
 import type { OrganizationSummary } from "../../shared/types";
 import { tenantApi } from "../api";
 import { isDemoTenant } from "../demo-store";
+import { ShopifyIntegrationSettings } from "../ShopifyIntegrationSettings";
 import { ErrorText, Field, PageHeader } from "../ui";
 import { updateWorkspaceFeature, useWorkspaceFeatures } from "../workspace-features";
 
@@ -184,6 +185,8 @@ export default function Settings({ tenant }: { tenant: OrganizationSummary }) {
         </div>}
         {toggleFeature.error && <ErrorText error={toggleFeature.error} />}
       </section>
+
+      <ShopifyIntegrationSettings tenant={tenant} demo={demo} />
 
       <section className="panel settings-card">
         <div className="panel-heading"><div><p className="eyebrow">Business identity</p><h3>Invoice details</h3></div><Building2 size={21} /></div>

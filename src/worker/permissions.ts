@@ -1,20 +1,20 @@
 import type { Role } from "../shared/types";
 
-export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "order_planning" | "customers" | "crm" | "service" | "modules" | "features" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
+export type Resource = "catalogue" | "inventory" | "stocktake" | "purchasing" | "orders" | "order_planning" | "customers" | "crm" | "service" | "modules" | "features" | "integrations" | "reports" | "analytics" | "settings" | "members" | "preferences" | "unknown";
 export type Action = "read" | "create" | "update" | "delete";
 
 type Grant = "*" | readonly Action[];
 type RolePolicy = Partial<Record<Resource, Grant>>;
 
 const ALL: RolePolicy = {
-  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: "*", features: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
+  catalogue: "*", inventory: "*", stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: "*", features: "*", integrations: "*", reports: "*", analytics: "*", settings: "*", members: "*", preferences: "*",
 };
 
 const policies: Record<Role, RolePolicy> = {
   owner: ALL,
   admin: ALL,
   manager: {
-    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: ["read"], features: ["read"], reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
+    catalogue: "*", inventory: ["read", "update"], stocktake: "*", purchasing: "*", orders: "*", order_planning: "*", customers: "*", crm: "*", service: "*", modules: ["read"], features: ["read"], integrations: ["read"], reports: ["read"], analytics: ["read"], settings: ["read", "update"], members: ["read"], preferences: "*",
   },
   inventory: {
     catalogue: ["read"], inventory: "*", stocktake: "*", purchasing: "*", orders: ["read"], customers: ["read"], crm: ["read"], service: ["read"], modules: ["read"], features: ["read"], reports: ["read"], analytics: ["read"], preferences: "*",
@@ -37,6 +37,7 @@ export function permissionForRequest(path: string, method: string): { resource: 
 
   if (path.startsWith("/modules")) return { resource: "modules", action };
   if (path.startsWith("/features")) return { resource: "features", action };
+  if (path.startsWith("/integrations")) return { resource: "integrations", action };
   if (path.startsWith("/business-profile")) return { resource: "settings", action };
   if (path.startsWith("/crm/contacts")) {
     const lifecycleAction = method === "POST" && /\/convert$/.test(path) ? "update" : action;

@@ -14,7 +14,10 @@
   "vars": {
     "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
     "AI_OPERATIONS_ASSISTANT_ENABLED": "false",
-    "APP_ENV": "production"
+    "APP_ENV": "production",
+    "SHOPIFY_API_VERSION": "2026-07",
+    "SHOPIFY_SCOPES": "read_products,read_locations,read_orders,write_inventory,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders",
+    "INTEGRATION_TOKEN_KEY_VERSION": "v1"
   },
   "ai": {
     "binding": "AI"
@@ -74,7 +77,10 @@
       "vars": {
         "AI_DOCUMENT_EXTRACTION_ENABLED": "false",
         "AI_OPERATIONS_ASSISTANT_ENABLED": "false",
-        "APP_ENV": "staging"
+        "APP_ENV": "staging",
+        "SHOPIFY_API_VERSION": "2026-07",
+        "SHOPIFY_SCOPES": "read_products,read_locations,read_orders,write_inventory,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders",
+        "INTEGRATION_TOKEN_KEY_VERSION": "v1"
       },
       "ai": {
         "binding": "AI"
