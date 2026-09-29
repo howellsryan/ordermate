@@ -38,6 +38,7 @@ type Env = AuthEnv & ShopifyIntegrationEnv & ShopifyCatalogueEnv & ShopifyOrderP
 type Membership = { id: string; role: Role };
 type QueueEnvelope = { type?: string; eventId?: string };
 type ShopifyRouteRow = { tenant_id: string; connection_id: string; status: string };
+type ShopifyWebhookSnapshot = { headers: Headers; rawBody: string };
 
 const SHOPIFY_ORDER_TOPICS = new Set<ShopifyOrderReceivedEvent["topic"]>(["orders/create", "orders/updated", "orders/cancelled"]);
 
@@ -166,18 +167,27 @@ function isDeliveryNoteUploadedEvent(value: unknown): value is DeliveryNoteUploa
     && typeof event.createdAt === "string";
 }
 
-async function queueShopifyOrderReceipt(request: Request, response: Response, env: Env) {
-  const topic = request.headers.get("x-shopify-topic") as ShopifyOrderReceivedEvent["topic"] | null;
+function parseWebhookPayload(rawBody: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(rawBody);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+async function queueShopifyOrderReceipt(snapshot: ShopifyWebhookSnapshot, response: Response, env: Env) {
+  const topic = snapshot.headers.get("x-shopify-topic") as ShopifyOrderReceivedEvent["topic"] | null;
   if (!topic || !SHOPIFY_ORDER_TOPICS.has(topic)) return;
-  const receipt = await response.clone().json<{ eventId?: string }>().catch(() => ({}));
+  const receipt = await response.clone().json<{ eventId?: string }>().catch((): { eventId?: string } => ({}));
   if (!receipt.eventId) throw new Error("Shopify webhook receipt did not return an event ID");
-  const rawShop = request.headers.get("x-shopify-shop-domain") || "";
+  const rawShop = snapshot.headers.get("x-shopify-shop-domain") || "";
   const shop = normalizeShopifyShopDomain(rawShop);
   const route = await env.CONTROL_DB.prepare(
     "SELECT tenant_id, connection_id, status FROM integration_routes WHERE provider = 'shopify' AND external_account_id = ?",
   ).bind(shop).first<ShopifyRouteRow>();
   if (!route || route.status !== "active") throw new Error("Shopify route became unavailable after webhook receipt");
-  const payload = await request.json<Record<string, unknown>>().catch(() => ({}));
+  const payload = parseWebhookPayload(snapshot.rawBody);
   const queued: ShopifyOrderReceivedEvent = {
     type: "shopify.order.received",
     eventId: receipt.eventId,
@@ -209,7 +219,9 @@ export default {
     }
     if (url.pathname === "/api/integrations/shopify" || url.pathname.startsWith("/api/integrations/shopify/")) {
       const publicPath = url.pathname;
-      const webhookSnapshot = publicPath === "/api/integrations/shopify/webhooks" ? request.clone() : null;
+      const webhookSnapshot: ShopifyWebhookSnapshot | null = publicPath === "/api/integrations/shopify/webhooks"
+        ? { headers: new Headers(request.headers), rawBody: await request.clone().text() }
+        : null;
       url.pathname = url.pathname.replace(/^\/api\/integrations\/shopify/, "") || "/";
       const response = await shopifyIntegrationApp.fetch(new Request(url, request), env, ctx);
       if (webhookSnapshot && response.ok) {
@@ -261,7 +273,7 @@ export default {
 
   async queue(batch: MessageBatch, env: Env) {
     for (const message of batch.messages) {
-      const envelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
+      const envelope: QueueEnvelope = message.body && typeof message.body === "object" ? message.body as QueueEnvelope : {};
       try {
         if (isDocumentUploadedEvent(message.body)) {
           if (env.AI_DOCUMENT_EXTRACTION_ENABLED === "true") {
