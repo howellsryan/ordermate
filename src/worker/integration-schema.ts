@@ -1,7 +1,12 @@
-const CURRENT_INTEGRATION_SCHEMA_VERSION = 3;
+const CURRENT_INTEGRATION_SCHEMA_VERSION = 4;
 
 type MigrationRow = { version: number };
+type TableInfoRow = { name: string };
 type SqlStorage = DurableObjectState["storage"];
+
+function tableHasColumn(storage: SqlStorage, table: string, column: string) {
+  return storage.sql.exec<TableInfoRow>(`PRAGMA table_info(${table})`).toArray().some(row => row.name === column);
+}
 
 export function migrateIntegrationSchema(storage: SqlStorage) {
   const sql = storage.sql;
@@ -183,6 +188,27 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
       );
     });
     current = 3;
+  }
+
+  if (current < 4) {
+    storage.transactionSync(() => {
+      if (!tableHasColumn(storage, "integration_order_state", "observed_external_updated_at")) {
+        sql.exec("ALTER TABLE integration_order_state ADD COLUMN observed_external_updated_at TEXT");
+      }
+      if (!tableHasColumn(storage, "integration_order_state", "observed_proposal_json")) {
+        sql.exec("ALTER TABLE integration_order_state ADD COLUMN observed_proposal_json TEXT");
+      }
+      sql.exec(`
+        UPDATE integration_order_state
+        SET observed_external_updated_at = COALESCE(observed_external_updated_at, applied_external_updated_at),
+            observed_proposal_json = COALESCE(observed_proposal_json, applied_proposal_json)
+      `);
+      sql.exec(
+        "INSERT INTO _integration_schema_migrations (id, applied_at) VALUES (4, ?)",
+        new Date().toISOString(),
+      );
+    });
+    current = 4;
   }
 
   if (current !== CURRENT_INTEGRATION_SCHEMA_VERSION) {
