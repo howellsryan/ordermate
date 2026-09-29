@@ -18,18 +18,19 @@ const categoryLabel = {
   integration_exception: "Integration exception",
 } as const;
 
+const persistentQueueRoles = new Set(["owner", "admin", "manager"]);
 type WorkAction = "acknowledge" | "snooze" | "assign-to-me" | "unassign" | "resolve" | "dismiss";
 type WorkMutation = { itemId: string; action: WorkAction; reason?: string };
 
 export default function FlowPlan(props: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
   const features = useWorkspaceFeatures(props.tenant.id);
   if (!features.data || !features.enabled.has("flow_plan") || !features.enabled.has("operating_intelligence")) return null;
-  return isDemoTenant(props.tenant.id) ? <DemoFlowPlan {...props} /> : <PersistentWorkQueue {...props} />;
+  const persistent = !isDemoTenant(props.tenant.id) && persistentQueueRoles.has(props.tenant.role);
+  return persistent ? <PersistentWorkQueue {...props} /> : <EphemeralFlowPlan {...props} />;
 }
 
 function PersistentWorkQueue({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
   const qc = useQueryClient();
-  const canWork = tenant.role !== "viewer";
   const queue = useQuery({
     queryKey: ["tenant", tenant.id, "work-queue"],
     queryFn: () => tenantApi<WorkQueueResponse>(tenant.id, "/work-queue/refresh", { method: "POST" }),
@@ -82,7 +83,6 @@ function PersistentWorkQueue({ tenant, onNavigate }: { tenant: OrganizationSumma
           {data.items.map(item => <WorkQueueCard
             key={item.id}
             item={item}
-            canWork={canWork}
             pending={mutate.isPending}
             onNavigate={() => onNavigate(item.page)}
             onAction={mutation => mutate.mutate(mutation)}
@@ -95,13 +95,11 @@ function PersistentWorkQueue({ tenant, onNavigate }: { tenant: OrganizationSumma
 
 function WorkQueueCard({
   item,
-  canWork,
   pending,
   onNavigate,
   onAction,
 }: {
   item: WorkQueueItem;
-  canWork: boolean;
   pending: boolean;
   onNavigate: () => void;
   onAction: (mutation: WorkMutation) => void;
@@ -128,23 +126,21 @@ function WorkQueueCard({
     </div>
     <div className="action-row">
       <button type="button" onClick={onNavigate}>Open <ArrowRight size={14} /></button>
-      {canWork && <>
-        <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: item.assigneeId ? "unassign" : "assign-to-me" })}>
-          <UserRound size={14} /> {item.assigneeId ? "Unassign" : "Take"}
-        </button>
-        {item.status !== "acknowledged" && <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: "acknowledge" })}>
-          <Check size={14} /> Acknowledge
-        </button>}
-        <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: "snooze" })}>
-          <Clock3 size={14} /> Snooze 24h
-        </button>
-        <button type="button" disabled={pending} onClick={() => setCloseAction(closeAction === "resolve" ? null : "resolve")}>
-          <Check size={14} /> Resolve
-        </button>
-        <button type="button" disabled={pending} onClick={() => setCloseAction(closeAction === "dismiss" ? null : "dismiss")}>
-          <X size={14} /> Dismiss
-        </button>
-      </>}
+      <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: item.assigneeId ? "unassign" : "assign-to-me" })}>
+        <UserRound size={14} /> {item.assigneeId ? "Unassign" : "Take"}
+      </button>
+      {item.status !== "acknowledged" && <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: "acknowledge" })}>
+        <Check size={14} /> Acknowledge
+      </button>}
+      <button type="button" disabled={pending} onClick={() => onAction({ itemId: item.id, action: "snooze" })}>
+        <Clock3 size={14} /> Snooze 24h
+      </button>
+      <button type="button" disabled={pending} onClick={() => setCloseAction(closeAction === "resolve" ? null : "resolve")}>
+        <Check size={14} /> Resolve
+      </button>
+      <button type="button" disabled={pending} onClick={() => setCloseAction(closeAction === "dismiss" ? null : "dismiss")}>
+        <X size={14} /> Dismiss
+      </button>
     </div>
     {closeAction && <div className="settings-form">
       <label>
@@ -159,7 +155,7 @@ function WorkQueueCard({
   </article>;
 }
 
-function DemoFlowPlan({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
+function EphemeralFlowPlan({ tenant, onNavigate }: { tenant: OrganizationSummary; onNavigate: (page: SearchResult["page"]) => void }) {
   const attention = useQuery({
     queryKey: ["tenant", tenant.id, "attention"],
     queryFn: () => tenantOpsApi<AttentionResponse>(tenant.id, "/attention"),
@@ -181,7 +177,7 @@ function DemoFlowPlan({ tenant, onNavigate }: { tenant: OrganizationSummary; onN
       </div>
       <div className="flow-plan-status"><Sparkles size={16} /><span>Live triage</span></div>
     </div>
-    <p className="flow-plan-intro">This browser-only guest demo keeps the deterministic Flow Plan local. Persistent assignment, snooze and resolution history are available in a real workspace.</p>
+    <p className="flow-plan-intro">Operating Layer checks the operational signals this role can access and prioritises the highest-impact exceptions. Persistent cross-domain assignment and resolution are available to workspace owners, admins and managers.</p>
 
     <DataState
       loading={attention.isLoading || replenishment.isLoading}
