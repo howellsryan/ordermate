@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Link2, RefreshCw, Store, Unlink } from "lucide-react";
+import { AlertTriangle, Check, Link2, RefreshCw, Store, Unlink } from "lucide-react";
 import type { OrganizationSummary } from "../shared/types";
 import { errorFrom, tenantApi } from "./api";
 import { ErrorText, Field } from "./ui";
@@ -40,7 +40,20 @@ type MappingState = {
     locations: Array<{ id: string; name: string; code: string }>;
   };
 };
-
+type IntegrationException = {
+  id: string;
+  eventId: string | null;
+  code: string;
+  message: string;
+  retryable: boolean;
+  status: "open" | "resolved";
+  entityType: string | null;
+  externalId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+};
+type ExceptionsResponse = { exceptions: IntegrationException[] };
 type MappingMutation = { entityType: "variant" | "location"; externalId: string; localEntityId: string | null };
 
 async function integrationApi<T>(tenantId: string, path: string, init?: RequestInit): Promise<T> {
@@ -64,6 +77,10 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "Never";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function exceptionTitle(code: string) {
+  return code.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
 function MappingRow({
@@ -136,6 +153,11 @@ export function ShopifyIntegrationSettings({ tenant, demo }: { tenant: Organizat
     queryFn: () => tenantApi<MappingState>(tenant.id, `/integrations/${shopify!.id}/mappings`),
     enabled: !demo && canView && !!shopify,
   });
+  const exceptions = useQuery({
+    queryKey: ["tenant", tenant.id, "integration-exceptions", shopify?.id],
+    queryFn: () => tenantApi<ExceptionsResponse>(tenant.id, `/integrations/${shopify!.id}/exceptions`),
+    enabled: !demo && canView && !!shopify,
+  });
 
   const install = useMutation({
     mutationFn: () => integrationApi<{ authorizationUrl: string }>(tenant.id, "/integrations/shopify/install", {
@@ -162,10 +184,12 @@ export function ShopifyIntegrationSettings({ tenant, demo }: { tenant: Organizat
     onSuccess: data => {
       qc.setQueryData(["tenant", tenant.id, "integration-mappings", shopify?.id], data);
       qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "audit"] });
+      qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "integration-exceptions", shopify?.id] });
     },
   });
 
   const state = mappings.data;
+  const openExceptions = exceptions.data?.exceptions.filter(exception => exception.status === "open") || [];
   const suggestions = state?.entities.filter(entity => entity.matchStatus === "suggested" && entity.suggestion?.localEntityId) || [];
   const filtered = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -207,6 +231,22 @@ export function ShopifyIntegrationSettings({ tenant, demo }: { tenant: Organizat
       {(shopify.lastError || state?.connection.lastError) && <p className="settings-note">Needs attention: {state?.connection.lastError || shopify.lastError}</p>}
       {canManage && <button className="primary" type="button" disabled={sync.isPending} onClick={() => sync.mutate()}><RefreshCw size={16} /> {sync.isPending ? "Syncing Shopify…" : "Sync Shopify catalogue"}</button>}
       {sync.error && <ErrorText error={sync.error} />}
+
+      {exceptions.error && <ErrorText error={exceptions.error} />}
+      {openExceptions.length > 0 && <div className="feature-group">
+        <div className="feature-group-heading"><strong>Order exceptions</strong><small>{openExceptions.length} need attention</small></div>
+        <p className="settings-note">Operating Layer stopped these Shopify orders before making a partial or unsafe change. Fix the mapping, stock or routing issue shown below; the next Shopify order update will be evaluated against the corrected state.</p>
+        <div className="module-grid">
+          {openExceptions.map(exception => <article className="module-card" key={exception.id}>
+            <div className="panel-heading">
+              <div><h4>{exceptionTitle(exception.code)}</h4><small>{formatDate(exception.createdAt)}</small></div>
+              <AlertTriangle size={18} />
+            </div>
+            <p>{exception.message}</p>
+            {exception.externalId && <small>{exception.entityType || "entity"}: {exception.externalId}</small>}
+          </article>)}
+        </div>
+      </div>}
 
       {mappings.isLoading ? <div className="empty-state compact"><div className="loader" /></div> : mappings.error ? <ErrorText error={mappings.error} /> : state && <>
         <div className="residency-list">
