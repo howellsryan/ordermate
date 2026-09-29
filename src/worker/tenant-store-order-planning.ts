@@ -6,10 +6,14 @@ import { ExternalOrderRuntime } from "./external-order-runtime";
 import { FeatureRuntime } from "./feature-runtime";
 import { IntegrationCatalogueRuntime } from "./integration-catalogue-runtime";
 import { IntegrationOrderRuntime } from "./integration-order-runtime";
+import { IntegrationOutboundRuntime, type IntegrationOutboundEnv } from "./integration-outbound-runtime";
 import { IntegrationRuntime } from "./integration-runtime";
+import { OnboardingRuntime } from "./onboarding-runtime";
 import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
+import { WorkQueueCoordinationRuntime } from "./work-queue-coordination-runtime";
+import { WorkQueueRuntime } from "./work-queue-runtime";
 
 const updateSchema = z.object({
   requiredByDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -66,6 +70,10 @@ export class TenantStore extends ReportsTenantStore {
   private readonly integrationRuntime: IntegrationRuntime;
   private readonly integrationCatalogueRuntime: IntegrationCatalogueRuntime;
   private readonly integrationOrderRuntime: IntegrationOrderRuntime;
+  private readonly integrationOutboundRuntime: IntegrationOutboundRuntime;
+  private readonly onboardingRuntime: OnboardingRuntime;
+  private readonly workQueueCoordinationRuntime: WorkQueueCoordinationRuntime;
+  private readonly workQueueRuntime: WorkQueueRuntime;
   private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
@@ -76,14 +84,37 @@ export class TenantStore extends ReportsTenantStore {
     this.featureRuntime = new FeatureRuntime(ctx);
     this.integrationRuntime = new IntegrationRuntime(ctx);
     this.integrationCatalogueRuntime = new IntegrationCatalogueRuntime(ctx);
+    this.integrationOutboundRuntime = new IntegrationOutboundRuntime(
+      ctx,
+      env as IntegrationOutboundEnv,
+      request => this.canonicalOrderBaseFetch(request),
+    );
     this.integrationOrderRuntime = new IntegrationOrderRuntime(ctx, request => this.canonicalOrderFetch(request));
+    this.onboardingRuntime = new OnboardingRuntime(ctx);
     this.serviceRuntime = new ServiceRuntime(ctx);
+    this.workQueueCoordinationRuntime = new WorkQueueCoordinationRuntime(ctx);
+    this.workQueueRuntime = new WorkQueueRuntime(ctx, request => this.workQueueSourceFetch(request));
   }
 
-  private async canonicalOrderFetch(request: Request): Promise<Response> {
+  private async canonicalOrderBaseFetch(request: Request): Promise<Response> {
     const externalOrderResponse = await this.externalOrderRuntime.handle(request);
     if (externalOrderResponse) return externalOrderResponse;
     return super.fetch(request);
+  }
+
+  private async canonicalOrderFetch(request: Request): Promise<Response> {
+    const response = await this.canonicalOrderBaseFetch(request);
+    return this.integrationOutboundRuntime.afterCanonicalMutation(request, response);
+  }
+
+  private async workQueueSourceFetch(request: Request): Promise<Response> {
+    const modularResponse = await this.serviceRuntime.handle(request);
+    if (modularResponse) return modularResponse;
+    const response = await super.fetch(request);
+    if (response.status === 404) {
+      return Response.json({ error: `Operational signal source route is unavailable: ${new URL(request.url).pathname}` }, { status: 500 });
+    }
+    return response;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -93,8 +124,11 @@ export class TenantStore extends ReportsTenantStore {
     const businessProfileResponse = await this.businessProfileRuntime.handle(request);
     if (businessProfileResponse) return businessProfileResponse;
 
+    const onboardingResponse = await this.onboardingRuntime.handle(request);
+    if (onboardingResponse) return onboardingResponse;
+
     const externalOrderResponse = await this.externalOrderRuntime.handle(request);
-    if (externalOrderResponse) return externalOrderResponse;
+    if (externalOrderResponse) return this.integrationOutboundRuntime.afterCanonicalMutation(request, externalOrderResponse);
 
     const integrationOrderResponse = await this.integrationOrderRuntime.handle(request);
     if (integrationOrderResponse) return integrationOrderResponse;
@@ -102,11 +136,20 @@ export class TenantStore extends ReportsTenantStore {
     const integrationCatalogueResponse = await this.integrationCatalogueRuntime.handle(request);
     if (integrationCatalogueResponse) return integrationCatalogueResponse;
 
+    const integrationOutboundResponse = await this.integrationOutboundRuntime.handle(request);
+    if (integrationOutboundResponse) return integrationOutboundResponse;
+
     const integrationResponse = await this.integrationRuntime.handle(request);
     if (integrationResponse) return integrationResponse;
 
+    const workQueueCoordinationResponse = await this.workQueueCoordinationRuntime.handle(request);
+    if (workQueueCoordinationResponse) return workQueueCoordinationResponse;
+
+    const workQueueResponse = await this.workQueueRuntime.handle(request);
+    if (workQueueResponse) return workQueueResponse;
+
     const modularResponse = await this.serviceRuntime.handle(request);
-    if (modularResponse) return modularResponse;
+    if (modularResponse) return this.integrationOutboundRuntime.afterCanonicalMutation(request, modularResponse);
 
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
@@ -139,7 +182,12 @@ export class TenantStore extends ReportsTenantStore {
     if (request.method === "PATCH" && match) {
       return this.updateOrderPlanning(decodeURIComponent(match[1]), request);
     }
-    return super.fetch(request);
+    const response = await super.fetch(request);
+    return this.integrationOutboundRuntime.afterCanonicalMutation(request, response);
+  }
+
+  async alarm() {
+    await this.integrationOutboundRuntime.alarm();
   }
 
   private listSupplierTerms() {

@@ -3,6 +3,7 @@ import type { Role, SessionPayload } from "../shared/types";
 import { createAuth, type AuthEnv } from "./auth";
 import { can, permissionForRequest } from "./permissions";
 import { TenantStore } from "./tenant-store";
+import { xeroIntegrationApp, type XeroIntegrationEnv } from "./xero-integration";
 
 export { TenantStore };
 
@@ -10,6 +11,11 @@ type Env = AuthEnv & {
   TENANT_STORES: DurableObjectNamespace<TenantStore>;
   DOCUMENTS: R2Bucket;
   EVENTS_QUEUE: Queue;
+  XERO_CLIENT_ID: string;
+  XERO_CLIENT_SECRET: string;
+  XERO_SCOPES: string;
+  INTEGRATION_TOKEN_ENCRYPTION_KEY: string;
+  INTEGRATION_TOKEN_KEY_VERSION: string;
 };
 
 type MemberRow = { organizationId: string; role: Role; name: string; slug: string };
@@ -216,6 +222,18 @@ app.post("/api/invites/accept", async c => {
     "UPDATE workspace_invite SET acceptedAt = ? WHERE id = ? AND acceptedAt IS NULL",
   ).bind(Date.now(), invite.id).run();
   return c.json({ ok: true, organizationId: invite.organizationId });
+});
+
+app.all("/api/integrations/xero", async c => {
+  const url = new URL(c.req.url);
+  url.pathname = "/";
+  return xeroIntegrationApp.fetch(new Request(url, c.req.raw), c.env as unknown as XeroIntegrationEnv);
+});
+
+app.all("/api/integrations/xero/*", async c => {
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.replace(/^\/api\/integrations\/xero/, "") || "/";
+  return xeroIntegrationApp.fetch(new Request(url, c.req.raw), c.env as unknown as XeroIntegrationEnv);
 });
 
 app.all("/api/tenant/*", async c => {

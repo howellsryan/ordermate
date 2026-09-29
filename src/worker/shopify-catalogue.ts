@@ -43,6 +43,7 @@ type VariantNode = {
   sku: string | null;
   barcode: string | null;
   updatedAt: string;
+  inventoryItem: { id: string };
   product: { id: string; title: string; status: string };
 };
 type LocationNode = {
@@ -148,6 +149,7 @@ const VARIANTS_QUERY = `#graphql
         sku
         barcode
         updatedAt
+        inventoryItem { id }
         product { id title status }
       }
       pageInfo { hasNextPage endCursor }
@@ -314,6 +316,7 @@ shopifyCatalogueApp.post("/sync", async c => {
           sku: variant.sku,
           barcode: variant.barcode,
           variantTitle: variant.title,
+          inventoryItemId: variant.inventoryItem.id,
           productId: variant.product.id,
           productTitle: variant.product.title,
           productStatus: variant.product.status,

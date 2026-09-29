@@ -1,4 +1,4 @@
-const CURRENT_INTEGRATION_SCHEMA_VERSION = 4;
+const CURRENT_INTEGRATION_SCHEMA_VERSION = 5;
 
 type MigrationRow = { version: number };
 type TableInfoRow = { name: string };
@@ -209,6 +209,99 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
       );
     });
     current = 4;
+  }
+
+  if (current < 5) {
+    storage.transactionSync(() => {
+      sql.exec(`
+        CREATE TABLE IF NOT EXISTS integration_outbound_jobs (
+          id TEXT PRIMARY KEY,
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          operation TEXT NOT NULL CHECK(operation IN ('inventory_publish','fulfilment_publish','tracking_publish','accounting_contact_export','accounting_sale_export','accounting_purchase_export')),
+          coalescing_key TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          desired_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','retry_wait','succeeded','failed','superseded')),
+          attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+          next_attempt_at TEXT NOT NULL,
+          provider_request_id TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          UNIQUE(connection_id, coalescing_key)
+        );
+        CREATE INDEX IF NOT EXISTS integration_outbound_jobs_due_idx
+          ON integration_outbound_jobs(status, next_attempt_at, updated_at);
+        CREATE INDEX IF NOT EXISTS integration_outbound_jobs_connection_idx
+          ON integration_outbound_jobs(connection_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS integration_reconciliation (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK(direction IN ('outbound','inbound')),
+          desired_hash TEXT,
+          observed_hash TEXT,
+          status TEXT NOT NULL CHECK(status IN ('pending','in_sync','drift','error')),
+          last_checked_at TEXT,
+          last_success_at TEXT,
+          last_error TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, entity_type, entity_id, direction)
+        );
+        CREATE INDEX IF NOT EXISTS integration_reconciliation_status_idx
+          ON integration_reconciliation(connection_id, status, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS integration_fulfilment_links (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          local_fulfilment_id TEXT NOT NULL,
+          external_fulfilment_id TEXT,
+          external_order_id TEXT NOT NULL,
+          published_at TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, local_fulfilment_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS integration_fulfilment_external_idx
+          ON integration_fulfilment_links(connection_id, external_fulfilment_id)
+          WHERE external_fulfilment_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS integration_fulfilment_tracking (
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          local_fulfilment_id TEXT NOT NULL,
+          company TEXT,
+          tracking_number TEXT,
+          tracking_url TEXT,
+          notify_customer INTEGER NOT NULL DEFAULT 0 CHECK(notify_customer IN (0,1)),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(connection_id, local_fulfilment_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS integration_return_cases (
+          id TEXT PRIMARY KEY,
+          connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
+          external_return_id TEXT NOT NULL,
+          external_order_id TEXT,
+          local_order_id TEXT,
+          refund_observed INTEGER NOT NULL DEFAULT 0 CHECK(refund_observed IN (0,1)),
+          provider_status TEXT,
+          disposition TEXT NOT NULL DEFAULT 'pending' CHECK(disposition IN ('pending','restock','quarantine','scrap','return_to_vendor','no_restock')),
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          restocked_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(connection_id, external_return_id)
+        );
+        CREATE INDEX IF NOT EXISTS integration_return_cases_status_idx
+          ON integration_return_cases(connection_id, disposition, updated_at DESC);
+      `);
+      sql.exec(
+        "INSERT INTO _integration_schema_migrations (id, applied_at) VALUES (5, ?)",
+        new Date().toISOString(),
+      );
+    });
+    current = 5;
   }
 
   if (current !== CURRENT_INTEGRATION_SCHEMA_VERSION) {
