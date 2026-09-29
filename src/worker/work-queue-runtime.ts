@@ -242,7 +242,7 @@ export class WorkQueueRuntime {
 
       const action = path.match(/^\/work-queue\/([^/]+)\/(acknowledge|snooze|assign-to-me|unassign|resolve|dismiss)$/);
       if (request.method === "POST" && action) {
-        return await this.mutate(decodeURIComponent(action[1]), action[2], request, actor);
+        return await this.mutate(decodeURIComponent(action[1]), action[2] || "", request, actor);
       }
       return Response.json({ error: "Work queue route not found" }, { status: 404 });
     } catch (cause) {
@@ -536,11 +536,15 @@ export class WorkQueueRuntime {
     return { item } as const;
   }
 
-  private async mutate(itemId: string, action: string, request: Request, actor: Actor) {
+  private async mutate(itemId: string, action: string, request: Request, actor: Actor): Promise<Response> {
     const active = this.activeItem(itemId);
-    if ("error" in active) return active.error;
+    if ("error" in active) return active.error ?? Response.json({ error: "Work item is unavailable" }, { status: 409 });
     const item = active.item;
     const timestamp = now();
+
+    if (item.status === "resolved" || item.status === "dismissed") {
+      return Response.json({ error: "This work item is already closed while its signal remains active" }, { status: 409 });
+    }
 
     if (action === "assign-to-me") {
       if (item.assignee_id === actor.id && item.assignee_name === actor.name) return Response.json({ ok: true, item: workItem(item) });
@@ -558,10 +562,6 @@ export class WorkQueueRuntime {
         this.lifecycle(itemId, "unassigned", actor, { previousAssigneeId: item.assignee_id, previousAssigneeName: item.assignee_name }, timestamp);
       });
       return this.itemResponse(itemId);
-    }
-
-    if (item.status === "resolved" || item.status === "dismissed") {
-      return Response.json({ error: "This work item is already closed while its signal remains active" }, { status: 409 });
     }
 
     if (action === "acknowledge") {
