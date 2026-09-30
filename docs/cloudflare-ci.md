@@ -14,7 +14,7 @@ The existing GitHub connection for `howellsryan/ordermate` is reused. The checks
 - Path includes: `*`
 - Path excludes: `docs/**`, `README.md`, `AGENTS.md`
 - Root directory: `/`
-- Build caching: enabled
+- Build caching: disabled after the initialization-timeout investigation
 - Build variables: `NODE_VERSION=24`, `SKIP_DEPENDENCY_INSTALL=1`
 
 These are Cloudflare trigger settings, not Wrangler runtime settings. Keep the trigger settings and this document synchronized when changing CI.
@@ -49,6 +49,6 @@ GitHub PR workflows on older branches that explicitly retain the old workflow ma
 
 This avoids automatic GitHub Actions runner usage. Cloudflare Builds has its own account-wide allowance: 3,000 minutes/month on Free, or 6,000 on Paid followed by $0.005/minute, according to [Cloudflare's limits and pricing](https://developers.cloudflare.com/workers/ci-cd/builds/limits-and-pricing/). The account limits API returned no allowance details during this migration; no plan or remaining-minute balance is inferred.
 
-Caching, skipping documentation-only changes, a single dependency installation, and avoiding the duplicate guest-demo test reduce repeated work. Watch build usage in Cloudflare.
+Skipping documentation-only changes, a single dependency installation, and avoiding the duplicate guest-demo test reduce repeated work. Build caching is currently disabled; revisit it only after stable builds. Watch build usage in Cloudflare.
 
 To roll back, restore the `pull_request` trigger targeting `main` in the GitHub workflow and disable/remove only the checks-only trigger above. Preserve the existing staging deployment trigger `91a7519b-712d-40d6-b966-3ff54a5afe45`.
