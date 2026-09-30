@@ -22,12 +22,17 @@ describe("integration schema migrations", () => {
         "integration_external_entities",
         "integration_sync_checkpoints",
         "integration_order_state",
+        "integration_outbound_jobs",
+        "integration_reconciliation",
+        "integration_fulfilment_links",
+        "integration_fulfilment_tracking",
+        "integration_return_cases",
       ]) expect(tables.has(table), table).toBe(true);
 
       const versions = state.storage.sql.exec<{ id: number }>(
         "SELECT id FROM _integration_schema_migrations ORDER BY id",
       ).toArray().map(row => row.id);
-      expect(versions).toEqual([1, 2, 3, 4]);
+      expect(versions).toEqual(Array.from({ length: CURRENT_INTEGRATION_SCHEMA_VERSION }, (_, index) => index + 1));
 
       const orderColumns = new Set(state.storage.sql.exec<{ name: string }>(
         "PRAGMA table_info(integration_order_state)",
