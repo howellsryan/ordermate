@@ -168,10 +168,10 @@ export class TenantStore extends ReportsTenantStore {
       return Response.json({ error: "Frontline users cannot take or unassign work owned by another teammate" }, { status: 403 });
     }
     if (request.method === "POST" && action === "assign") {
+      const input = await request.clone().json().catch(() => ({})) as { assigneeId?: string | null; assigneeName?: string | null };
       if (row.assignee_id && row.assignee_id !== actorId) {
         return Response.json({ error: "Frontline users cannot change work owned by another teammate" }, { status: 403 });
       }
-      const input: { assigneeId?: string | null; assigneeName?: string | null } = await request.clone().json().catch(() => ({}));
       if (input.assigneeId && input.assigneeId !== actorId) {
         return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
       }
