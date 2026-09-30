@@ -164,10 +164,13 @@ export class TenantStore extends ReportsTenantStore {
 
     const actorId = request.headers.get("x-ordermate-actor-id")?.trim() || "";
     const actorName = request.headers.get("x-ordermate-actor-name")?.trim() || actorId;
-    if (request.method === "POST" && action === "unassign" && row.assignee_id && row.assignee_id !== actorId) {
-      return Response.json({ error: "Frontline users can only unassign work they own" }, { status: 403 });
+    if (request.method === "POST" && (action === "unassign" || action === "assign-to-me") && row.assignee_id && row.assignee_id !== actorId) {
+      return Response.json({ error: "Frontline users cannot take or unassign work owned by another teammate" }, { status: 403 });
     }
     if (request.method === "POST" && action === "assign") {
+      if (row.assignee_id && row.assignee_id !== actorId) {
+        return Response.json({ error: "Frontline users cannot change work owned by another teammate" }, { status: 403 });
+      }
       const input: { assigneeId?: string | null; assigneeName?: string | null } = await request.clone().json().catch(() => ({}));
       if (input.assigneeId && input.assigneeId !== actorId) {
         return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
