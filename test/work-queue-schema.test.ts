@@ -19,7 +19,14 @@ describe("work queue schema migrations", () => {
       const versions = state.storage.sql.exec<{ id: number }>(
         "SELECT id FROM _work_queue_schema_migrations ORDER BY id",
       ).toArray().map(row => row.id);
-      expect(versions).toEqual([1]);
+      expect(versions).toEqual(Array.from({ length: CURRENT_WORK_QUEUE_SCHEMA_VERSION }, (_, index) => index + 1));
+
+      const columns = new Set(state.storage.sql.exec<{ name: string }>(
+        "PRAGMA table_info(work_items)",
+      ).toArray().map(row => row.name));
+      for (const column of ["team_id", "team_name", "due_at", "escalation_at", "escalated_at"]) {
+        expect(columns.has(column), column).toBe(true);
+      }
 
       const unique = state.storage.sql.exec<{ sql: string }>(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'work_items'",
