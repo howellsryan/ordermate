@@ -37,9 +37,9 @@ npm run db:migrate:staging
 npx wrangler deploy --env staging
 ```
 
-`test:cloudflare` retains every normal assertion but allows a 15-second per-test ceiling because Durable Object integration tests can take longer on Cloudflare's shared build host. The normal `npm test` / GitHub verification gate retains Vitest's stricter default timeout.
+`test:cloudflare` retains every normal assertion but allows a 15-second per-test ceiling because Durable Object integration tests can take longer on Cloudflare's shared build host. Local `npm test` and the manually dispatched GitHub fallback retain Vitest's stricter default timeout.
 
-The GitHub rebuild verification workflow runs on pull requests to `main` and can also be dispatched manually. It uses locked dependencies, the brand sweep, typecheck, full tests, explicit guest-demo acceptance, and production/staging builds.
+Automatic commit verification runs in Cloudflare Workers Builds using the separate checks-only trigger described in [Cloudflare CI](cloudflare-ci.md). It uses locked dependencies, the brand sweep, typecheck, full tests (including guest-demo acceptance), and production/staging builds. The GitHub rebuild verification workflow is a manual-only fallback.
 
 ## Google OAuth — required for authenticated workspace smoke testing
 
