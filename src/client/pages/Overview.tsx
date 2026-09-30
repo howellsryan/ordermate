@@ -7,6 +7,7 @@ import { money, tenantApi, tenantOpsApi } from "../api";
 import FlowPlan from "../FlowPlan";
 import { isDemoTenant } from "../demo-store";
 import type { AttentionResponse, SearchResult } from "../model";
+import OnboardingHealthPanel from "../OnboardingHealthPanel";
 import OperationsAssistant from "../OperationsAssistant";
 import { DataState, PageHeader } from "../ui";
 
@@ -118,6 +119,8 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Prospects" value={crm.isLoading ? "—" : prospects} helper="Not converted yet" tone="blue" />
       <Metric label="Customers" value={crm.isLoading ? "—" : customers} helper="Established CRM relationships" tone="ink" />
     </section> : null}
+
+    {!demo && ["owner", "admin", "manager"].includes(tenant.role) && <OnboardingHealthPanel tenant={tenant} onNavigate={onNavigate} />}
 
     {commercePlanningEnabled && <FlowPlan tenant={tenant} onNavigate={onNavigate} />}
 

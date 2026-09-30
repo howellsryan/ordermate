@@ -1,15 +1,20 @@
 import { z } from "zod";
 import type { OperatingIntelligenceResponse } from "../shared/operating-intelligence";
 import { applySupplierOrderingTerms, type SupplierOrderingTerm } from "../shared/supplier-ordering";
+import type { WorkQueueCategory } from "../shared/work-queue";
 import { BusinessProfileRuntime } from "./business-profile-runtime";
 import { ExternalOrderRuntime } from "./external-order-runtime";
 import { FeatureRuntime } from "./feature-runtime";
 import { IntegrationCatalogueRuntime } from "./integration-catalogue-runtime";
 import { IntegrationOrderRuntime } from "./integration-order-runtime";
+import { IntegrationOutboundRuntime, type IntegrationOutboundEnv } from "./integration-outbound-runtime";
 import { IntegrationRuntime } from "./integration-runtime";
+import { OnboardingRuntime } from "./onboarding-runtime";
 import { ServiceRuntime } from "./service-runtime";
 import { TenantStore as ReportsTenantStore } from "./tenant-store-reports";
 import type { TenantEnv } from "./tenant-store";
+import { WorkQueueCoordinationRuntime } from "./work-queue-coordination-runtime";
+import { WorkQueueRuntime } from "./work-queue-runtime";
 
 const updateSchema = z.object({
   requiredByDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -26,6 +31,15 @@ const supplierMappingSchema = z.object({
   orderMultiple: z.number().int().min(1).max(1_000_000).nullable().optional(),
 });
 
+const frontlineWorkQueueScope: Record<string, WorkQueueCategory[] | null> = {
+  owner: null,
+  admin: null,
+  manager: null,
+  inventory: ["stock_risk", "supply_risk", "receiving_exception"],
+  fulfilment: ["customer_promise", "receiving_exception"],
+  viewer: [],
+};
+
 type OrderPlanningRow = {
   id: string;
   status: string;
@@ -41,6 +55,10 @@ type SupplierSkuConflictRow = {
   product_name: string;
   variant_name: string;
   sku: string;
+};
+type WorkQueueGuardRow = {
+  category: WorkQueueCategory;
+  assignee_id: string | null;
 };
 
 function validCalendarDate(value: string | null) {
@@ -66,6 +84,10 @@ export class TenantStore extends ReportsTenantStore {
   private readonly integrationRuntime: IntegrationRuntime;
   private readonly integrationCatalogueRuntime: IntegrationCatalogueRuntime;
   private readonly integrationOrderRuntime: IntegrationOrderRuntime;
+  private readonly integrationOutboundRuntime: IntegrationOutboundRuntime;
+  private readonly onboardingRuntime: OnboardingRuntime;
+  private readonly workQueueCoordinationRuntime: WorkQueueCoordinationRuntime;
+  private readonly workQueueRuntime: WorkQueueRuntime;
   private readonly serviceRuntime: ServiceRuntime;
 
   constructor(ctx: DurableObjectState, env: TenantEnv) {
@@ -76,14 +98,88 @@ export class TenantStore extends ReportsTenantStore {
     this.featureRuntime = new FeatureRuntime(ctx);
     this.integrationRuntime = new IntegrationRuntime(ctx);
     this.integrationCatalogueRuntime = new IntegrationCatalogueRuntime(ctx);
+    this.integrationOutboundRuntime = new IntegrationOutboundRuntime(
+      ctx,
+      env as IntegrationOutboundEnv,
+      request => this.canonicalOrderBaseFetch(request),
+    );
     this.integrationOrderRuntime = new IntegrationOrderRuntime(ctx, request => this.canonicalOrderFetch(request));
+    this.onboardingRuntime = new OnboardingRuntime(ctx);
     this.serviceRuntime = new ServiceRuntime(ctx);
+    this.workQueueCoordinationRuntime = new WorkQueueCoordinationRuntime(ctx);
+    this.workQueueRuntime = new WorkQueueRuntime(ctx, request => this.workQueueSourceFetch(request));
   }
 
-  private async canonicalOrderFetch(request: Request): Promise<Response> {
+  private async canonicalOrderBaseFetch(request: Request): Promise<Response> {
     const externalOrderResponse = await this.externalOrderRuntime.handle(request);
     if (externalOrderResponse) return externalOrderResponse;
     return super.fetch(request);
+  }
+
+  private async canonicalOrderFetch(request: Request): Promise<Response> {
+    const response = await this.canonicalOrderBaseFetch(request);
+    return this.integrationOutboundRuntime.afterCanonicalMutation(request, response);
+  }
+
+  private async workQueueSourceFetch(request: Request): Promise<Response> {
+    const modularResponse = await this.serviceRuntime.handle(request);
+    if (modularResponse) return modularResponse;
+    const response = await super.fetch(request);
+    if (response.status === 404) {
+      return Response.json({ error: `Operational signal source route is unavailable: ${new URL(request.url).pathname}` }, { status: 500 });
+    }
+    return response;
+  }
+
+  private workQueueScope(request: Request) {
+    const role = request.headers.get("x-ordermate-actor-role")?.trim() || "";
+    return Object.prototype.hasOwnProperty.call(frontlineWorkQueueScope, role) ? frontlineWorkQueueScope[role] : [];
+  }
+
+  private async guardWorkQueueAccess(request: Request): Promise<Response | null> {
+    const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
+    if (!path.startsWith("/work-queue")) return null;
+
+    const scope = this.workQueueScope(request);
+    if (scope === null) return null;
+    if (!scope.length) return Response.json({ error: "This role does not have access to the persistent work queue" }, { status: 403 });
+
+    if (request.method === "GET" && path === "/work-queue") {
+      return Response.json({ error: "Use the category-scoped frontline work queue" }, { status: 403 });
+    }
+
+    const itemRoute = path.match(/^\/work-queue\/([^/]+)\/(history|acknowledge|snooze|assign-to-me|unassign|resolve|dismiss|assign|schedule)$/);
+    if (!itemRoute) return null;
+
+    const itemId = decodeURIComponent(itemRoute[1]);
+    const action = itemRoute[2];
+    const row = this.orderPlanningCtx.storage.sql.exec<WorkQueueGuardRow>(
+      "SELECT category, assignee_id FROM work_items WHERE id = ?",
+      itemId,
+    ).toArray()[0];
+    if (!row) return null;
+    if (!scope.includes(row.category)) {
+      return Response.json({ error: "That work item is outside this role's operational scope" }, { status: 403 });
+    }
+
+    const actorId = request.headers.get("x-ordermate-actor-id")?.trim() || "";
+    const actorName = request.headers.get("x-ordermate-actor-name")?.trim() || actorId;
+    if (request.method === "POST" && (action === "unassign" || action === "assign-to-me") && row.assignee_id && row.assignee_id !== actorId) {
+      return Response.json({ error: "Frontline users cannot take or unassign work owned by another teammate" }, { status: 403 });
+    }
+    if (request.method === "POST" && action === "assign") {
+      const input = await request.clone().json().catch(() => ({})) as { assigneeId?: string | null; assigneeName?: string | null };
+      if (row.assignee_id && row.assignee_id !== actorId) {
+        return Response.json({ error: "Frontline users cannot change work owned by another teammate" }, { status: 403 });
+      }
+      if (input.assigneeId && input.assigneeId !== actorId) {
+        return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
+      }
+      if (input.assigneeName && input.assigneeName !== actorName) {
+        return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
+      }
+    }
+    return null;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -93,8 +189,11 @@ export class TenantStore extends ReportsTenantStore {
     const businessProfileResponse = await this.businessProfileRuntime.handle(request);
     if (businessProfileResponse) return businessProfileResponse;
 
+    const onboardingResponse = await this.onboardingRuntime.handle(request);
+    if (onboardingResponse) return onboardingResponse;
+
     const externalOrderResponse = await this.externalOrderRuntime.handle(request);
-    if (externalOrderResponse) return externalOrderResponse;
+    if (externalOrderResponse) return this.integrationOutboundRuntime.afterCanonicalMutation(request, externalOrderResponse);
 
     const integrationOrderResponse = await this.integrationOrderRuntime.handle(request);
     if (integrationOrderResponse) return integrationOrderResponse;
@@ -102,11 +201,29 @@ export class TenantStore extends ReportsTenantStore {
     const integrationCatalogueResponse = await this.integrationCatalogueRuntime.handle(request);
     if (integrationCatalogueResponse) return integrationCatalogueResponse;
 
+    const integrationOutboundResponse = await this.integrationOutboundRuntime.handle(request);
+    if (integrationOutboundResponse) return integrationOutboundResponse;
+
     const integrationResponse = await this.integrationRuntime.handle(request);
     if (integrationResponse) return integrationResponse;
 
+    const workQueueGuardResponse = await this.guardWorkQueueAccess(request);
+    if (workQueueGuardResponse) return workQueueGuardResponse;
+
+    const workQueueCoordinationResponse = await this.workQueueCoordinationRuntime.handle(request);
+    if (workQueueCoordinationResponse) return workQueueCoordinationResponse;
+
+    const workQueueResponse = await this.workQueueRuntime.handle(request);
+    if (workQueueResponse) {
+      const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
+      if (request.method === "POST" && path === "/work-queue/refresh" && this.workQueueScope(request) !== null && workQueueResponse.ok) {
+        return Response.json({ ok: true });
+      }
+      return workQueueResponse;
+    }
+
     const modularResponse = await this.serviceRuntime.handle(request);
-    if (modularResponse) return modularResponse;
+    if (modularResponse) return this.integrationOutboundRuntime.afterCanonicalMutation(request, modularResponse);
 
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
@@ -139,7 +256,12 @@ export class TenantStore extends ReportsTenantStore {
     if (request.method === "PATCH" && match) {
       return this.updateOrderPlanning(decodeURIComponent(match[1]), request);
     }
-    return super.fetch(request);
+    const response = await super.fetch(request);
+    return this.integrationOutboundRuntime.afterCanonicalMutation(request, response);
+  }
+
+  async alarm() {
+    await this.integrationOutboundRuntime.alarm();
   }
 
   private listSupplierTerms() {

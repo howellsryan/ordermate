@@ -76,6 +76,17 @@ const SHOPIFY_CAPABILITIES = [
   "fulfilments:publish",
 ] as const;
 const ORDER_WEBHOOK_TOPICS = new Set(["orders/create", "orders/updated", "orders/cancelled"]);
+const RETURN_WEBHOOK_TOPICS = new Set([
+  "refunds/create",
+  "returns/request",
+  "returns/approve",
+  "returns/decline",
+  "returns/cancel",
+  "returns/update",
+  "returns/process",
+  "returns/close",
+  "returns/reopen",
+]);
 
 class IntegrationHttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -203,23 +214,34 @@ function normalizedOccurredAt(value: string | null) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function recordIdentity(record: Record<string, unknown>) {
+  return {
+    id: typeof record.id === "number" || typeof record.id === "string" ? record.id : null,
+    admin_graphql_api_id: typeof record.admin_graphql_api_id === "string" ? record.admin_graphql_api_id : null,
+  };
+}
+
 /**
  * Webhook HMAC is always verified against the raw bytes first. After that we
  * persist only routing/identity fields needed by the integration runtime. The
- * queue processor fetches authoritative current order state via GraphQL, so a
- * full REST-shaped Shopify order/customer payload is unnecessary at rest.
+ * queue processor fetches authoritative current order state via GraphQL, while
+ * returns/refunds retain only RMA identity, order linkage and lifecycle status.
  */
 export function shopifyStoredWebhookPayload(topic: string, payload: unknown) {
   const record = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
-  if (ORDER_WEBHOOK_TOPICS.has(topic)) {
+  if (ORDER_WEBHOOK_TOPICS.has(topic)) return JSON.stringify(recordIdentity(record));
+  if (RETURN_WEBHOOK_TOPICS.has(topic)) {
+    const order = record.order && typeof record.order === "object" && !Array.isArray(record.order)
+      ? record.order as Record<string, unknown>
+      : null;
     return JSON.stringify({
-      id: typeof record.id === "number" || typeof record.id === "string" ? record.id : null,
-      admin_graphql_api_id: typeof record.admin_graphql_api_id === "string" ? record.admin_graphql_api_id : null,
+      ...recordIdentity(record),
+      order_id: typeof record.order_id === "number" || typeof record.order_id === "string" ? record.order_id : null,
+      status: typeof record.status === "string" ? record.status : null,
+      order: order ? recordIdentity(order) : null,
     });
   }
-  if (topic === "app/uninstalled") {
-    return JSON.stringify({ id: typeof record.id === "number" || typeof record.id === "string" ? record.id : null });
-  }
+  if (topic === "app/uninstalled") return JSON.stringify(recordIdentity(record));
   return "{}";
 }
 
@@ -475,6 +497,7 @@ shopifyIntegrationApp.post("/webhooks", async c => {
     ).bind(shop).first<RouteRow>();
     if (!route || route.status !== "active") throw new IntegrationHttpError("Shopify connection route is not active", 404);
 
+    const actor = { id: `integration:shopify:${shop}`, role: "integration" };
     const response = await internalRequest(c.env, route.tenant_id, "/__integrations/events/receive", {
       method: "POST",
       body: JSON.stringify({
@@ -488,14 +511,22 @@ shopifyIntegrationApp.post("/webhooks", async c => {
         apiVersion: c.req.header("x-shopify-api-version") || null,
         payloadJson,
       }),
-    }, { id: `integration:shopify:${shop}`, role: "integration" });
+    }, actor);
     const receipt = await jsonOrThrow<{ id: string; duplicate: boolean }>(response, "Unable to record Shopify webhook");
+
+    if (RETURN_WEBHOOK_TOPICS.has(topic)) {
+      const returnResponse = await internalRequest(c.env, route.tenant_id, "/__integrations/returns/observe", {
+        method: "POST",
+        body: JSON.stringify({ connectionId: route.connection_id, topic, payloadJson }),
+      }, actor);
+      await jsonOrThrow<{ ok: true }>(returnResponse, "Unable to reconcile Shopify return/refund event");
+    }
 
     if (topic === "app/uninstalled") {
       const statusResponse = await internalRequest(c.env, route.tenant_id, `/__integrations/connections/${encodeURIComponent(route.connection_id)}/status`, {
         method: "POST",
         body: JSON.stringify({ status: "disconnected", error: null }),
-      }, { id: `integration:shopify:${shop}`, role: "integration" });
+      }, actor);
       await jsonOrThrow<{ ok: true }>(statusResponse, "Unable to disconnect uninstalled Shopify integration");
       await setRouteStatus(c.env, shop, route.tenant_id, route.connection_id, "disconnected");
     }

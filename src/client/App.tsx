@@ -85,6 +85,21 @@ const nav: NavItem[] = [
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
+function pageFromLocation(): Page {
+  const candidate = new URLSearchParams(window.location.search).get("page");
+  return nav.some(item => item.id === candidate) ? candidate as Page : "overview";
+}
+
+function replaceWorkspaceLocation(page: Page, mode: "push" | "replace" = "push") {
+  const url = new URL(window.location.href);
+  url.searchParams.set("page", page);
+  url.searchParams.delete("entity");
+  url.searchParams.delete("record");
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  if (mode === "replace") window.history.replaceState({}, "", next);
+  else window.history.pushState({}, "", next);
+}
+
 function pageVisible(role: Role, page: Page) {
   if (role === "owner" || role === "admin") return true;
   if (page === "wave-pick") return role === "manager" || role === "fulfilment";
@@ -112,7 +127,7 @@ export default function App() {
   const qc = useQueryClient();
   const sessionQuery = useQuery({ queryKey: ["session"], queryFn: getSession, retry: false });
   const [activeTenantId, setActiveTenantId] = useState(() => localStorage.getItem(TENANT_STORAGE_KEY) || localStorage.getItem(LEGACY_TENANT_STORAGE_KEY) || "");
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(() => pageFromLocation());
   const [mobileNav, setMobileNav] = useState(false);
   const [newBusinessOpen, setNewBusinessOpen] = useState(false);
   const [inviteAttempted, setInviteAttempted] = useState(false);
@@ -146,6 +161,12 @@ export default function App() {
   });
 
   useEffect(() => {
+    const onPopState = () => setPage(pageFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
     if (session && inviteToken && !inviteAttempted && !session.organizations.some(org => isDemoTenant(org.id))) {
       setInviteAttempted(true);
       acceptInvite.mutate(inviteToken);
@@ -171,7 +192,10 @@ export default function App() {
     const unavailableDemoPage = !!navForPage?.demoOnly && !demo;
     const unavailableModule = !!moduleForPage && (!!modules.error || !!modules.data && !enabledModules.has(moduleForPage));
     const unavailableFeature = !!featureForPage && (!!features.error || !!features.data && !enabledFeatures.has(featureForPage));
-    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || unavailableModule || unavailableFeature) setPage("overview");
+    if (unavailableDemoPage || !pageVisible(activeTenant.role, page) || unavailableModule || unavailableFeature) {
+      setPage("overview");
+      replaceWorkspaceLocation("overview", "replace");
+    }
   }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, featureForPage, modules.data, modules.error, enabledModules, features.data, features.error, enabledFeatures]);
 
   if (sessionQuery.isLoading) {
@@ -194,12 +218,14 @@ export default function App() {
     if (targetNav?.module && (!modules.data || !enabledModules.has(targetNav.module))) return;
     if (targetNav?.feature && (!features.data || !enabledFeatures.has(targetNav.feature))) return;
     setPage(target);
+    replaceWorkspaceLocation(target);
     setMobileNav(false);
   };
 
   const switchTenant = (tenantId: string) => {
     setActiveTenantId(tenantId);
     setPage("overview");
+    replaceWorkspaceLocation("overview", "replace");
     qc.removeQueries({ queryKey: ["tenant"] });
   };
 

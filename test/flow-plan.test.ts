@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFlowPlan, type FlowPlanAttentionItem } from "../src/shared/flow-plan";
+import { buildFlowActions, buildFlowPlan, type FlowPlanAttentionItem } from "../src/shared/flow-plan";
 import type { OperatingIntelligenceResponse, OperatingIntelligenceRow } from "../src/shared/operating-intelligence";
 
 function stock(overrides: Partial<OperatingIntelligenceRow> = {}): OperatingIntelligenceRow {
@@ -93,7 +93,7 @@ describe("automatic flow plan", () => {
     expect(plan.actions).toHaveLength(0);
   });
 
-  it("caps the live plan so a small team gets a decision queue rather than another backlog", () => {
+  it("caps the live dashboard while preserving the full signal set for persistence", () => {
     const attention: FlowPlanAttentionItem[] = Array.from({ length: 12 }, (_, index) => ({
       id: `po:${index}`,
       severity: "critical",
@@ -103,6 +103,7 @@ describe("automatic flow plan", () => {
       page: "purchasing",
     }));
 
+    expect(buildFlowActions(attention, intelligence([]))).toHaveLength(12);
     expect(buildFlowPlan(attention, intelligence([])).actions).toHaveLength(8);
   });
 });
