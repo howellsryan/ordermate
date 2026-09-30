@@ -1,10 +1,10 @@
+# Automatic verification runs in Cloudflare Workers Builds.
+# Keep this workflow for explicitly requested fallback runs only.
+# See docs/cloudflare-ci.md.
 name: Rebuild verification
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
