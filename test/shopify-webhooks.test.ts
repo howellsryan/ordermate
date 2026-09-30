@@ -68,11 +68,11 @@ describe("Shopify webhook subscription reconciliation", () => {
     });
 
     expect(ensured.map(subscription => subscription.topic)).toEqual([...REQUIRED_SHOPIFY_WEBHOOK_TOPICS]);
-    expect(operations).toHaveLength(4); // list + one update + two creates
+    expect(operations).toHaveLength(REQUIRED_SHOPIFY_WEBHOOK_TOPICS.length); // list + one update + every missing topic
     const createdTopics = operations
       .filter(operation => operation.query.includes("OperatingLayerWebhookCreate"))
       .map(operation => operation.variables.topic);
-    expect(createdTopics).toEqual(["ORDERS_CANCELLED", "APP_UNINSTALLED"]);
+    expect(createdTopics).toEqual([...REQUIRED_SHOPIFY_WEBHOOK_TOPICS].slice(2));
   });
 
   it("is idempotent only when URI, format and payload fields all match", async () => {
@@ -93,7 +93,7 @@ describe("Shopify webhook subscription reconciliation", () => {
       uri,
       fetchImpl,
     });
-    expect(ensured).toHaveLength(4);
+    expect(ensured).toHaveLength(REQUIRED_SHOPIFY_WEBHOOK_TOPICS.length);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
@@ -105,12 +105,14 @@ describe("Shopify webhook subscription reconciliation", () => {
       const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
       if (calls === 1) {
         return jsonResponse({ data: { webhookSubscriptions: {
-          edges: [
-            { node: node("gid://shopify/WebhookSubscription/1", "ORDERS_CREATE", uri, { includeFields: null }) },
-            { node: node("gid://shopify/WebhookSubscription/2", "ORDERS_UPDATED", uri) },
-            { node: node("gid://shopify/WebhookSubscription/3", "ORDERS_CANCELLED", uri) },
-            { node: node("gid://shopify/WebhookSubscription/4", "APP_UNINSTALLED", uri) },
-          ],
+          edges: REQUIRED_SHOPIFY_WEBHOOK_TOPICS.map((topic, index) => ({
+            node: node(
+              `gid://shopify/WebhookSubscription/${index + 1}`,
+              topic,
+              uri,
+              topic === "ORDERS_CREATE" ? { includeFields: null } : undefined,
+            ),
+          })),
           pageInfo: { hasNextPage: false, endCursor: null },
         } } });
       }
