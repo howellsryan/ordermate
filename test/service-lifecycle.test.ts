@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { TenantStore } from "../src/worker/tenant-store-order-planning";
 
@@ -161,6 +162,27 @@ describe("service lifecycle", () => {
     const variantId = await createVariant(stub);
     expect((await request(stub, "/inventory/adjust", "POST", { variantId, locationId, quantityDelta: 5, reason: "Van stock" })).response.ok).toBe(true);
 
+    const shopifyConnectionId = crypto.randomUUID();
+    await runInDurableObject(stub, async (_instance, state) => {
+      const timestamp = new Date().toISOString();
+      state.storage.sql.exec(
+        "INSERT INTO integration_connections (id, provider, external_account_id, display_name, status, capabilities_json, created_at, updated_at) VALUES (?, 'shopify', 'service-stock.myshopify.com', 'Service stock', 'active', '[]', ?, ?)",
+        shopifyConnectionId, timestamp, timestamp,
+      );
+      state.storage.sql.exec(
+        "INSERT INTO integration_entity_links (provider, connection_id, entity_type, external_id, local_entity_type, local_entity_id, last_synced_at) VALUES ('shopify', ?, 'variant', 'gid://shopify/ProductVariant/1', 'product_variant', ?, ?)",
+        shopifyConnectionId, variantId, timestamp,
+      );
+      state.storage.sql.exec(
+        "INSERT INTO integration_entity_links (provider, connection_id, entity_type, external_id, local_entity_type, local_entity_id, last_synced_at) VALUES ('shopify', ?, 'location', 'gid://shopify/Location/1', 'location', ?, ?)",
+        shopifyConnectionId, locationId, timestamp,
+      );
+      state.storage.sql.exec(
+        "INSERT INTO integration_external_entities (connection_id, entity_type, external_id, display_name, payload_json, match_status, discovered_at, updated_at) VALUES (?, 'variant', 'gid://shopify/ProductVariant/1', 'Cable', ?, 'mapped', ?, ?)",
+        shopifyConnectionId, JSON.stringify({ inventoryItemId: "gid://shopify/InventoryItem/1" }), timestamp, timestamp,
+      );
+    });
+
     const material = await request<{ movementId: string }>(stub, `/service/jobs/${job.data.jobId}/materials`, "POST", {
       visitId: visit.data.id,
       variantId,
@@ -168,6 +190,16 @@ describe("service lifecycle", () => {
       quantity: 2,
     });
     expect(material.response.status).toBe(201);
+    await runInDurableObject(stub, async (_instance, state) => {
+      const outbound = state.storage.sql.exec<{ desired_json: string }>(
+        "SELECT desired_json FROM integration_outbound_jobs WHERE connection_id = ? AND operation = 'inventory_publish'",
+        shopifyConnectionId,
+      ).toArray();
+      expect(outbound).toHaveLength(1);
+      expect(JSON.parse(outbound[0].desired_json)).toMatchObject({ localVariantId: variantId, localLocationId: locationId, available: 3 });
+      await state.storage.deleteAlarm();
+    });
+
 
     const inventory = await request<Array<{ variant_id: string; location_id: string; on_hand: number }>>(stub, "/inventory");
     expect(inventory.data.find(row => row.variant_id === variantId && row.location_id === locationId)?.on_hand).toBe(3);

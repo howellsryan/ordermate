@@ -322,9 +322,10 @@ xeroIntegrationApp.get("/callback", async c => {
     const target = new URL("/", c.req.url);
     target.searchParams.set("integration", "xero");
     target.searchParams.set("status", "connected");
-    const redirect = Response.redirect(target.toString(), 303);
-    redirect.headers.set("Set-Cookie", clearCookie);
-    return redirect;
+    return new Response(null, {
+      status: 303,
+      headers: { Location: target.toString(), "Set-Cookie": clearCookie },
+    });
   } catch (cause) {
     const status = cause instanceof XeroIntegrationError ? cause.status : 500;
     const message = cause instanceof Error ? cause.message : "Unable to connect Xero";

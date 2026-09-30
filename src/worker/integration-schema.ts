@@ -1,4 +1,4 @@
-const CURRENT_INTEGRATION_SCHEMA_VERSION = 5;
+const CURRENT_INTEGRATION_SCHEMA_VERSION = 6;
 
 type MigrationRow = { version: number };
 type TableInfoRow = { name: string };
@@ -302,6 +302,29 @@ export function migrateIntegrationSchema(storage: SqlStorage) {
       );
     });
     current = 5;
+  }
+
+  if (current < 6) {
+    storage.transactionSync(() => {
+      if (!tableHasColumn(storage, "integration_outbound_jobs", "generation")) {
+        sql.exec("ALTER TABLE integration_outbound_jobs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1");
+      }
+      if (!tableHasColumn(storage, "integration_outbound_jobs", "lease_token")) {
+        sql.exec("ALTER TABLE integration_outbound_jobs ADD COLUMN lease_token TEXT");
+      }
+      if (!tableHasColumn(storage, "integration_outbound_jobs", "lease_expires_at")) {
+        sql.exec("ALTER TABLE integration_outbound_jobs ADD COLUMN lease_expires_at TEXT");
+      }
+      // Pre-lease running rows must wake after upgrading, too.
+      if (sql.exec("SELECT id FROM integration_outbound_jobs WHERE status = 'running' LIMIT 1").toArray().length) {
+        void storage.setAlarm(Date.now());
+      }
+      sql.exec(
+        "INSERT INTO _integration_schema_migrations (id, applied_at) VALUES (6, ?)",
+        new Date().toISOString(),
+      );
+    });
+    current = 6;
   }
 
   if (current !== CURRENT_INTEGRATION_SCHEMA_VERSION) {

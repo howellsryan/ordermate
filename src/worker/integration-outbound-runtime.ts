@@ -50,6 +50,9 @@ type JobRow = {
   desired_json: string;
   status: OutboundJobStatus;
   attempts: number;
+  generation: number;
+  lease_token: string | null;
+  lease_expires_at: string | null;
   next_attempt_at: string;
   provider_request_id: string | null;
   last_error: string | null;
@@ -149,8 +152,11 @@ const INVENTORY_MUTATION_PATHS = [
   /^\/inventory(?:\/|$)/,
   /^\/purchase-orders\/[^/]+\/receive$/,
   /^\/orders\/[^/]+\/(confirm|cancel|fulfil|return)$/,
+  /^\/service\/jobs\/[^/]+\/materials$/,
 ];
 const MAX_JOBS_PER_ALARM = 25;
+const JOB_LEASE_MS = 2 * 60_000;
+const SHOPIFY_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_AUTOMATIC_ATTEMPTS = 8;
 const BASE_RETRY_MS = 2_000;
 
@@ -249,6 +255,8 @@ function shopifyReturnIdentity(topic: string, payload: Record<string, unknown>) 
 }
 
 export class IntegrationOutboundRuntime {
+  private processing: Promise<void> | null = null;
+
   constructor(
     private readonly ctx: DurableObjectState,
     private readonly env: IntegrationOutboundEnv,
@@ -378,13 +386,19 @@ export class IntegrationOutboundRuntime {
          entity_type = excluded.entity_type,
          entity_id = excluded.entity_id,
          desired_json = excluded.desired_json,
-         status = 'pending',
-         attempts = 0,
+         generation = CASE WHEN integration_outbound_jobs.status = 'running'
+           AND integration_outbound_jobs.desired_json = excluded.desired_json
+           THEN integration_outbound_jobs.generation ELSE integration_outbound_jobs.generation + 1 END,
+         status = CASE WHEN integration_outbound_jobs.status = 'running' THEN 'running' ELSE 'pending' END,
+         attempts = CASE WHEN integration_outbound_jobs.status = 'running'
+           AND integration_outbound_jobs.desired_json = excluded.desired_json
+           THEN integration_outbound_jobs.attempts ELSE 0 END,
          next_attempt_at = excluded.next_attempt_at,
          provider_request_id = NULL,
          last_error = NULL,
          completed_at = NULL,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at
+       WHERE NOT (integration_outbound_jobs.operation = 'fulfilment_publish' AND integration_outbound_jobs.status = 'failed')`,
       id, input.connectionId, input.operation, input.coalescingKey, input.entityType, input.entityId,
       JSON.stringify(input.desired), timestamp, timestamp, timestamp,
     );
@@ -598,21 +612,32 @@ export class IntegrationOutboundRuntime {
     return { accessToken: secrets.accessToken, apiVersion: this.env.SHOPIFY_API_VERSION };
   }
 
-  private async shopifyGraphql<T>(connection: ConnectionRow, query: string, variables: Record<string, unknown>) {
+  private async shopifyGraphql<T>(connection: ConnectionRow, query: string, variables: Record<string, unknown>, unsafeCreate = false) {
     const auth = await this.usableShopify(connection);
-    const response = await fetch(`https://${connection.external_account_id}/admin/api/${auth.apiVersion}/graphql.json`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", "X-Shopify-Access-Token": auth.accessToken },
-      body: JSON.stringify({ query, variables }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`https://${connection.external_account_id}/admin/api/${auth.apiVersion}/graphql.json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-Shopify-Access-Token": auth.accessToken },
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(SHOPIFY_REQUEST_TIMEOUT_MS),
+      });
+    } catch {
+      throw new ProviderError("Shopify request outcome is unknown after a network failure; review before replaying a fulfilment", null, unsafeCreate);
+    }
     if (response.status === 429) {
       const seconds = Number(response.headers.get("retry-after") || "1");
       throw new ProviderError("Shopify rate limit reached", Number.isFinite(seconds) ? Math.max(1_000, seconds * 1_000) : 2_000);
     }
     if (!response.ok) {
-      throw new ProviderError(`Shopify Admin API request failed (${response.status})`, response.status >= 500 ? retryDelay(1) : null, response.status >= 500);
+      throw new ProviderError(`Shopify Admin API request failed (${response.status})`, response.status >= 500 ? retryDelay(1) : null, unsafeCreate && response.status >= 500);
     }
-    const envelope = await response.json<ShopifyGraphqlEnvelope<T>>();
+    let envelope: ShopifyGraphqlEnvelope<T>;
+    try {
+      envelope = await response.json<ShopifyGraphqlEnvelope<T>>();
+    } catch {
+      throw new ProviderError("Shopify response could not be decoded; the mutation outcome is unknown", null, unsafeCreate);
+    }
     const throttled = envelope.errors?.some(error => error.extensions?.code === "THROTTLED");
     if (throttled) {
       const throttle = envelope.extensions?.cost?.throttleStatus;
@@ -623,9 +648,9 @@ export class IntegrationOutboundRuntime {
       throw new ProviderError("Shopify GraphQL cost throttle reached", Math.max(1_000, waitMs));
     }
     if (envelope.errors?.length) {
-      throw new ProviderError(envelope.errors.map(error => error.message).filter(Boolean).join("; ") || "Shopify GraphQL request failed");
+      throw new ProviderError(envelope.errors.map(error => error.message).filter(Boolean).join("; ") || "Shopify GraphQL request failed", null, unsafeCreate);
     }
-    if (!envelope.data) throw new ProviderError("Shopify GraphQL response did not include data");
+    if (!envelope.data) throw new ProviderError("Shopify GraphQL response did not include data", null, unsafeCreate);
     return { data: envelope.data, throttle: envelope.extensions?.cost?.throttleStatus || null };
   }
 
@@ -666,7 +691,10 @@ export class IntegrationOutboundRuntime {
         userErrors: Array<{ code?: string | null; message: string }>;
       };
     }>(connection, mutation, {
-      idempotencyKey: jobRow.id,
+      // The same key always denotes the same generation AND compare-and-set payload.
+      idempotencyKey: await sha256(JSON.stringify({
+        jobId: jobRow.id, generation: jobRow.generation, desired, changeFromQuantity: observed,
+      })),
       input: {
         name: "available",
         reason: "correction",
@@ -811,7 +839,10 @@ export class IntegrationOutboundRuntime {
     };
     const result = await this.shopifyGraphql<{
       fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: Array<{ message: string }> };
-    }>(connection, mutation, variables);
+    }>(connection, mutation, variables, true);
+    if (!result.data.fulfillmentCreate || !Array.isArray(result.data.fulfillmentCreate.userErrors)) {
+      throw new ProviderError("Shopify fulfilment response was incomplete; reconcile before replaying", null, true);
+    }
     if (result.data.fulfillmentCreate.userErrors.length) {
       throw new ProviderError(result.data.fulfillmentCreate.userErrors.map(error => error.message).join("; "));
     }
@@ -880,6 +911,71 @@ export class IntegrationOutboundRuntime {
   }
 
   async processDue(connectionId?: string) {
+    // Alarms and manual drains share one publisher per tenant object.
+    if (this.processing) return this.processing;
+    const processing = this.drainDue(connectionId);
+    this.processing = processing;
+    try {
+      await processing;
+    } finally {
+      if (this.processing === processing) this.processing = null;
+    }
+  }
+
+  private recoverExpiredJobs() {
+    const timestamp = now();
+    const expired = this.rows<JobRow>(
+      "SELECT * FROM integration_outbound_jobs WHERE status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)",
+      timestamp,
+    );
+    for (const row of expired) {
+      const linked = row.operation === "fulfilment_publish" && this.one<FulfilmentLinkRow>(
+        "SELECT external_fulfilment_id, external_order_id FROM integration_fulfilment_links WHERE connection_id = ? AND local_fulfilment_id = ?",
+        row.connection_id, row.entity_id,
+      )?.external_fulfilment_id;
+      const ambiguous = row.operation === "fulfilment_publish" && !linked;
+      const error = ambiguous ? "Fulfilment publisher was interrupted; reconcile Shopify before replaying this canonical fulfilment" : null;
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec(
+          "UPDATE integration_outbound_jobs SET status = ?, lease_token = NULL, lease_expires_at = NULL, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+          ambiguous ? "failed" : "pending", timestamp, error, timestamp, row.id,
+        );
+        if (ambiguous) {
+          this.upsertReconciliation(row.connection_id, row.entity_type, row.entity_id, "error", null, null, error);
+          this.exception(row.connection_id, "outbound_publish_failed", error!, row.entity_type, row.entity_id, false);
+        }
+        this.audit({ id: "integration-outbound", role: "system", name: "Integration publisher" },
+          "integration.outbound_lease_recovered", row.entity_type, row.entity_id, { connectionId: row.connection_id, ambiguous });
+      });
+    }
+  }
+
+  private async scheduleNextAlarm() {
+    const next = this.one<{ value: string | null }>(
+      `SELECT MIN(due_at) AS value FROM (
+         SELECT next_attempt_at AS due_at FROM integration_outbound_jobs WHERE status IN ('pending','retry_wait')
+         UNION ALL
+         SELECT COALESCE(lease_expires_at, ?) AS due_at FROM integration_outbound_jobs WHERE status = 'running'
+       )`,
+      now(),
+    )?.value;
+    if (next) await this.armAlarm(Math.max(250, new Date(next).getTime() - Date.now()));
+  }
+
+  private releaseNewerGeneration(running: JobRow) {
+    const released = this.ctx.storage.sql.exec(
+      `UPDATE integration_outbound_jobs SET status = 'pending', lease_token = NULL, lease_expires_at = NULL, updated_at = ?
+       WHERE id = ? AND status = 'running' AND lease_token = ? AND generation != ?`,
+      now(), running.id, running.lease_token, running.generation,
+    );
+    if (released.rowsWritten) {
+      this.upsertReconciliation(running.connection_id, running.entity_type, running.entity_id, "pending", null, null, null);
+    }
+    return released.rowsWritten > 0;
+  }
+
+  private async drainDue(connectionId?: string) {
+    this.recoverExpiredJobs();
     const timestamp = now();
     const bindings: unknown[] = [timestamp];
     let filter = "";
@@ -893,56 +989,66 @@ export class IntegrationOutboundRuntime {
        ORDER BY next_attempt_at, created_at LIMIT ${MAX_JOBS_PER_ALARM}`,
       ...bindings,
     );
-    for (const current of due) {
-      const startedAt = now();
-      const claimed = this.ctx.storage.sql.exec(
-        `UPDATE integration_outbound_jobs SET status = 'running', attempts = attempts + 1, updated_at = ?
-         WHERE id = ? AND status IN ('pending','retry_wait')`,
-        startedAt, current.id,
-      );
-      if (!claimed.rowsWritten) continue;
-      const running = this.one<JobRow>("SELECT * FROM integration_outbound_jobs WHERE id = ?", current.id);
-      if (!running) continue;
-      try {
-        const result = await this.processJob(running);
-        const completedAt = now();
-        this.ctx.storage.sql.exec(
-          `UPDATE integration_outbound_jobs SET status = 'succeeded', provider_request_id = ?, last_error = NULL,
-           completed_at = ?, updated_at = ? WHERE id = ?`,
-          result.providerRequestId, completedAt, completedAt, running.id,
+    try {
+      for (const current of due) {
+        const startedAt = now();
+        const token = crypto.randomUUID();
+        const leaseExpiresAt = new Date(Date.now() + JOB_LEASE_MS).toISOString();
+        const claimed = this.ctx.storage.sql.exec(
+          `UPDATE integration_outbound_jobs SET status = 'running', attempts = attempts + 1, updated_at = ?,
+             lease_token = ?, lease_expires_at = ?
+           WHERE id = ? AND status IN ('pending','retry_wait') AND generation = ?`,
+          startedAt, token, leaseExpiresAt, current.id, current.generation,
         );
-        this.ctx.storage.sql.exec(
-          "UPDATE integration_connections SET last_success_at = ?, last_error_at = NULL, last_error = NULL, updated_at = ? WHERE id = ?",
-          completedAt, completedAt, running.connection_id,
-        );
-      } catch (cause) {
-        const error = cause instanceof Error ? cause.message : "Outbound integration operation failed";
-        const provider = cause instanceof ProviderError ? cause : null;
-        const retryable = !provider?.ambiguous && (provider?.retryAfterMs !== null || running.attempts < MAX_AUTOMATIC_ATTEMPTS);
-        const delay = provider?.retryAfterMs ?? retryDelay(running.attempts);
-        const nextAttemptAt = new Date(Date.now() + delay).toISOString();
-        const status: OutboundJobStatus = retryable && running.attempts < MAX_AUTOMATIC_ATTEMPTS ? "retry_wait" : "failed";
-        this.ctx.storage.sql.exec(
-          `UPDATE integration_outbound_jobs SET status = ?, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ?`,
-          status, nextAttemptAt, error.slice(0, 2000), now(), running.id,
-        );
-        this.ctx.storage.sql.exec(
-          "UPDATE integration_connections SET last_error_at = ?, last_error = ?, updated_at = ? WHERE id = ?",
-          now(), error.slice(0, 1000), now(), running.connection_id,
-        );
-        this.upsertReconciliation(running.connection_id, running.entity_type, running.entity_id, "error", null, null, error.slice(0, 1000));
-        if (status === "failed") {
-          this.exception(running.connection_id, "outbound_publish_failed", error.slice(0, 1800), running.entity_type, running.entity_id, !provider?.ambiguous);
+        if (!claimed.rowsWritten) continue;
+        const running = this.one<JobRow>("SELECT * FROM integration_outbound_jobs WHERE id = ?", current.id);
+        if (!running) continue;
+        // Persist a wake-up before any provider I/O so a runtime reset cannot strand the claim.
+        await this.scheduleNextAlarm();
+        try {
+          const result = await this.processJob(running);
+          if (this.releaseNewerGeneration(running)) continue;
+          const completedAt = now();
+          const completed = this.ctx.storage.sql.exec(
+            `UPDATE integration_outbound_jobs SET status = 'succeeded', provider_request_id = ?, last_error = NULL,
+             completed_at = ?, updated_at = ?, lease_token = NULL, lease_expires_at = NULL
+             WHERE id = ? AND status = 'running' AND lease_token = ? AND generation = ?`,
+            result.providerRequestId, completedAt, completedAt, running.id, token, running.generation,
+          );
+          if (!completed.rowsWritten) continue;
+          this.resolveException(running.connection_id, running.entity_type, running.entity_id);
+          this.ctx.storage.sql.exec(
+            "UPDATE integration_connections SET last_success_at = ?, last_error_at = NULL, last_error = NULL, updated_at = ? WHERE id = ?",
+            completedAt, completedAt, running.connection_id,
+          );
+        } catch (cause) {
+          const error = cause instanceof Error ? cause.message : "Outbound integration operation failed";
+          const provider = cause instanceof ProviderError ? cause : null;
+          // Never release an uncertain fulfilment create to a new automatic generation.
+          if (!provider?.ambiguous && this.releaseNewerGeneration(running)) continue;
+          const retryable = !provider?.ambiguous && running.attempts < MAX_AUTOMATIC_ATTEMPTS;
+          const delay = provider?.retryAfterMs ?? retryDelay(running.attempts);
+          const nextAttemptAt = new Date(Date.now() + delay).toISOString();
+          const status: OutboundJobStatus = retryable ? "retry_wait" : "failed";
+          const failed = this.ctx.storage.sql.exec(
+            `UPDATE integration_outbound_jobs SET status = ?, next_attempt_at = ?, last_error = ?, updated_at = ?,
+             lease_token = NULL, lease_expires_at = NULL
+             WHERE id = ? AND status = 'running' AND lease_token = ?`,
+            status, nextAttemptAt, error.slice(0, 2000), now(), running.id, token,
+          );
+          if (!failed.rowsWritten) continue;
+          this.ctx.storage.sql.exec(
+            "UPDATE integration_connections SET last_error_at = ?, last_error = ?, updated_at = ? WHERE id = ?",
+            now(), error.slice(0, 1000), now(), running.connection_id,
+          );
+          this.upsertReconciliation(running.connection_id, running.entity_type, running.entity_id, "error", null, null, error.slice(0, 1000));
+          if (status === "failed") {
+            this.exception(running.connection_id, "outbound_publish_failed", error.slice(0, 1800), running.entity_type, running.entity_id, !provider?.ambiguous);
+          }
         }
       }
-    }
-
-    const next = this.one<{ value: string | null }>(
-      `SELECT MIN(next_attempt_at) AS value FROM integration_outbound_jobs WHERE status IN ('pending','retry_wait')`,
-    )?.value;
-    if (next) {
-      const dueAt = Math.max(Date.now() + 250, new Date(next).getTime());
-      await this.ctx.storage.setAlarm(dueAt);
+    } finally {
+      await this.scheduleNextAlarm();
     }
   }
 

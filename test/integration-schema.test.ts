@@ -40,6 +40,11 @@ describe("integration schema migrations", () => {
       expect(orderColumns.has("observed_external_updated_at")).toBe(true);
       expect(orderColumns.has("observed_proposal_json")).toBe(true);
 
+      const jobColumns = new Set(state.storage.sql.exec<{ name: string }>(
+        "PRAGMA table_info(integration_outbound_jobs)",
+      ).toArray().map(row => row.name));
+      for (const column of ["generation", "lease_token", "lease_expires_at"]) expect(jobColumns.has(column), column).toBe(true);
+
       const uniqueMappingIndex = state.storage.sql.exec<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'integration_entity_links_one_to_one_idx'",
       ).toArray();
