@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OperatingIntelligenceResponse } from "../shared/operating-intelligence";
 import { applySupplierOrderingTerms, type SupplierOrderingTerm } from "../shared/supplier-ordering";
+import type { WorkQueueCategory } from "../shared/work-queue";
 import { BusinessProfileRuntime } from "./business-profile-runtime";
 import { ExternalOrderRuntime } from "./external-order-runtime";
 import { FeatureRuntime } from "./feature-runtime";
@@ -30,6 +31,15 @@ const supplierMappingSchema = z.object({
   orderMultiple: z.number().int().min(1).max(1_000_000).nullable().optional(),
 });
 
+const frontlineWorkQueueScope: Record<string, WorkQueueCategory[] | null> = {
+  owner: null,
+  admin: null,
+  manager: null,
+  inventory: ["stock_risk", "supply_risk", "receiving_exception"],
+  fulfilment: ["customer_promise", "receiving_exception"],
+  viewer: [],
+};
+
 type OrderPlanningRow = {
   id: string;
   status: string;
@@ -45,6 +55,10 @@ type SupplierSkuConflictRow = {
   product_name: string;
   variant_name: string;
   sku: string;
+};
+type WorkQueueGuardRow = {
+  category: WorkQueueCategory;
+  assignee_id: string | null;
 };
 
 function validCalendarDate(value: string | null) {
@@ -117,6 +131,54 @@ export class TenantStore extends ReportsTenantStore {
     return response;
   }
 
+  private workQueueScope(request: Request) {
+    const role = request.headers.get("x-ordermate-actor-role")?.trim() || "";
+    return Object.prototype.hasOwnProperty.call(frontlineWorkQueueScope, role) ? frontlineWorkQueueScope[role] : [];
+  }
+
+  private async guardWorkQueueAccess(request: Request): Promise<Response | null> {
+    const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
+    if (!path.startsWith("/work-queue")) return null;
+
+    const scope = this.workQueueScope(request);
+    if (scope === null) return null;
+    if (!scope.length) return Response.json({ error: "This role does not have access to the persistent work queue" }, { status: 403 });
+
+    if (request.method === "GET" && path === "/work-queue") {
+      return Response.json({ error: "Use the category-scoped frontline work queue" }, { status: 403 });
+    }
+
+    const itemRoute = path.match(/^\/work-queue\/([^/]+)\/(history|acknowledge|snooze|assign-to-me|unassign|resolve|dismiss|assign|schedule)$/);
+    if (!itemRoute) return null;
+
+    const itemId = decodeURIComponent(itemRoute[1]);
+    const action = itemRoute[2];
+    const row = this.orderPlanningCtx.storage.sql.exec<WorkQueueGuardRow>(
+      "SELECT category, assignee_id FROM work_items WHERE id = ?",
+      itemId,
+    ).toArray()[0];
+    if (!row) return null;
+    if (!scope.includes(row.category)) {
+      return Response.json({ error: "That work item is outside this role's operational scope" }, { status: 403 });
+    }
+
+    const actorId = request.headers.get("x-ordermate-actor-id")?.trim() || "";
+    const actorName = request.headers.get("x-ordermate-actor-name")?.trim() || actorId;
+    if (request.method === "POST" && action === "unassign" && row.assignee_id && row.assignee_id !== actorId) {
+      return Response.json({ error: "Frontline users can only unassign work they own" }, { status: 403 });
+    }
+    if (request.method === "POST" && action === "assign") {
+      const input = await request.clone().json<{ assigneeId?: string | null; assigneeName?: string | null }>().catch(() => ({}));
+      if (input.assigneeId && input.assigneeId !== actorId) {
+        return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
+      }
+      if (input.assigneeName && input.assigneeName !== actorName) {
+        return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
+      }
+    }
+    return null;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const featureResponse = await this.featureRuntime.handle(request);
     if (featureResponse) return featureResponse;
@@ -142,11 +204,20 @@ export class TenantStore extends ReportsTenantStore {
     const integrationResponse = await this.integrationRuntime.handle(request);
     if (integrationResponse) return integrationResponse;
 
+    const workQueueGuardResponse = await this.guardWorkQueueAccess(request);
+    if (workQueueGuardResponse) return workQueueGuardResponse;
+
     const workQueueCoordinationResponse = await this.workQueueCoordinationRuntime.handle(request);
     if (workQueueCoordinationResponse) return workQueueCoordinationResponse;
 
     const workQueueResponse = await this.workQueueRuntime.handle(request);
-    if (workQueueResponse) return workQueueResponse;
+    if (workQueueResponse) {
+      const path = new URL(request.url).pathname.replace(/\/$/, "") || "/";
+      if (request.method === "POST" && path === "/work-queue/refresh" && this.workQueueScope(request) !== null && workQueueResponse.ok) {
+        return Response.json({ ok: true });
+      }
+      return workQueueResponse;
+    }
 
     const modularResponse = await this.serviceRuntime.handle(request);
     if (modularResponse) return this.integrationOutboundRuntime.afterCanonicalMutation(request, modularResponse);
