@@ -86,7 +86,7 @@ describe("frontline work queue API isolation", () => {
     expect(acknowledge.response.status).toBe(403);
   });
 
-  it("prevents frontline assignment spoofing while preserving self/team ownership", async () => {
+  it("prevents frontline assignment spoofing or takeover while preserving self/team ownership", async () => {
     const stub = tenant();
     await request(stub, "/work-queue", "manager", "manager-1", "Manager One");
     const itemId = crypto.randomUUID();
@@ -137,5 +137,16 @@ describe("frontline work queue API isolation", () => {
     });
     expect(managerReassign.response.status).toBe(200);
     expect(managerReassign.data.item).toMatchObject({ assigneeId: "other-user", assigneeName: "Other User" });
+
+    const takeover = await request<{ error: string }>(stub, `/work-queue/${itemId}/assign-to-me`, "fulfilment", "fulfilment-1", "Fulfilment One", "POST");
+    expect(takeover.response.status).toBe(403);
+
+    const clearOther = await request<{ error: string }>(stub, `/work-queue/${itemId}/assign`, "fulfilment", "fulfilment-1", "Fulfilment One", "POST", {
+      assigneeId: null,
+      assigneeName: null,
+      teamId: "dispatch",
+      teamName: "Dispatch",
+    });
+    expect(clearOther.response.status).toBe(403);
   });
 });
