@@ -120,7 +120,7 @@ export default function Overview({ tenant, onNavigate }: { tenant: OrganizationS
       <Metric label="Customers" value={crm.isLoading ? "—" : customers} helper="Established CRM relationships" tone="ink" />
     </section> : null}
 
-    {!demo && <OnboardingHealthPanel tenant={tenant} onNavigate={onNavigate} />}
+    {!demo && ["owner", "admin", "manager"].includes(tenant.role) && <OnboardingHealthPanel tenant={tenant} onNavigate={onNavigate} />}
 
     {commercePlanningEnabled && <FlowPlan tenant={tenant} onNavigate={onNavigate} />}
 
