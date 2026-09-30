@@ -168,7 +168,7 @@ export class TenantStore extends ReportsTenantStore {
       return Response.json({ error: "Frontline users can only unassign work they own" }, { status: 403 });
     }
     if (request.method === "POST" && action === "assign") {
-      const input = await request.clone().json<{ assigneeId?: string | null; assigneeName?: string | null }>().catch(() => ({}));
+      const input: { assigneeId?: string | null; assigneeName?: string | null } = await request.clone().json().catch(() => ({}));
       if (input.assigneeId && input.assigneeId !== actorId) {
         return Response.json({ error: "Frontline users can only assign work to themselves" }, { status: 403 });
       }
