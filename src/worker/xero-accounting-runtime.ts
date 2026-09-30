@@ -645,7 +645,8 @@ export class XeroAccountingRuntime {
 
     const validation = validationMessage(returned);
     if (validation) throw new XeroSyncError(validation, 400);
-    const externalInvoiceId = returned?.InvoiceID;
+    if (!returned) throw new XeroSyncError("Xero did not return the reconciled invoice", 502);
+    const externalInvoiceId = returned.InvoiceID;
     if (!externalInvoiceId) throw new XeroSyncError("Xero did not return the invoice identity", 502);
     this.upsertLink(connection.id, "invoice", externalInvoiceId, "service_invoice", invoice.id);
 
