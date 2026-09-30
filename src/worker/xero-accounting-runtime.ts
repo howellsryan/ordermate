@@ -262,11 +262,7 @@ export class XeroAccountingRuntime {
 
   private observedTaxRates() {
     return this.rows<{ tax_rate_bps: number }>(
-      `SELECT DISTINCT sil.tax_rate_bps
-       FROM service_invoice_lines sil
-       JOIN service_invoices si ON si.id = sil.invoice_id
-       WHERE si.status IN ('issued','partially_paid','paid')
-       ORDER BY sil.tax_rate_bps`,
+      "SELECT DISTINCT tax_rate_bps FROM service_invoice_lines ORDER BY tax_rate_bps",
     ).map(row => row.tax_rate_bps);
   }
 
