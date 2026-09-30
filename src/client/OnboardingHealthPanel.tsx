@@ -5,6 +5,7 @@ import type { OrganizationSummary } from "../shared/types";
 import { tenantApi } from "./api";
 import type { SearchResult } from "./model";
 import { DataState, ErrorText } from "./ui";
+import XeroAccountingSetup from "./XeroAccountingSetup";
 
 type IntegrationList = { connections: Array<{ id: string; provider: string; displayName: string; status: string }> };
 
@@ -59,7 +60,7 @@ export default function OnboardingHealthPanel({
   const total = data?.steps.filter(step => step.status !== "optional").length ?? 0;
   const canManageIntegrations = tenant.role === "owner" || tenant.role === "admin";
 
-  if (data?.firstValueAt && data.migration.blockers.length === 0 && xero?.status !== "attention_required") return null;
+  if (data?.firstValueAt && data.migration.blockers.length === 0 && !xero) return null;
 
   return <section className="panel">
     <div className="panel-heading">
@@ -100,9 +101,10 @@ export default function OnboardingHealthPanel({
             <Link2 size={14} /> {connectXero.isPending ? "Opening Xero…" : "Connect Xero"}
           </button>}
           {xero && <span><Link2 size={14} /> Xero: {xero.displayName} · {xero.status.replaceAll("_", " ")}</span>}
-          <button type="button" onClick={() => { qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "onboarding-health"] }); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "integrations"] }); }}>Refresh health</button>
+          <button type="button" onClick={() => { qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "onboarding-health"] }); qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "integrations"] }); if (xero) qc.invalidateQueries({ queryKey: ["tenant", tenant.id, "xero-accounting-setup", xero.id] }); }}>Refresh health</button>
         </div>
         {connectXero.error && <ErrorText error={connectXero.error} />}
+        {xero && <XeroAccountingSetup tenant={tenant} connectionId={xero.id} />}
       </>}
     </DataState>
   </section>;
