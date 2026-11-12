@@ -233,3 +233,63 @@
   .app-shell button, .modal button { transition-duration: .01ms !important; }
   .app-shell .loader, .modal .loader { animation-duration: 1.5s; }
 }
+
+/* Procurement, fulfilment and review surfaces used 7–10px type in important
+   evidence and action summaries. Keep dense tables, but make copy readable. */
+.app-shell .proposal-copy strong,
+.app-shell .proposal-evidence strong,
+.app-shell .proposal-line-evidence strong,
+.app-shell .delivery-source-row strong,
+.app-shell .delivery-proposal-row strong,
+.app-shell .delivery-evidence strong,
+.app-shell .delivery-line strong,
+.app-shell .discrepancy-copy strong,
+.app-shell .discrepancy-issue strong,
+.app-shell .discrepancy-summary strong,
+.app-shell .wave-order-choice strong,
+.app-shell .wave-line strong,
+.app-shell .wave-allocation-order strong,
+.app-shell .policy-row > div:first-child strong,
+.app-shell .policy-row > span strong { font-size: 12px; line-height: 1.4; }
+
+.app-shell .proposal-copy small, .app-shell .proposal-evidence small,
+.app-shell .proposal-evidence > div > span, .app-shell .proposal-line-evidence small,
+.app-shell .proposal-line-evidence > span, .app-shell .proposal-warnings span,
+.app-shell .proposal-sidecar-warning, .app-shell .source-history-heading small,
+.app-shell .delivery-assist-head p:last-child, .app-shell .delivery-actions > span,
+.app-shell .delivery-source-row small, .app-shell .delivery-proposal-row small,
+.app-shell .delivery-evidence small, .app-shell .delivery-evidence span:first-child,
+.app-shell .delivery-line small, .app-shell .delivery-lines-head,
+.app-shell .delivery-warnings span, .app-shell .delivery-unexpected small,
+.app-shell .discrepancy-copy small, .app-shell .discrepancy-summary small,
+.app-shell .discrepancy-issue span, .app-shell .discrepancy-issue small,
+.app-shell .discrepancy-source-note, .app-shell .discrepancy-resolution-form p,
+.app-shell .wave-builder-head p:last-child, .app-shell .wave-selection-note small,
+.app-shell .wave-order-choice small, .app-shell .wave-summary small,
+.app-shell .wave-line small, .app-shell .wave-allocation-order small,
+.app-shell .policy-list-head p:last-child,
+.app-shell .policy-row > div:first-child small,
+.app-shell .policy-row > span small { font-size: 11px; line-height: 1.45; }
+
+.app-shell .proposal-line input, .app-shell .proposal-line select,
+.app-shell .assistant-input input {
+  min-height: 42px;
+  font-size: 13px;
+}
+.app-shell .discrepancy-tabs button { min-height: 38px; font-size: 12px; }
+.app-shell .policy-badge { font-size: 10px !important; }
+.app-shell .proposal-lines, .app-shell .delivery-lines { max-width: 100%; }
+.app-shell .proposal-lines { scrollbar-width: thin; }
+.app-shell .delivery-warnings strong, .app-shell .proposal-warnings strong { font-size: 12px; }
+
+@media (max-width: 760px) {
+  /* Every custom scanner, document and editor control gets the same iOS zoom-safe
+     baseline as Field; exclude non-text inputs from text sizing. */
+  .app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .app-shell select, .app-shell textarea,
+  .modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .modal select, .modal textarea { font-size: 16px; }
+  .app-shell .proposal-lines { -webkit-overflow-scrolling: touch; }
+  .app-shell .delivery-line, .app-shell .wave-line { min-width: 0; }
+  .app-shell .discrepancy-tabs { flex-wrap: wrap; }
+}
