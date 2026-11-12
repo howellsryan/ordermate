@@ -20,6 +20,7 @@ import "./bulk-actions.css";
 import "./reports.css";
 import "./order-planning.css";
 import "./wave-picking.css";
+import "./workspace-responsive.css";
 
 export default function WorkspaceStyles() {
   return null;

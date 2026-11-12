@@ -12,6 +12,9 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: { ti
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
   const subtitleId = useId();
+  // Keep the close handler fresh without restarting the focus trap on every form edit.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -23,12 +26,13 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: { ti
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     )).filter(element => !element.hasAttribute("hidden")) : [];
 
-    (focusable()[0] ?? dialog)?.focus();
+    const preferred = dialog?.querySelector<HTMLElement>("[autofocus]");
+    (preferred && !preferred.hasAttribute("disabled") ? preferred : focusable()[0] ?? dialog)?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialog) return;
@@ -57,7 +61,7 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: { ti
       document.body.style.overflow = previousOverflow;
       previousActive?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
     <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={subtitleId}>

@@ -7,6 +7,7 @@ import "./landing.css";
 import "./landing-hardening.css";
 import "./brand.css";
 import "./demo.css";
+import "./landing-responsive.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

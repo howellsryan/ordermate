@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -7,12 +7,14 @@ import {
   ClipboardCheck,
   ClipboardList,
   PackageCheck,
+  Menu,
   ScanBarcode,
   ShieldCheck,
   Sparkles,
   Truck,
   Users,
   Warehouse,
+  X,
   Zap,
 } from "lucide-react";
 import { BrandLockup, BrandMark } from "./Brand";
@@ -95,6 +97,15 @@ const faqs = [
 
 export default function LandingPage({ inviteToken }: { inviteToken: string | null }) {
   const [busy, setBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMobileMenuOpen(false); };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [mobileMenuOpen]);
+
   const callbackURL = inviteToken ? `${window.location.origin}/?invite=${encodeURIComponent(inviteToken)}` : window.location.origin;
 
   const signIn = async () => {
@@ -116,14 +127,16 @@ export default function LandingPage({ inviteToken }: { inviteToken: string | nul
       <a className="landing-brand" href="#top" aria-label="Operating Layer home">
         <BrandLockup />
       </a>
-      <nav className="landing-nav" aria-label="Landing page navigation">
-        <a href="#platform">Platform</a>
-        <a href="#product">Product</a>
-        <a href="#automation">Automation</a>
-        <a href="#trust">Trust</a>
+      <nav id="landing-sections" className={`landing-nav ${mobileMenuOpen ? "landing-nav-open" : ""}`} aria-label="Landing page navigation">
+        <a href="#platform" onClick={() => setMobileMenuOpen(false)}>Platform</a>
+        <a href="#product" onClick={() => setMobileMenuOpen(false)}>Product</a>
+        <a href="#automation" onClick={() => setMobileMenuOpen(false)}>Automation</a>
+        <a href="#trust" onClick={() => setMobileMenuOpen(false)}>Trust</a>
       </nav>
+      <button type="button" className="landing-mobile-menu" aria-label={mobileMenuOpen ? "Close section menu" : "Open section menu"} aria-expanded={mobileMenuOpen} aria-controls="landing-sections" onClick={() => setMobileMenuOpen(open => !open)}>{mobileMenuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}</button>
       <button type="button" className="landing-nav-cta" disabled={busy} onClick={signIn}>
-        {busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Start with Google"}
+        <span className="landing-cta-label-desktop">{busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Start with Google"}</span>
+        <span className="landing-cta-label-mobile">{busy ? "Opening…" : inviteToken ? "Join" : "Sign in"}</span>
         <ArrowRight size={16} aria-hidden="true" />
       </button>
     </header>
