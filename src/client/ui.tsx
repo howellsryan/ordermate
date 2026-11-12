@@ -26,7 +26,8 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: { ti
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     )).filter(element => !element.hasAttribute("hidden")) : [];
 
-    (focusable()[0] ?? dialog)?.focus();
+    const preferred = dialog?.querySelector<HTMLElement>("[autofocus]");
+    (preferred && !preferred.hasAttribute("disabled") ? preferred : focusable()[0] ?? dialog)?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
