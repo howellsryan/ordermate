@@ -173,6 +173,7 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
   };
 
   const tryDemo = () => {
+    setMobileMenuOpen(false);
     if (inviteToken) return void signIn();
     onChooseDemo?.();
   };
