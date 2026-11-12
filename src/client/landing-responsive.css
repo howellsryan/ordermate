@@ -1,5 +1,5 @@
 /* Public-site responsive finish. Preserve the Operating Layer palette and editorial motifs. */
-.landing-page { min-width: 0; }
+.landing-page { min-width: 0; overflow-x: clip; }
 .landing-page .landing-header { min-width: 0; }
 .landing-page .landing-header > * { min-width: 0; }
 .landing-page .landing-hero { min-width: 0; }
