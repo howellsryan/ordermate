@@ -23,6 +23,7 @@ import "./order-planning.css";
 import "./wave-picking.css";
 import "./service-crm.css";
 import "./demo-workstreams.css";
+import "./workspace-responsive.css";
 
 export default function WorkspaceStyles() {
   return null;

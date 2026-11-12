@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Boxes,
@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   PackageCheck,
+  Menu,
   PlayCircle,
   ScanBarcode,
   ShieldCheck,
@@ -13,6 +14,7 @@ import {
   Truck,
   Users,
   Warehouse,
+  X,
   Zap,
 } from "lucide-react";
 import { BrandLockup, BrandMark } from "./Brand";
@@ -148,6 +150,14 @@ type LandingPageProps = {
 
 export default function LandingPage({ inviteToken, onChooseDemo }: LandingPageProps) {
   const [busy, setBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMobileMenuOpen(false); };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [mobileMenuOpen]);
   const callbackURL = inviteToken ? `${window.location.origin}/?invite=${encodeURIComponent(inviteToken)}` : window.location.origin;
 
   const signIn = async () => {
@@ -163,6 +173,7 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
   };
 
   const tryDemo = () => {
+    setMobileMenuOpen(false);
     if (inviteToken) return void signIn();
     onChooseDemo?.();
   };
@@ -174,14 +185,16 @@ export default function LandingPage({ inviteToken, onChooseDemo }: LandingPagePr
       <a className="landing-brand" href="#top" aria-label="Operating Layer home">
         <BrandLockup />
       </a>
-      <nav className="landing-nav" aria-label="Landing page navigation">
-        <a href="#platform">Is this you?</a>
-        <a href="#product">See it work</a>
-        <a href="#switching">Before you switch</a>
-        <a href="#trust">Trust</a>
+      <nav id="landing-sections" className={`landing-nav ${mobileMenuOpen ? "landing-nav-open" : ""}`} aria-label="Landing page navigation">
+        <a href="#platform" onClick={() => setMobileMenuOpen(false)}>Is this you?</a>
+        <a href="#product" onClick={() => setMobileMenuOpen(false)}>See it work</a>
+        <a href="#switching" onClick={() => setMobileMenuOpen(false)}>Before you switch</a>
+        <a href="#trust" onClick={() => setMobileMenuOpen(false)}>Trust</a>
       </nav>
+      <button type="button" className="landing-mobile-menu" aria-label={mobileMenuOpen ? "Close section menu" : "Open section menu"} aria-expanded={mobileMenuOpen} aria-controls="landing-sections" onClick={() => setMobileMenuOpen(open => !open)}>{mobileMenuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}</button>
       <button type="button" className="landing-nav-cta" disabled={busy} onClick={inviteToken ? signIn : tryDemo}>
-        {busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Try a live demo"}
+        <span className="landing-cta-label-desktop">{busy ? "Opening Google…" : inviteToken ? "Accept invite" : "Try a live demo"}</span>
+        <span className="landing-cta-label-mobile">{busy ? "Opening…" : inviteToken ? "Join" : "Try demo"}</span>
         <ArrowRight size={16} aria-hidden="true" />
       </button>
     </header>

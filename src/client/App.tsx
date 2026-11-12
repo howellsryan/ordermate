@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -25,6 +25,7 @@ import {
   UserCog,
   Warehouse,
   Wrench,
+  X,
 } from "lucide-react";
 import type { WorkspaceFeatureKey } from "../shared/features";
 import type { WorkspaceModuleKey } from "../shared/modules";
@@ -129,6 +130,8 @@ export default function App() {
   const [activeTenantId, setActiveTenantId] = useState(() => localStorage.getItem(TENANT_STORAGE_KEY) || localStorage.getItem(LEGACY_TENANT_STORAGE_KEY) || "");
   const [page, setPage] = useState<Page>(() => pageFromLocation());
   const [mobileNav, setMobileNav] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const navTriggerRef = useRef<HTMLButtonElement>(null);
   const [newBusinessOpen, setNewBusinessOpen] = useState(false);
   const [inviteAttempted, setInviteAttempted] = useState(false);
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite"), []);
@@ -198,6 +201,52 @@ export default function App() {
     }
   }, [activeTenant?.role, page, navForPage?.demoOnly, demo, moduleForPage, featureForPage, modules.data, modules.error, enabledModules, features.data, features.error, enabledFeatures]);
 
+  // The mobile drawer is a true focus-contained navigation surface; desktop nav stays visible.
+  useEffect(() => {
+    if (!mobileNav) return;
+    const media = window.matchMedia("(max-width: 760px)");
+    if (!media.matches) {
+      setMobileNav(false);
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebarRef.current?.querySelector<HTMLButtonElement>(".mobile-sidebar-close")?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNav(false);
+        return;
+      }
+      if (event.key !== "Tab" || !sidebarRef.current) return;
+      const focusable = Array.from(sidebarRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter(element => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !sidebarRef.current.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sidebarRef.current.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onBreakpointChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) setMobileNav(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    media.addEventListener("change", onBreakpointChange);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      media.removeEventListener("change", onBreakpointChange);
+      navTriggerRef.current?.focus();
+    };
+  }, [mobileNav]);
+
   if (sessionQuery.isLoading) {
     return activeTenantId ? <LoadingScreen /> : <LandingWithDemo inviteToken={inviteToken} />;
   }
@@ -244,24 +293,24 @@ export default function App() {
   return <Suspense fallback={<LoadingScreen />}>
     <WorkspaceStyles />
     <div className="app-shell">
-      <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-        <BrandLockup inverse />
+      <aside ref={sidebarRef} id="workspace-navigation" aria-label="Workspace navigation" className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
+        <div className="sidebar-header"><BrandLockup inverse /><button type="button" className="mobile-sidebar-close icon-button" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={20} aria-hidden="true" /></button></div>
         <div className="tenant-stack">
-          <button type="button" className="tenant-switcher" aria-label="Current business">
+          <div className="tenant-switcher">
             <span className="tenant-avatar"><Building2 size={18} /></span>
             <span><small>{demo ? demoProfile?.name || "Guest demo" : "Business"}</small><strong>{activeTenant.name}</strong></span>
             {!demo && <ChevronDown size={16} />}
             {!demo && <select aria-label="Switch business" value={activeTenant.id} onChange={event => switchTenant(event.target.value)}>{session.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select>}
-          </button>
+          </div>
           {!demo && <button type="button" className="new-business" onClick={() => setNewBusinessOpen(true)}><Plus size={14} /> New business</button>}
         </div>
-        <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
+        <nav className="main-nav" aria-label="Main navigation">{visibleNav.map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
         <div className="sidebar-foot"><div className="user-chip"><CircleUserRound size={20} /><span><strong>{session.user.name}</strong><small>{demo ? "Local demo" : activeTenant.role}</small></span></div><button type="button" className="icon-button" title={demo ? "Exit demo" : "Sign out"} aria-label={demo ? "Exit demo" : "Sign out"} onClick={() => demo ? leaveDemo() : void signOut()}><LogOut size={18} /></button></div>
       </aside>
       {mobileNav && <button type="button" className="scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
 
       <main className="main">
-        <header className="topbar"><button type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>{demo ? "Browser only" : "Cloudflare EU"}</span><small>·</small><span className="role-pill">{demo ? "demo" : activeTenant.role}</span></div></header>
+        <header className="topbar"><button ref={navTriggerRef} type="button" className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open navigation" aria-expanded={mobileNav} aria-controls="workspace-navigation"><Menu size={20} /></button><GlobalSearch tenant={activeTenant} onNavigate={target => navigate(target as Page)} /><div className="topbar-context"><span className="runtime-dot" /><span>{demo ? "Browser only" : "Cloudflare EU"}</span><small>·</small><span className="role-pill">{demo ? "demo" : activeTenant.role}</span></div></header>
         <div className="workspace">
           {demo && <div className="demo-workspace-banner" role="status"><div><strong>{demoProfile?.businessName} · local guest demo</strong><span>{demoProfile?.workstream}. Changes are saved only in this browser and reset independently from production.</span></div><div><button type="button" className="secondary" onClick={resetDemo}><RotateCcw size={14} /> Reset demo</button><button type="button" className="secondary" onClick={leaveDemo}>Choose another demo</button></div></div>}
           {modules.error && <div className="form-error" role="alert">Module configuration could not be loaded. Navigation is showing the safe default set; refresh before changing workspace configuration.</div>}
